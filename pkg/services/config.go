@@ -14,6 +14,7 @@ import (
 
 	"github.com/adrg/xdg"
 	"github.com/glebarez/sqlite"
+	kinmdb "github.com/obot-platform/kinm/pkg/db"
 	"github.com/obot-platform/nah"
 	"github.com/obot-platform/nah/pkg/apply"
 	"github.com/obot-platform/nah/pkg/leader"
@@ -171,6 +172,7 @@ type Config struct {
 type Services struct {
 	EncryptionConfig      *encryptionconfig.EncryptionConfiguration
 	StorageClient         storage.Client
+	StorageDB             *kinmdb.Factory
 	Router                *router.Router
 	PersistentTokenServer *persistent.TokenService
 	APIServer             *server.Server
@@ -1273,6 +1275,7 @@ func New(ctx context.Context, config Config) (*Services, error) {
 		EncryptionConfig:      encryptionConfig,
 		ServerURL:             config.Hostname,
 		StorageClient:         storageClient,
+		StorageDB:             dbAccess,
 		Router:                r,
 		PersistentTokenServer: persistentTokenServer,
 		APIServer: server.NewServer(
