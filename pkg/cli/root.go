@@ -53,6 +53,7 @@ func New() *cobra.Command {
 		&Tunnel{},
 		&Version{},
 		&Daemon{},
+		&DomainBootstrap{},
 	)
 }
 

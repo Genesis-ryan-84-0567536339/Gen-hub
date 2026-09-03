@@ -139,11 +139,17 @@ func NewRouter(ctx context.Context, services *services.Services) (*Router, error
 		services.LocalK8sClient,
 	)
 
+	domainBootstrapHandler := handlers.NewDomainBootstrapHandler(services.ServerURL)
+
 	enforcement, err := handlers.NewEnforcementHandler(services.ServerURL)
 	if err != nil {
 		_ = mcpGateway.Close()
 		return nil, err
 	}
+
+	// Domain & Setup Bootstrap (E1)
+	mux.HandleFunc("GET /api/domain/status", domainBootstrapHandler.GetStatus)
+	mux.HandleFunc("POST /api/domain/check-dns", domainBootstrapHandler.CheckDNS)
 
 	// Version
 	mux.HandleFunc("GET /api/version", version.GetVersion)
