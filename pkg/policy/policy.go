@@ -429,10 +429,8 @@ func (pm *PolicyManager) FilterToolsList(mcpName string, resultBytes []byte) ([]
 		}
 	}
 
-	go func() {
-		pm.SyncMCP(mcpName, "", "", "", discoveredTools)
-		_ = pm.Save()
-	}()
+	pm.SyncMCP(mcpName, "", "", "", discoveredTools)
+	_ = pm.Save()
 
 	result.Tools = filteredTools
 	return json.Marshal(result)

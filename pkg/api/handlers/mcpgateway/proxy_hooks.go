@@ -100,7 +100,11 @@ type hookSSELine struct {
 	value, ending string
 }
 
-func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks, servers mcp.HookServerConfigs, audit *proxyAudit, store *hookCorrelationStore, mcpServerName string) (*hookProcessor, error) {
+func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks, servers mcp.HookServerConfigs, audit *proxyAudit, store *hookCorrelationStore, mcpServerName ...string) (*hookProcessor, error) {
+	var serverName string
+	if len(mcpServerName) > 0 {
+		serverName = mcpServerName[0]
+	}
 	pm := policy.GetDefaultManager()
 	processor := &hookProcessor{
 		ctx:           req.Context(),
@@ -109,7 +113,7 @@ func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks,
 		servers:       servers,
 		audit:         audit,
 		store:         store,
-		mcpServerName: mcpServerName,
+		mcpServerName: serverName,
 		policyManager: pm,
 		sessionID:     mcpSessionID(req.Header, req.URL),
 		disabled:      runner == nil || len(hooks) == 0,
@@ -142,16 +146,18 @@ func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks,
 
 	if message.Method == "" {
 		// If there is no method on this message, it's a protocol response
-		body = processor.filterResponseMessage(body, hookOriginServer)
-		clearMCPHookRequestHeaders(req)
-		setMCPRequestBody(req, body)
+		if !processor.disabled {
+			body = processor.filterResponseMessage(body, hookOriginServer)
+			clearMCPHookRequestHeaders(req)
+			setMCPRequestBody(req, body)
+		}
 		if processor.audit != nil {
 			processor.audit.recordClientResponse(body)
 		}
 		return processor, nil
 	}
 
-	// Enforce Global Publish Policy on inbound tool calls
+	// Enforce Global Publish Policy on inbound tool calls independently of hooks
 	if message.Method == "tools/call" {
 		toolName := mcpHookMessageName(message)
 		if err := pm.EnforceToolCall(processor.mcpServerName, toolName); err != nil {
@@ -159,6 +165,10 @@ func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks,
 			processor.requestResponse = mcpHookErrorResponse(message, "request", err)
 			return processor, nil
 		}
+	}
+
+	if processor.disabled {
+		return processor, nil
 	}
 
 	filtered, err := processor.filterRequest(body, message, hookOriginClient)
@@ -332,22 +342,26 @@ func (h *hookProcessor) filterResponseMessage(body []byte, origin hookOrigin) []
 		return body
 	}
 
-	request, ok, err := h.takePendingRequest(wireMessage.ID, origin)
-	if err != nil {
-		return mcpHookErrorResponse(wireMessage, "response", err)
-	}
-	if !ok {
-		return body
-	}
-
-	// Filter tools/list responses using Global Publish Policy
-	if request.message.Method == "tools/list" && len(wireMessage.Result) > 0 {
+	// 1. Authoritatively apply Global Publish Policy on tools/list (even if hooks are disabled or not correlated)
+	if len(wireMessage.Result) > 0 && h.policyManager != nil {
 		if filteredResult, err := h.policyManager.FilterToolsList(h.mcpServerName, wireMessage.Result); err == nil {
 			wireMessage.Result = filteredResult
 			if mutatedBody, err := json.Marshal(wireMessage); err == nil {
 				body = mutatedBody
 			}
 		}
+	}
+
+	if h.disabled {
+		return body
+	}
+
+	request, ok, err := h.takePendingRequest(wireMessage.ID, origin)
+	if err != nil {
+		return mcpHookErrorResponse(wireMessage, "response", err)
+	}
+	if !ok {
+		return body
 	}
 
 	hookMessage := wireMessage

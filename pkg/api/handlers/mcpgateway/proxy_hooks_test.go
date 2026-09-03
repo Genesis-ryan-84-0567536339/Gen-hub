@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/obot-platform/obot/pkg/mcp"
+	"github.com/obot-platform/obot/pkg/policy"
 )
 
 type mcpHookCall struct {
@@ -686,5 +687,73 @@ func mcpHookResponse(body string) *http.Response {
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+}
+
+func TestGlobalPolicyEnforcementWithHooksDisabled(t *testing.T) {
+	// Set dangerous tool to disabled in policy
+	pm := policy.GetDefaultManager()
+	if err := pm.SetToolEnabled("my-mcp", "dangerous_write", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Inbound tools/call to disabled tool should be denied immediately even when hooks/runner are nil
+	req := mustMCPHookRequest(t, `{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"dangerous_write"}}`)
+	processor, err := newHookProcessor(req, nil, nil, nil, nil, nil, "my-mcp")
+	if err != nil {
+		t.Fatalf("unexpected error creating hook processor: %v", err)
+	}
+
+	body, blocked, hookErr := processor.blockedRequest()
+	if !blocked {
+		t.Fatalf("expected request to disabled tool to be blocked")
+	}
+	if hookErr == nil || !strings.Contains(strings.ToLower(hookErr.Error()), "disabled by global publish policy") {
+		t.Fatalf("expected Global Publish Policy error message, got: %v", hookErr)
+	}
+	if !strings.Contains(strings.ToLower(string(body)), "disabled by global publish policy") {
+		t.Fatalf("expected JSON-RPC error response body, got: %s", string(body))
+	}
+
+	// 2. Inbound tools/call to safe enabled tool should NOT be blocked
+	reqSafe := mustMCPHookRequest(t, `{"jsonrpc":"2.0","id":43,"method":"tools/call","params":{"name":"safe_read"}}`)
+	processorSafe, err := newHookProcessor(reqSafe, nil, nil, nil, nil, nil, "my-mcp")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	_, blockedSafe, _ := processorSafe.blockedRequest()
+	if blockedSafe {
+		t.Fatalf("expected safe tool request not to be blocked")
+	}
+}
+
+func TestGlobalPolicyFilterToolsListWithHooksDisabled(t *testing.T) {
+	pm := policy.GetDefaultManager()
+	if err := pm.SetToolEnabled("my-mcp", "delete_records", false); err != nil {
+		t.Fatal(err)
+	}
+
+	processor, err := newHookProcessor(mustMCPHookRequest(t, `{}`), nil, nil, nil, nil, nil, "my-mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	respBody := `{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"read_records","description":"safe read"},{"name":"delete_records","description":"dangerous delete"}]}}`
+	resp := mcpHookResponse(respBody)
+
+	if err := processor.filterResponse(resp); err != nil {
+		t.Fatal(err)
+	}
+
+	filteredBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filteredStr := string(filteredBytes)
+	if strings.Contains(filteredStr, "delete_records") {
+		t.Fatalf("expected delete_records to be filtered out of tools/list response, got: %s", filteredStr)
+	}
+	if !strings.Contains(filteredStr, "read_records") {
+		t.Fatalf("expected read_records to remain in tools/list response, got: %s", filteredStr)
 	}
 }
