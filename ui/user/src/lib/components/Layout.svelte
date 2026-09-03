@@ -26,6 +26,7 @@
 		'user-management': true,
 		'llm-gateway': true,
 		'app-management': true,
+		'user-resources': true,
 		advanced: true
 	};
 
@@ -155,7 +156,12 @@
 			route.includes('/admin/mcp-tunnels') ||
 			route.includes('/admin/server-scheduling') ||
 			route.includes('/admin/image-pull-secrets') ||
-			route.includes('/admin/agents')
+			route.includes('/admin/agents') ||
+			route.includes('/mcp-servers') ||
+			route.includes('/skills') ||
+			route.includes('/llm-gateway/models') ||
+			route.includes('/hosted-agents') ||
+			route.includes('/agent')
 		);
 	}
 
@@ -260,6 +266,7 @@
 	);
 
 	let isBootStrapUser = $derived(profile.current.isBootstrapUser?.() ?? false);
+	let hasAccessibleModels = $derived(accessibleModels.current.length > 0);
 	let hasLicenseEntitlementViolations = $derived(
 		(version.current.licenseEntitlementViolations?.length ?? 0) > 0
 	);
@@ -305,6 +312,61 @@
 		}
 	]);
 
+	// Upstream User & Native Surfaces (Preserved under secondary / advanced pane)
+	let userResourceLinks = $derived<NavLink[]>([
+		{
+			id: 'user-resources',
+			icon: Server,
+			label: 'Tài nguyên người dùng',
+			collapsible: true,
+			items: [
+				{
+					id: 'mcp-servers-user',
+					href: '/mcp-servers',
+					label: 'MCP Servers cá nhân',
+					collapsible: false
+				},
+				{
+					id: 'skills-user',
+					href: '/skills',
+					label: 'Skills cá nhân',
+					collapsible: false
+				},
+				...(hasAccessibleModels
+					? [
+							{
+								id: 'models-user',
+								href: '/llm-gateway/models',
+								label: 'Mô hình AI',
+								collapsible: false
+							}
+						]
+					: []),
+				...(hostedAgentsFeatureEnabled
+					? [
+							{
+								id: 'hosted-agents-user',
+								href: '/hosted-agents',
+								label: 'Hosted Agents',
+								collapsible: false
+							}
+						]
+					: []),
+				...(agentsFeatureEnabled
+					? [
+							{
+								id: 'agent-run',
+								href: '/agent',
+								label: 'Khởi chạy Agent (Obot)',
+								collapsible: false,
+								disabled: isBootStrapUser || !agentLinkEnabled
+							}
+						]
+					: [])
+			].filter(Boolean) as NavLink[]
+		}
+	]);
+
 	let agentManagementLinks = $derived<NavLink[]>(
 		agentsFeatureEnabled
 			? [
@@ -331,6 +393,7 @@
 	let advancedManagementLinks = $derived<NavLink[]>(
 		profile.current.hasAdminAccess?.()
 			? [
+					...userResourceLinks,
 					{
 						id: 'mcp-server-management',
 						icon: RadioTower,
@@ -592,7 +655,7 @@
 						]
 					}
 				]
-			: []
+			: userResourceLinks
 	);
 
 	$effect(() => {
@@ -911,10 +974,10 @@
 					</div>
 
 					<div class="flex items-center gap-3">
-						<!-- Prototype Top Actions: Chip & Avatar -->
-						<div class="hidden sm:inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-bold bg-[#ecfdf3] text-[#137333] dark:bg-emerald-950/40 dark:text-emerald-400">
-							<span class="size-2 rounded-full bg-[#16a34a] shadow-[0_0_0_4px_rgba(22,163,74,0.10)]"></span>
-							<span>Gateway hoạt động</span>
+						<!-- Prototype Top Actions: Neutral Gateway Chip & Avatar -->
+						<div class="hidden sm:inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+							<span class="size-2 rounded-full bg-slate-400 dark:bg-slate-500"></span>
+							<span>MCP Gateway</span>
 						</div>
 
 						{#if rightNavActions}

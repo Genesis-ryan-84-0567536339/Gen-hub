@@ -239,12 +239,12 @@
 									class={twMerge('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0', classification.color)}
 									title="Phân loại cảnh báo heuristic dựa theo quy ước đặt tên tool"
 								>
-									{classification.label} (Heuristic)
+									{classification.label} (Cảnh báo heuristic)
 								</span>
 
 								{#if classification.isDangerous}
 									<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 shrink-0">
-										<ShieldAlert class="size-3.5" /> Thao tác rủi ro cao
+										<ShieldAlert class="size-3.5" /> Thao tác rủi ro cao (Heuristic)
 									</span>
 								{/if}
 
@@ -255,10 +255,10 @@
 							</div>
 
 							<div class="flex shrink-0 items-center gap-3">
-								<!-- E3 Policy Tool Control (Disabled in E2) -->
+								<!-- E3 Policy Tool Control (Disabled neutral state in E2) -->
 								<div class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700" title="Chính sách phân quyền từng tool sẽ được kết nối tại Epic E3">
 									<Lock class="size-3 text-slate-400" />
-									<span class="text-[10px] font-medium text-slate-500">Quyền: Bật (Kích hoạt ở E3)</span>
+									<span class="text-[10px] font-medium text-slate-500">Chưa có policy · E3</span>
 								</div>
 
 								<IconButton
@@ -304,12 +304,12 @@
 			{:else}
 				<div class="my-12 flex w-md flex-col items-center gap-3 self-center text-center">
 					<Wrench class="text-slate-300 dark:text-slate-700 size-16 opacity-50" />
-					<h4 class="text-slate-700 dark:text-slate-300 text-base font-semibold">Chưa có Tool nào khả dụng</h4>
+					<h4 class="text-slate-700 dark:text-slate-300 text-base font-semibold">Không có tool khả dụng</h4>
 					<p class="text-slate-400 text-xs">
 						{#if showRealTools}
-							MCP Server này chưa khai báo hoặc chưa kích hoạt tool nào.
+							Server này không trả về danh sách tool nào từ endpoint.
 						{:else}
-							Cần kết nối hoặc triển khai MCP Server để đồng bộ danh sách tool.
+							Cần kết nối tới server để truy vấn danh sách tool.
 						{/if}
 					</p>
 				</div>

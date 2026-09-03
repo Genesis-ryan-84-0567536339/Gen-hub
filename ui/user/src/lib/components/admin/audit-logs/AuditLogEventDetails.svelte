@@ -65,7 +65,7 @@
 		<!-- Summary Chips -->
 		<div class="flex flex-wrap gap-2 py-4 px-5 border-b border-base-300 dark:border-base-400/50 bg-base-100/50 dark:bg-base-200/50">
 			{@render chip('Trạng thái', auditLog.outcome.status, auditLog.outcome.status === 'success' ? 'bg-success/15 text-success' : 'bg-error/15 text-error')}
-			{@render chip('Nguồn', auditLog.eventType === 'mcp_call' ? 'Composite Gateway' : 'Local Agent Hook')}
+			{@render chip('Nguồn', auditLog.eventType === 'mcp_call' ? 'MCP call' : 'Local Agent Hook')}
 			{@render chip('Thao tác', auditLog.action.operation)}
 			{@render chip('Mục tiêu', auditLog.target.targetType)}
 			{#if auditLog.outcome.durationMs}
@@ -183,6 +183,76 @@
 
 				{#if showForensics}
 					<div class="p-4 pt-0 border-t border-base-200 dark:border-base-400/40 flex flex-col gap-4 text-xs" in:slide={{ axis: 'y' }}>
+						{#if details?.trace || details?.network}
+							<div class="flex flex-col gap-1.5 mt-3">
+								<span class="font-semibold text-slate-700 dark:text-slate-300">Trace & Network:</span>
+								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
+									{@render metaRow('Started At', details?.trace?.startedAt)}
+									{@render metaRow('Request ID', details?.trace?.requestID)}
+									{@render metaRow('Session ID', details?.trace?.sessionID)}
+									{@render metaRow('Idempotency Key', details?.trace?.idempotencyKey)}
+									{@render metaRow('Tool Use ID', details?.trace?.toolUseID)}
+									{@render metaRow('Turn ID', details?.trace?.turnID)}
+									{@render metaRow('Client IP', details?.network?.clientIP)}
+								</div>
+							</div>
+						{/if}
+
+						{#if details?.client || details?.agent}
+							<div class="flex flex-col gap-1.5 mt-2">
+								<span class="font-semibold text-slate-700 dark:text-slate-300">Client & Agent Context:</span>
+								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
+									{@render metaRow('Client Name', details?.client?.name)}
+									{@render metaRow('Client Version', details?.client?.version)}
+									{@render metaRow('User Agent', details?.client?.userAgent)}
+									{@render metaRow('Agent Provider', details?.agent?.provider)}
+									{@render metaRow('Agent Version', details?.agent?.version)}
+									{@render metaRow('Agent CLI', details?.agent?.cli)}
+									{@render metaRow('Agent Model', details?.agent?.model)}
+									{@render metaRow('Permission Mode', details?.agent?.permissionMode)}
+								</div>
+							</div>
+						{/if}
+
+						{#if details?.device}
+							<div class="flex flex-col gap-1.5 mt-2">
+								<span class="font-semibold text-slate-700 dark:text-slate-300">Device Identity:</span>
+								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
+									{@render metaRow('Device ID', details.device.id)}
+									{@render metaRow('Deployment ID', details.device.deploymentID)}
+									{@render metaRow('Hostname', details.device.hostname)}
+									{@render metaRow('Local Username', details.device.localUsername)}
+									{@render metaRow('OS', details.device.os)}
+									{@render metaRow('Architecture', details.device.architecture)}
+								</div>
+							</div>
+						{/if}
+
+						{#if details?.scope}
+							<div class="flex flex-col gap-1.5 mt-2">
+								<span class="font-semibold text-slate-700 dark:text-slate-300">Scope Context:</span>
+								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
+									{@render metaRow('Workspace ID', details.scope.workspaceID)}
+									{@render metaRow('Catalog Entry ID', details.scope.catalogEntryID)}
+								</div>
+							</div>
+						{/if}
+
+						{#if details?.environment}
+							<div class="flex flex-col gap-1.5 mt-2">
+								<span class="font-semibold text-slate-700 dark:text-slate-300">Môi trường Thực thi (Environment):</span>
+								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
+									{@render metaRow('Working Directory', details.environment.cwd)}
+									{@render metaRow('Git Root', details.environment.gitRoot)}
+									{@render metaRow('Git Branch', details.environment.gitBranch)}
+									{@render metaRow('Git Commit', details.environment.gitCommit)}
+									{@render metaRow('Git Remotes', details.environment.gitRemotes?.join(', '))}
+									{@render metaRow('Reported Email', details.environment.reportedUserEmail)}
+									{@render metaRow('Transcript Path', details.environment.transcriptPath)}
+								</div>
+							</div>
+						{/if}
+
 						{#if details && !details.payloadRedacted}
 							{#if hasBody(details.request?.mutatedBody)}
 								<div class="flex flex-col gap-1.5 mt-3">
@@ -208,32 +278,6 @@
 									<JsonPreview value={details.rawEvent} ariaLabel="Raw Audit Event" maximizable />
 								</div>
 							{/if}
-						{/if}
-
-						{#if details?.trace || details?.network}
-							<div class="flex flex-col gap-1.5 mt-2">
-								<span class="font-semibold text-slate-700 dark:text-slate-300">Trace & Network:</span>
-								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
-									{@render metaRow('Idempotency Key', details?.trace?.idempotencyKey)}
-									{@render metaRow('Tool Use ID', details?.trace?.toolUseID)}
-									{@render metaRow('Turn ID', details?.trace?.turnID)}
-									{@render metaRow('Client IP', details?.network?.clientIP)}
-								</div>
-							</div>
-						{/if}
-
-						{#if details?.environment}
-							<div class="flex flex-col gap-1.5 mt-2">
-								<span class="font-semibold text-slate-700 dark:text-slate-300">Môi trường Thực thi (Environment):</span>
-								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
-									{@render metaRow('Working Directory', details.environment.cwd)}
-									{@render metaRow('Git Root', details.environment.gitRoot)}
-									{@render metaRow('Git Branch', details.environment.gitBranch)}
-									{@render metaRow('Git Commit', details.environment.gitCommit)}
-									{@render metaRow('Reported Email', details.environment.reportedUserEmail)}
-									{@render metaRow('Transcript Path', details.environment.transcriptPath)}
-								</div>
-							</div>
 						{/if}
 
 						{#if details?.webhookStatuses?.length}

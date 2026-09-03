@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Layout from '$lib/components/Layout.svelte';
-	import { AdminService, UserService, type OrgUser } from '$lib/services';
+	import { AdminService } from '$lib/services';
 	import type { AuthProvider } from '$lib/services/admin/types';
 	import { mcpServersAndEntries, profile } from '$lib/stores';
 	import { onMount } from 'svelte';
@@ -74,7 +74,7 @@
 					</div>
 				{/each}
 
-				<!-- MCP Connectors OAuth / Env status -->
+				<!-- MCP Connectors OAuth / Credential status -->
 				{#each mcpEntries.slice(0, 6) as entry (entry.id)}
 					{@const name = entry.manifest?.name || entry.id}
 					<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-[17px] shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex items-center justify-between gap-3">
@@ -87,7 +87,7 @@
 									{name}
 								</div>
 								<div class="font-mono text-xs text-[#6b7280] dark:text-slate-400 mt-0.5 truncate">
-									MCP Credential · {entry.oauthCredentialConfigured ? 'OAuth Token' : 'Server Env / Static'}
+									MCP Credential · {entry.oauthCredentialConfigured ? 'OAuth credential đã cấu hình' : 'Chưa có OAuth credential'}
 								</div>
 							</div>
 						</div>

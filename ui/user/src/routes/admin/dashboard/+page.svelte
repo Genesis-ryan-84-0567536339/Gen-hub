@@ -19,16 +19,13 @@
 		topToolCallsFromStats
 	} from '$lib/services/dashboard/utils';
 	import { errors, mcpServersAndEntries } from '$lib/stores';
-	import { subMonths } from 'date-fns';
+	import { startOfDay, endOfDay } from 'date-fns';
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
 
 	let loading = $state(true);
 	let loadingToolUsage = $state(true);
-
-	let usersData = $state<OrgUser[]>([]);
-	let totalTokensData = $state<TotalTokenUsage>();
 
 	let topToolCalls = $state<TopToolCallRow[]>([]);
 	let topServerUsage = $state<TopServerUsageRow[]>([]);
@@ -41,8 +38,9 @@
 	});
 	let mcpGatewayUrl = $derived(mounted && currentOrigin ? `${currentOrigin}/mcp` : '');
 
-	const end = new Date();
-	const start = subMonths(end, 1);
+	const now = new Date();
+	const startToday = startOfDay(now);
+	const endToday = endOfDay(now);
 
 	let deployedCatalogEntryServers = $state<MCPCatalogServer[]>([]);
 	let deployedWorkspaceCatalogEntryServers = $state<MCPCatalogServer[]>([]);
@@ -75,10 +73,14 @@
 		return topToolCalls.reduce((acc, curr) => acc + curr.count, 0);
 	});
 
+	let configuredOauthCount = $derived.by(() => {
+		return serverAndEntries.entries.filter((e) => e.oauthCredentialConfigured).length;
+	});
+
 	onMount(async () => {
 		UserService.listMcpAuditLogUsageStats({
-			start_time: start.toISOString(),
-			end_time: end.toISOString()
+			start_time: startToday.toISOString(),
+			end_time: endToday.toISOString()
 		})
 			.then((stats) => {
 				const statsToUse = (stats.items ?? []).filter(
@@ -103,15 +105,11 @@
 			});
 
 		try {
-			const [users, tokens, catalogServers, workspaceServers] = await Promise.all([
-				UserService.listUsersIncludeDeleted(),
-				AdminService.listTotalTokenUsage({ start, end }),
+			const [catalogServers, workspaceServers] = await Promise.all([
 				AdminService.listAllCatalogDeployedSingleRemoteServers(DEFAULT_MCP_CATALOG_ID),
 				AdminService.listAllWorkspaceDeployedSingleRemoteServers()
 			]);
 
-			usersData = users;
-			totalTokensData = tokens;
 			deployedCatalogEntryServers = catalogServers;
 			deployedWorkspaceCatalogEntryServers = workspaceServers;
 		} catch (err) {
@@ -125,30 +123,30 @@
 		{
 			id: 'active-mcps',
 			label: 'MCP ĐANG BẬT',
-			value: serverAndEntries.entries.length,
-			loading: serverAndEntries.loading || loading,
-			sub: `trên tổng số ${totalServers || serverAndEntries.entries.length} dịch vụ`
+			value: null,
+			loading: false,
+			sub: 'kích hoạt ở E3'
 		},
 		{
 			id: 'connected-agents',
 			label: 'AGENT ĐÃ DUYỆT',
-			value: usersData.length,
-			loading,
-			sub: 'kết nối qua gateway'
+			value: null,
+			loading: false,
+			sub: 'kích hoạt ở E4'
 		},
 		{
 			id: 'today-calls',
 			label: 'TOOL CALL HÔM NAY',
 			value: todayToolCalls,
 			loading: loadingToolUsage,
-			sub: todayToolCalls !== null ? 'ghi nhận từ audit log' : 'chưa có dữ liệu'
+			sub: todayToolCalls !== null ? 'ghi nhận từ 00:00 hôm nay' : 'chưa có dữ liệu'
 		},
 		{
 			id: 'vault-count',
 			label: 'CREDENTIAL',
-			value: serverAndEntries.entries.filter((e) => e.oauthCredentialConfigured).length,
+			value: configuredOauthCount,
 			loading: serverAndEntries.loading || loading,
-			sub: 'được lưu trong vault'
+			sub: 'OAuth đã cấu hình trong catalog'
 		}
 	]);
 
@@ -185,7 +183,7 @@
 						{:else if stat.value !== null}
 							<TweenedMetric target={stat.value} />
 						{:else}
-							<span class="text-slate-400">—</span>
+							<span class="text-slate-400 font-semibold">—</span>
 						{/if}
 					</div>
 					<div class="text-[12px] text-[#6b7280] dark:text-slate-400 truncate">
@@ -246,11 +244,16 @@
 						A
 					</div>
 					<div class="flex-1 min-w-0">
-						<h4 class="text-[14px] font-bold text-[#172033] dark:text-white m-0 truncate">
-							Antigravity IDE · Máy Fedora (Mẫu kết nối)
-						</h4>
+						<div class="flex items-center gap-2 flex-wrap">
+							<h4 class="text-[14px] font-bold text-[#172033] dark:text-white m-0 truncate">
+								Antigravity IDE · Máy Fedora
+							</h4>
+							<span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/40">
+								Visual Fixture · E4 Scope
+							</span>
+						</div>
 						<div class="text-[12px] text-[#6b7280] dark:text-slate-400 mt-0.5">
-							Quy trình Agent Approval & Pending State sẽ được kết nối hoàn chỉnh tại Epic E4.
+							Quy trình duyệt và cấp quyền Agent (Agent Approval) sẽ được kích hoạt tại Epic E4.
 						</div>
 
 						<div class="flex flex-wrap gap-2 mt-3">
@@ -307,7 +310,6 @@
 					{#each serverAndEntries.entries.slice(0, 6) as entry (entry.id)}
 						{@const name = entry.manifest?.name || entry.id}
 						{@const desc = entry.manifest?.description || 'Dịch vụ kết nối tích hợp'}
-						{@const isConfigured = entry.oauthCredentialConfigured || !entry.manifest?.remoteConfig?.staticOAuthRequired}
 						<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-4 shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between">
 							<div class="flex justify-between items-start gap-3">
 								<div class="flex gap-2.5 min-w-0">
@@ -328,21 +330,21 @@
 									</div>
 								</div>
 
-								<!-- Switch visual element (Read-only / disabled in E2) -->
-								<div class="relative w-[42px] h-6 bg-[#4f46e5] rounded-full shrink-0" title="Chính sách bật/tắt MCP sẽ kết nối tại E3">
-									<div class="absolute top-[3px] left-[21px] size-[18px] bg-white rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"></div>
+								<!-- Switch visual element (Disabled neutral state for E3) -->
+								<div class="relative w-[42px] h-6 bg-slate-300 dark:bg-slate-700 rounded-full shrink-0 opacity-70 cursor-not-allowed" title="Chính sách bật/tắt MCP sẽ kết nối tại E3">
+									<div class="absolute top-[3px] left-[3px] size-[18px] bg-white rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"></div>
 								</div>
 							</div>
 
 							<div class="flex justify-between items-center mt-3.5 pt-3 border-t border-[#e6e9ef] dark:border-slate-800 text-xs text-[#6b7280] dark:text-slate-400">
-								<span class="text-[#16a34a] font-bold flex items-center gap-1">
-									● Đang hoạt động
+								<span class="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
+									○ Chưa có policy E3
 								</span>
 								<span class="truncate">
-									{#if isConfigured}
-										Đã kết nối
+									{#if entry.oauthCredentialConfigured}
+										OAuth đã cấu hình
 									{:else}
-										Cần cấu hình
+										Chưa có OAuth credential
 									{/if}
 								</span>
 							</div>
