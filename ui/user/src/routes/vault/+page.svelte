@@ -57,10 +57,10 @@
 				<Shield class="size-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
 				<div class="flex flex-col gap-1 text-sm">
 					<p class="font-semibold text-indigo-950 dark:text-indigo-200">
-						Nguyên tắc An toàn Tuyệt đối (Security Invariants)
+						Nguyên tắc Thiết kế An toàn (Security Invariants)
 					</p>
 					<p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-						Mọi Secret, API Key và Token xác thực OAuth được lưu trữ và mã hóa tập trung phía Server trong Vault. AI Agent chỉ nhận quyền gọi Tool thông qua Composite Gateway và <strong>tuyệt đối không bao giờ nhận mã Token hay Mật khẩu nguồn</strong>. Secret luôn được ẩn (masked) hoàn toàn trên giao diện.
+						Mọi Secret, API Key và Token xác thực OAuth được lưu trữ và quản lý tập trung phía Server trong Vault (hoàn thiện trọn vẹn tại Epic E5). AI Agent chỉ nhận quyền gọi Tool thông qua Composite Gateway và <strong>tuyệt đối không bao giờ nhận mã Token hay Mật khẩu nguồn</strong>. Secret luôn được ẩn (masked) hoàn toàn trên giao diện.
 					</p>
 				</div>
 			</div>
@@ -91,7 +91,7 @@
 					</div>
 					<RadioTower class="size-4 text-emerald-600" />
 				</div>
-				<div class="text-xs text-slate-500 mt-1">Dịch vụ tích hợp cấu hình bảo mật</div>
+				<div class="text-xs text-slate-500 mt-1">Dịch vụ tích hợp có khai báo secret</div>
 			</div>
 
 			<div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900">
@@ -148,7 +148,7 @@
 								{/if}
 								<div class="flex flex-col">
 									<span class="text-xs font-bold text-slate-800 dark:text-slate-200">{provider.name}</span>
-									<span class="text-[10px] font-mono text-slate-400">••••••••••••••••</span>
+									<span class="text-[10px] text-slate-400">ID: {provider.id}</span>
 								</div>
 							</div>
 							{#if provider.configured}
@@ -204,15 +204,14 @@
 						</div>
 
 						<div class="flex items-center gap-4 shrink-0">
-							<span class="text-[11px] font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">
-								Vault Key: ok1-****-vault
-							</span>
 							{#if entry.oauthCredentialConfigured}
 								<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-									<CheckCircle2 class="size-3.5" /> Sẵn sàng
+									<CheckCircle2 class="size-3.5" /> OAuth Sẵn sàng
 								</span>
+							{:else if entry.manifest?.remoteConfig?.staticOAuthRequired}
+								<span class="text-[11px] text-amber-600 dark:text-amber-400 font-medium">Cần cấu hình OAuth</span>
 							{:else}
-								<span class="text-[11px] text-slate-400 font-medium">Server Env / Auto</span>
+								<span class="text-[11px] text-slate-400 font-medium">Chưa có dữ liệu credential</span>
 							{/if}
 						</div>
 					</div>

@@ -14,7 +14,7 @@
 	import IconButton from '../primitives/IconButton.svelte';
 	import McpOauth from './McpOauth.svelte';
 	import ToolNameIssueIcon from './ToolNameIssueIcon.svelte';
-	import { CircleAlert, ChevronDown, ChevronUp, Info, Wrench, ShieldAlert, CheckCircle2, Shield, Eye, Edit3, Terminal } from '@lucide/svelte';
+	import { CircleAlert, ChevronDown, ChevronUp, Info, Wrench, ShieldAlert, CheckCircle2, Shield, Eye, Edit3, Terminal, Lock } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
@@ -169,7 +169,7 @@
 					<div class="flex items-center gap-2.5">
 						<Info class="size-4 shrink-0 text-indigo-600" />
 						<div>
-							Xem trước danh mục Tool khai báo trong manifest; trạng thái kích hoạt thực tế tuân theo cấu hình Composite Policy (E3).
+							Xem trước danh mục Tool khai báo trong manifest; chức năng bật/tắt quyền từng tool sẽ được kết nối hoàn chỉnh tại Epic E3.
 						</div>
 					</div>
 				</div>
@@ -230,18 +230,21 @@
 						class:pb-3={hasContentDisplayed}
 					>
 						<div class="flex items-center justify-between gap-3">
-							<div class="flex items-center gap-2.5 min-w-0 flex-1">
+							<div class="flex items-center gap-2.5 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
 								<code class="font-mono text-sm font-bold text-slate-900 dark:text-white truncate" title={tool.name}>
 									{tool.name}
 								</code>
 
-								<span class={twMerge('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0', classification.color)}>
-									{classification.label}
+								<span
+									class={twMerge('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0', classification.color)}
+									title="Phân loại cảnh báo heuristic dựa theo quy ước đặt tên tool"
+								>
+									{classification.label} (Heuristic)
 								</span>
 
 								{#if classification.isDangerous}
 									<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 shrink-0">
-										<ShieldAlert class="size-3.5" /> Nguy hiểm (Default OFF)
+										<ShieldAlert class="size-3.5" /> Thao tác rủi ro cao
 									</span>
 								{/if}
 
@@ -251,7 +254,13 @@
 								{/if}
 							</div>
 
-							<div class="flex shrink-0 items-center gap-2">
+							<div class="flex shrink-0 items-center gap-3">
+								<!-- E3 Policy Tool Control (Disabled in E2) -->
+								<div class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700" title="Chính sách phân quyền từng tool sẽ được kết nối tại Epic E3">
+									<Lock class="size-3 text-slate-400" />
+									<span class="text-[10px] font-medium text-slate-500">Quyền: Bật (Kích hoạt ở E3)</span>
+								</div>
+
 								<IconButton
 									class="btn-xs rounded-lg"
 									onclick={() => handleToggleDescription(tool.id, !hasContentDisplayed)}

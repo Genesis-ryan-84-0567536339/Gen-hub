@@ -24,6 +24,7 @@
 		'device-management': true,
 		'user-management': true,
 		'llm-gateway': true,
+		'app-management': true,
 		advanced: true
 	};
 
@@ -134,12 +135,27 @@
 			route.includes('/admin/auth-providers') ||
 			route.includes('/admin/license') ||
 			route.includes('/admin/branding') ||
+			route.includes('/admin/app-notification') ||
+			route.includes('/admin/app-scheduling') ||
 			route.includes('/admin/token-usage') ||
+			route.includes('/admin/llm-audit-logs') ||
 			route.includes('/admin/model-providers') ||
 			route.includes('/admin/model-access-policies') ||
+			route.includes('/admin/message-policies') ||
+			route.includes('/admin/policy-violations') ||
 			route.includes('/admin/skills') ||
+			route.includes('/admin/skill-access-policies') ||
+			route.includes('/admin/hosted-agents') ||
+			route.includes('/admin/hosted-agent-access-policies') ||
 			route.includes('/admin/devices') ||
-			route.includes('/admin/filters')
+			route.includes('/admin/enforcement-decisions') ||
+			route.includes('/admin/filters') ||
+			route.includes('/admin/mcp-deployments') ||
+			route.includes('/admin/mcp-access-policies') ||
+			route.includes('/admin/mcp-tunnels') ||
+			route.includes('/admin/server-scheduling') ||
+			route.includes('/admin/image-pull-secrets') ||
+			route.includes('/admin/agents')
 		);
 	}
 
@@ -253,6 +269,17 @@
 		}
 	}
 
+	let agentsFeatureEnabled = $derived(version.current.agentsEnabled !== false);
+	let hostedAgentsFeatureEnabled = $derived(version.current.hostedAgentsEnabled === true);
+	let agentLinkEnabled = $derived(
+		isAgentEnabled(defaultModelAliases.current) && agentsFeatureEnabled
+	);
+
+	let isBootStrapUser = $derived(profile.current.isBootstrapUser?.() ?? false);
+	let isAtLeastPowerUser = $derived(profile.current.groups.includes(Group.POWERUSER));
+	let isAtLeastPowerUserPlus = $derived(profile.current.groups.includes(Group.POWERUSER_PLUS));
+
+	let hasAccessibleModels = $derived(accessibleModels.current.length > 0);
 	let hasLicenseEntitlementViolations = $derived(
 		(version.current.licenseEntitlementViolations?.length ?? 0) > 0
 	);
@@ -298,63 +325,197 @@
 		}
 	]);
 
+	let agentManagementLinks = $derived<NavLink[]>(
+		agentsFeatureEnabled
+			? [
+					{
+						id: 'agent-management',
+						icon: Bot,
+						label: 'Obot Agent Management',
+						collapsible: true,
+						items: [
+							{
+								id: 'admin-agents',
+								href: '/admin/agents',
+								icon: Bots,
+								label: 'Agents',
+								collapsible: false,
+								disabled: isBootStrapUser || !agentLinkEnabled
+							}
+						]
+					}
+				]
+			: []
+	);
+
 	let advancedManagementLinks = $derived<NavLink[]>(
 		profile.current.hasAdminAccess?.()
 			? [
 					{
 						id: 'mcp-server-management',
 						icon: RadioTower,
-						label: 'MCP Servers & Tunnels',
+						label: 'MCP Management',
 						collapsible: true,
 						items: [
 							{
-								id: 'mcp-servers',
-								href: '/mcp-servers',
-								label: 'MCP Servers',
-								collapsible: false
-							},
-							{
-								id: 'mcp-deployments',
-								href: '/admin/mcp-deployments',
-								label: 'Deployments',
+								id: 'mcp-catalog',
+								href: '/admin/mcp-catalog',
+								label: 'MCP Catalog',
+								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'mcp-access-policies',
 								href: '/admin/mcp-access-policies',
-								label: 'Access Policies',
+								label: 'MCP Access Policies',
+								disabled: isBootStrapUser,
+								collapsible: false
+							},
+							{
+								id: 'mcp-deployments',
+								href: '/admin/mcp-deployments',
+								label: 'MCP Deployments',
 								collapsible: false
 							},
 							{
 								id: 'filters',
 								href: '/admin/filters',
 								label: 'Filters',
+								disabled: isBootStrapUser
+							},
+							version.current.engine === 'kubernetes' && !version.current.hideK8sDetails
+								? {
+										id: 'server-scheduling',
+										href: '/admin/server-scheduling',
+										label: 'Server Scheduling',
+										collapsible: false
+									}
+								: undefined,
+							version.current.engine === 'kubernetes'
+								? {
+										id: 'image-pull-secrets',
+										href: '/admin/image-pull-secrets',
+										label: 'Image Pull Secrets',
+										disabled: isBootStrapUser,
+										collapsible: false
+									}
+								: undefined,
+							...(profile.current.isAdmin?.()
+								? [
+										{
+											id: 'mcp-tunnels',
+											href: '/admin/mcp-tunnels',
+											label: 'MCP Tunnels',
+											disabled: isBootStrapUser,
+											collapsible: false
+										}
+									]
+								: [])
+						].filter(Boolean) as NavLink[]
+					},
+					{
+						id: 'skills-management',
+						icon: Notebook,
+						label: 'Skills Management',
+						collapsible: true,
+						items: [
+							{
+								id: 'skills',
+								href: '/admin/skills',
+								label: 'Skill Sources',
 								collapsible: false
+							},
+							{
+								id: 'skill-access-policies',
+								href: '/admin/skill-access-policies',
+								label: 'Skill Access Policies',
+								collapsible: false
+							}
+						]
+					},
+					...(hostedAgentsFeatureEnabled
+						? [
+								{
+									id: 'hosted-agent-management',
+									icon: Container,
+									label: 'Hosted Agents',
+									collapsible: true,
+									items: [
+										{
+											id: 'hosted-agents',
+											href: '/admin/hosted-agents',
+											label: 'Templates',
+											collapsible: false
+										},
+										{
+											id: 'hosted-agent-access-policies',
+											href: '/admin/hosted-agent-access-policies',
+											label: 'Access Policies',
+											collapsible: false
+										}
+									]
+								}
+							]
+						: []),
+					{
+						id: 'device-management',
+						icon: Laptop,
+						label: 'Device Management',
+						collapsible: true,
+						items: [
+							{
+								id: 'devices',
+								href: '/admin/devices',
+								label: 'Devices',
+								disabled: isBootStrapUser,
+								collapsible: false,
+								beta: true
+							},
+							{
+								id: 'enforcement-decisions',
+								href: '/admin/enforcement-decisions',
+								label: 'Enforcement Decisions',
+								disabled: isBootStrapUser,
+								collapsible: false,
+								beta: true
 							}
 						]
 					},
 					{
 						id: 'user-management',
 						icon: Users,
-						label: 'Auth & Người dùng',
+						label: 'Auth Management',
+						disabled: !version.current.authEnabled,
 						collapsible: true,
+						noteIcon: !version.current.authEnabled ? LockOpen : undefined,
+						note: !version.current.authEnabled ? renderAuthDisabledNote : undefined,
 						items: [
 							{
 								id: 'users',
 								href: '/admin/users',
-								label: 'Người dùng',
-								collapsible: false
+								label: 'Users',
+								collapsible: false,
+								disabled: !version.current.authEnabled
 							},
 							{
 								id: 'groups',
 								href: '/admin/groups',
-								label: 'Nhóm quyền',
-								collapsible: false
+								label: 'Groups',
+								collapsible: false,
+								disabled: !version.current.authEnabled
+							},
+							{
+								id: 'user-roles',
+								href: '/admin/user-roles',
+								label: 'User Roles',
+								collapsible: false,
+								disabled: !version.current.authEnabled
 							},
 							{
 								id: 'auth-providers',
 								href: '/admin/auth-providers',
-								label: 'Nhà cung cấp SSO',
+								label: 'Auth Providers',
+								disabled: !version.current.authEnabled,
 								collapsible: false
 							}
 						]
@@ -369,6 +530,14 @@
 								id: 'tokens',
 								href: '/admin/token-usage',
 								label: 'Token Usage',
+								disabled: isBootStrapUser,
+								collapsible: false
+							},
+							{
+								id: 'llm-audit-logs',
+								href: '/admin/llm-audit-logs',
+								label: 'Audit Logs',
+								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
@@ -376,27 +545,70 @@
 								href: '/admin/model-providers',
 								label: 'Model Providers',
 								collapsible: false
-							}
+							},
+							{
+								id: 'model-access-policies',
+								href: '/admin/model-access-policies',
+								label: 'Model Access Policies',
+								collapsible: false
+							},
+							...(version.current.messagePoliciesEnabled
+								? [
+										{
+											id: 'message-policies',
+											href: '/admin/message-policies',
+											label: 'Message Policies',
+											collapsible: false
+										},
+										{
+											id: 'policy-violations',
+											href: '/admin/policy-violations',
+											label: 'Message Policy Violations',
+											collapsible: false
+										}
+									]
+								: [])
 						]
 					},
+					...agentManagementLinks,
 					{
 						id: 'app-management',
 						icon: LayoutGrid,
-						label: 'Cấu hình nền tảng',
+						label: 'App Management',
 						collapsible: true,
 						items: [
 							{
 								id: 'license',
 								href: '/admin/license',
 								label: 'License',
+								disabled: false,
 								collapsible: false
 							},
 							{
 								id: 'branding',
 								href: '/admin/branding',
 								label: 'Branding',
+								disabled: false,
 								collapsible: false
-							}
+							},
+							{
+								id: 'app-notification',
+								href: '/admin/app-notification',
+								label: 'App Notification',
+								disabled: false,
+								collapsible: false
+							},
+							...(version.current.engine === 'kubernetes' && !version.current.hideK8sDetails
+								? [
+										{
+											id: 'app-scheduling',
+											href: '/admin/app-scheduling',
+											label: 'App Scheduling',
+											disabled: false,
+											collapsible: false
+										}
+									]
+								: [])
 						]
 					}
 				]
@@ -422,6 +634,7 @@
 	});
 
 	const isAdminRoute = $derived(pathname.includes('/admin'));
+	const isAgentRoute = $derived(pathname === '/agent' || pathname.startsWith('/agent/'));
 	$effect(() => {
 		const isAdminOrBootstrapUser =
 			profile.current.loaded &&
@@ -434,7 +647,123 @@
 	untrack(() => (layoutContext?.initLayout ?? defaultInitLayout)());
 	const layout = untrack(() => (layoutContext?.getLayout ?? defaultGetLayout)());
 
-	let bannerDismissed = localState<{ dismissedAt?: string } | undefined>('@gen-hub/banner', undefined);
+	type BannerDismissState = {
+		dismissedAt?: string;
+	};
+
+	let bannerDismissed = localState<BannerDismissState | undefined>('@gen-hub/banner', undefined, {
+		parse: (ls) => {
+			if (!ls) return undefined;
+			try {
+				const parsed = JSON.parse(ls) as string | BannerDismissState;
+				if (typeof parsed === 'string') {
+					return { dismissedAt: parsed } satisfies BannerDismissState;
+				} else if (parsed && typeof parsed === 'object') {
+					return {
+						dismissedAt: typeof parsed.dismissedAt === 'string' ? parsed.dismissedAt : undefined
+					} satisfies BannerDismissState;
+				} else return undefined;
+			} catch (_err) {
+				return undefined;
+			}
+		}
+	});
+
+	function handleDismissBanner() {
+		bannerDismissed.current = {
+			dismissedAt: new Date().toISOString()
+		} satisfies BannerDismissState;
+	}
+
+	const COMMUNITY_SIGNUP_BANNER_KEY = '@gen-hub/dismiss-community-signup-banner';
+	let communitySignupBannerDismissed = localState<BannerDismissState | undefined>(
+		COMMUNITY_SIGNUP_BANNER_KEY,
+		undefined,
+		{
+			parse: (value) => {
+				if (!value) return undefined;
+				try {
+					const parsed = JSON.parse(value) as unknown;
+					if (parsed && typeof parsed === 'object') {
+						const dismissedAt = (parsed as BannerDismissState).dismissedAt;
+						return {
+							dismissedAt: typeof dismissedAt === 'string' ? dismissedAt : undefined
+						} satisfies BannerDismissState;
+					}
+					return undefined;
+				} catch {
+					return undefined;
+				}
+			}
+		}
+	);
+
+	function handleDismissCommunitySignupBanner() {
+		communitySignupBannerDismissed.current = {
+			dismissedAt: new Date().toISOString()
+		} satisfies BannerDismissState;
+	}
+
+	function isCommunitySignupDismissedForCurrentProfile() {
+		const dismissedAt = communitySignupBannerDismissed.current?.dismissedAt;
+		const dismissedDate = dismissedAt ? new Date(dismissedAt) : undefined;
+		const hasValidDismissedAt =
+			dismissedDate !== undefined && !Number.isNaN(dismissedDate.getTime());
+		if (!hasValidDismissedAt) return false;
+
+		const profileCreatedMs = profile.current.created
+			? new Date(profile.current.created).getTime()
+			: undefined;
+		if (
+			profileCreatedMs === undefined ||
+			Number.isNaN(profileCreatedMs) ||
+			profileCreatedMs < dismissedDate.getTime()
+		) {
+			return true;
+		}
+
+		return false;
+	}
+
+	const hasCommunityOrEnterpriseLicense = $derived.by(() => {
+		if (version.current.enterprise || licenseStore.current.enterprise) return true;
+		const entitlements = [
+			...(licenseStore.current.entitlements ?? []),
+			...(version.current.licenseEntitlements ?? [])
+		];
+		return (
+			entitlements.includes(COMMUNITY_ENTITLEMENT) || entitlements.includes(ENTERPRISE_ENTITLEMENT)
+		);
+	});
+
+	const canShowCommunitySignup = $derived.by(() => {
+		if (!(profile.current.hasAdminAccess?.() || profile.current.isBootstrapUser?.())) return false;
+		if (hasCommunityOrEnterpriseLicense) return false;
+		if (!communitySignupBannerDismissed.isReady) return false;
+		return !isCommunitySignupDismissedForCurrentProfile();
+	});
+
+	let showAppNotificationBanner = $derived.by(() => {
+		if (isAgentRoute) return false;
+
+		const appNotification = appNotificationStore.current;
+		if (!appNotification?.banner?.enabled) return false;
+		if (!appNotification.banner.dismissible) return true;
+		if (!bannerDismissed.isReady) return false;
+
+		const dismissedAt = bannerDismissed.current?.dismissedAt;
+		const dismissedDate = dismissedAt ? new Date(dismissedAt) : undefined;
+		const hasValidDismissedAt =
+			dismissedDate !== undefined && !Number.isNaN(dismissedDate.getTime());
+		const wasBannerUpdatedAfterDismissal =
+			appNotification?.updated &&
+			hasValidDismissedAt &&
+			dismissedDate <= new Date(appNotification.updated);
+		return !!(
+			!hasValidDismissedAt ||
+			(wasBannerUpdatedAfterDismissal && appNotification.banner.resetDismissed)
+		);
+	});
 </script>
 
 <div class="flex min-h-dvh items-center bg-[#f5f7fb] text-slate-800 dark:bg-slate-950 dark:text-slate-100">
@@ -452,7 +781,7 @@
 			>
 				<!-- Brand Header -->
 				<div class="flex h-[72px] shrink-0 items-center justify-between px-5 border-b border-slate-800/80">
-					<GenHubLogo />
+					<GenHubLogo variant="dark" />
 					{#if responsive.isMobile}
 						<IconButton
 							tooltip={{ text: 'Đóng Menu', placement: 'left' }}
@@ -550,6 +879,27 @@
 			{...main?.props}
 		>
 			<div class="sticky top-0 left-0 z-40 w-full">
+				{#if banner}
+					{@render banner()}
+				{:else if hasLicenseEntitlementViolations || isNearUserLimit}
+					<LicenseViolationBanner warnUserLimit={isNearUserLimit}>
+						{#snippet fallback()}
+							{#if showAppNotificationBanner}
+								<AppNotificationBanner
+									data={appNotificationStore.current?.banner}
+									onDismiss={handleDismissBanner}
+								/>
+							{/if}
+						{/snippet}
+					</LicenseViolationBanner>
+				{:else if showAppNotificationBanner}
+					<AppNotificationBanner
+						data={appNotificationStore.current?.banner}
+						onDismiss={handleDismissBanner}
+					/>
+				{:else if canShowCommunitySignup}
+					<CommunitySignupBanner onDismiss={handleDismissCommunitySignupBanner} />
+				{/if}
 				<header class="h-[72px] bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 px-6 flex items-center justify-between shadow-xs">
 					<div class="flex items-center gap-3">
 						{#if !layout.sidebarOpen || hideSidebar}
@@ -560,7 +910,7 @@
 							>
 								<Menu class="size-6 text-slate-700 dark:text-slate-300" />
 							</IconButton>
-							<GenHubLogo class="text-slate-900 dark:text-white" />
+							<GenHubLogo variant="auto" />
 						{/if}
 						{#if showBackButton}
 							<IconButton
@@ -638,11 +988,29 @@
 			</IconButton>
 		</div>
 	{/if}
+
+	{#if !isBootStrapUser && !responsive.isMobile}
+		<GuidePanel />
+		<Guide />
+	{/if}
 </div>
 
 {#if isAdminRoute}
 	<SetupSplashDialog />
 {/if}
+
+{#snippet renderAuthDisabledNote()}
+	{#if !version.current.authEnabled}
+		<p class="mt-1 text-sm">
+			Obot is running with authentication disabled. Click <a
+				href="https://docs.obot.ai/installation/enabling-authentication/"
+				rel="external noopener noreferrer"
+				target="_blank"
+				class="text-link">here</a
+			> for details.
+		</p>
+	{/if}
+{/snippet}
 
 {#snippet navLink(link: NavLink)}
 	{@const isActive = link.href && (pathname === link.href || pathname.startsWith(`${link.href}/`))}

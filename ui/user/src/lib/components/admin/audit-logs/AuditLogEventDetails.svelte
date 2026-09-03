@@ -5,7 +5,8 @@
 	import type { AuditLogEvent } from '$lib/services';
 	import { userDeviceSettings } from '$lib/stores';
 	import { formatLogTimestamp } from '$lib/time';
-	import { X, CheckCircle2, AlertTriangle, ShieldAlert, Clock, Terminal, Activity, FileJson } from '@lucide/svelte';
+	import { X, CheckCircle2, AlertTriangle, ShieldAlert, Clock, Terminal, Activity, FileJson, ChevronDown, ChevronUp, Layers, Cpu, Network } from '@lucide/svelte';
+	import { slide } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
 
 	interface Props {
@@ -15,6 +16,8 @@
 
 	let { auditLog, onClose }: Props = $props();
 	const details = $derived(auditLog.details);
+
+	let showForensics = $state(false);
 
 	function hasBody(body: unknown) {
 		if (body == null) return false;
@@ -78,7 +81,7 @@
 						<Terminal class="size-4 text-indigo-600" />
 						<span>Đầu vào / Tool Arguments (INPUT)</span>
 					</div>
-					{#if details && hasBody(details.request?.body)}
+					{#if details && !details.payloadRedacted && hasBody(details.request?.body)}
 						<CopyButton
 							text={typeof details.request?.body === 'string' ? details.request.body : JSON.stringify(details.request?.body, null, 2)}
 							classes={{ button: 'btn-ghost btn-xs text-xs' }}
@@ -88,7 +91,7 @@
 
 				{#if details?.payloadRedacted}
 					<div class="bg-base-300 text-muted-content rounded-xl p-4 text-xs italic">
-						Dữ liệu đối số đầu vào bị ẩn theo chính sách phân quyền bảo mật.
+						Dữ liệu đối số đầu vào bị ẩn theo chính sách phân quyền bảo mật (Payload Redacted).
 					</div>
 				{:else if details && hasBody(details.request?.body)}
 					<div class="relative rounded-xl overflow-hidden border border-base-300 dark:border-base-400">
@@ -108,7 +111,7 @@
 						<FileJson class="size-4 text-emerald-600" />
 						<span>Kết quả trả về / Tool Result (OUTPUT)</span>
 					</div>
-					{#if details && hasBody(details.response?.body)}
+					{#if details && !details.payloadRedacted && hasBody(details.response?.body)}
 						<CopyButton
 							text={typeof details.response?.body === 'string' ? details.response.body : JSON.stringify(details.response?.body, null, 2)}
 							classes={{ button: 'btn-ghost btn-xs text-xs' }}
@@ -118,7 +121,7 @@
 
 				{#if details?.payloadRedacted}
 					<div class="bg-base-300 text-muted-content rounded-xl p-4 text-xs italic">
-						Kết quả trả về bị ẩn theo chính sách phân quyền bảo mật.
+						Kết quả trả về bị ẩn theo chính sách phân quyền bảo mật (Payload Redacted).
 					</div>
 				{:else if details && hasBody(details.response?.body)}
 					<div class="relative rounded-xl overflow-hidden border border-base-300 dark:border-base-400">
@@ -159,14 +162,89 @@
 				{@render metaRow('Ghi nhận lúc', formatLogTimestamp(auditLog.timestamp.recordedAt, userDeviceSettings.timeFormat))}
 			</div>
 
-			{#if details?.environment}
-				<div class="rounded-xl border border-base-300 dark:border-base-400 bg-base-100 dark:bg-base-300/30 p-4 flex flex-col gap-2 text-xs">
-					<span class="font-bold text-slate-700 dark:text-slate-300 mb-1">Môi trường Client</span>
-					{@render metaRow('Working Directory', details.environment.cwd)}
-					{@render metaRow('Git Commit', details.environment.gitCommit)}
-					{@render metaRow('Host & User', [details.device?.hostname, details.device?.localUsername].filter(Boolean).join(' @ '))}
-				</div>
-			{/if}
+			<!-- Advanced Forensic Details Accordion -->
+			<div class="flex flex-col rounded-xl border border-base-300 dark:border-base-400 bg-base-100 dark:bg-base-300/30 overflow-hidden">
+				<button
+					class="flex items-center justify-between p-4 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-base-200 dark:hover:bg-base-400/50 transition-colors"
+					onclick={() => (showForensics = !showForensics)}
+				>
+					<div class="flex items-center gap-2">
+						<Layers class="size-4 text-indigo-600" />
+						<span>Chi tiết Truy vết Kỹ thuật (Forensic & Network Trace)</span>
+					</div>
+					<div>
+						{#if showForensics}
+							<ChevronUp class="size-4" />
+						{:else}
+							<ChevronDown class="size-4" />
+						{/if}
+					</div>
+				</button>
+
+				{#if showForensics}
+					<div class="p-4 pt-0 border-t border-base-200 dark:border-base-400/40 flex flex-col gap-4 text-xs" in:slide={{ axis: 'y' }}>
+						{#if details && !details.payloadRedacted}
+							{#if hasBody(details.request?.mutatedBody)}
+								<div class="flex flex-col gap-1.5 mt-3">
+									<span class="font-semibold text-slate-700 dark:text-slate-300">Mutated Request Body:</span>
+									<JsonPreview value={details.request?.mutatedBody} ariaLabel="Mutated Request Body" maximizable />
+								</div>
+							{/if}
+							{#if hasBody(details.response?.originalBody)}
+								<div class="flex flex-col gap-1.5 mt-2">
+									<span class="font-semibold text-slate-700 dark:text-slate-300">Original Response Body:</span>
+									<JsonPreview value={details.response?.originalBody} ariaLabel="Original Response Body" maximizable />
+								</div>
+							{/if}
+							{#if hasBody(details.request?.headers)}
+								{@render headersBlock('Request Headers', details.request?.headers)}
+							{/if}
+							{#if hasBody(details.response?.headers)}
+								{@render headersBlock('Response Headers', details.response?.headers)}
+							{/if}
+							{#if hasBody(details.rawEvent)}
+								<div class="flex flex-col gap-1.5 mt-2">
+									<span class="font-semibold text-slate-700 dark:text-slate-300">Raw Audit Event:</span>
+									<JsonPreview value={details.rawEvent} ariaLabel="Raw Audit Event" maximizable />
+								</div>
+							{/if}
+						{/if}
+
+						{#if details?.trace || details?.network}
+							<div class="flex flex-col gap-1.5 mt-2">
+								<span class="font-semibold text-slate-700 dark:text-slate-300">Trace & Network:</span>
+								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
+									{@render metaRow('Idempotency Key', details?.trace?.idempotencyKey)}
+									{@render metaRow('Tool Use ID', details?.trace?.toolUseID)}
+									{@render metaRow('Turn ID', details?.trace?.turnID)}
+									{@render metaRow('Client IP', details?.network?.clientIP)}
+								</div>
+							</div>
+						{/if}
+
+						{#if details?.environment}
+							<div class="flex flex-col gap-1.5 mt-2">
+								<span class="font-semibold text-slate-700 dark:text-slate-300">Môi trường Thực thi (Environment):</span>
+								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
+									{@render metaRow('Working Directory', details.environment.cwd)}
+									{@render metaRow('Git Root', details.environment.gitRoot)}
+									{@render metaRow('Git Branch', details.environment.gitBranch)}
+									{@render metaRow('Git Commit', details.environment.gitCommit)}
+									{@render metaRow('Reported Email', details.environment.reportedUserEmail)}
+									{@render metaRow('Transcript Path', details.environment.transcriptPath)}
+								</div>
+							</div>
+						{/if}
+
+						{#if details?.webhookStatuses?.length}
+							<div class="flex flex-col gap-1.5 mt-2">
+								<span class="font-semibold text-slate-700 dark:text-slate-300">Webhook Statuses:</span>
+								<JsonPreview value={details.webhookStatuses} ariaLabel="Webhook Statuses" maximizable />
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 </div>
@@ -186,4 +264,17 @@
 			<span class="col-span-8 font-mono break-all text-slate-800 dark:text-slate-200">{value}</span>
 		</div>
 	{/if}
+{/snippet}
+
+{#snippet headersBlock(name: string, headers: Record<string, string | string[]> | string | undefined)}
+	{@const text =
+		typeof headers === 'string'
+			? headers
+			: Object.entries(headers ?? {})
+					.map(([key, value]) => `${key}: ${formatHeaderValue(value)}`)
+					.join('\n')}
+	<div class="flex flex-col gap-1.5 mt-2">
+		<span class="font-semibold text-slate-700 dark:text-slate-300">{name}:</span>
+		<JsonPreview value={text} ariaLabel={name} maximizable />
+	</div>
 {/snippet}

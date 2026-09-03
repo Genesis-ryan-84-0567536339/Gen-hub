@@ -57,11 +57,13 @@
 	let topToolCalls = $state<TopToolCallRow[]>([]);
 	let topServerUsage = $state<TopServerUsageRow[]>([]);
 
-	let currentOrigin = $state('https://hub.example.com');
+	let mounted = $state(false);
+	let currentOrigin = $state('');
 	onMount(() => {
+		mounted = true;
 		currentOrigin = window.location.origin;
 	});
-	let mcpGatewayUrl = $derived(`${currentOrigin}/mcp`);
+	let mcpGatewayUrl = $derived(mounted && currentOrigin ? `${currentOrigin}/mcp` : '');
 
 	const end = new Date();
 	const start = subMonths(end, 1);
@@ -92,18 +94,22 @@
 		compileServerAndEntries(serversData, serverAndEntries.entries, false)
 	);
 
-	let totalEnabledTools = $derived.by(() => {
+	let totalKnownTools = $derived.by<number | null>(() => {
+		if (serverAndEntries.loading || loading) return null;
 		let count = 0;
+		let hasKnownPreviews = false;
 		for (const entry of serverAndEntries.entries) {
 			const preview = entry.manifest?.toolPreview;
 			if (preview && preview.length > 0) {
 				count += preview.length;
+				hasKnownPreviews = true;
 			}
 		}
-		return count > 0 ? count : (serverAndEntries.entries.length * 5);
+		return hasKnownPreviews ? count : null;
 	});
 
-	let todayToolCalls = $derived.by(() => {
+	let todayToolCalls = $derived.by<number | null>(() => {
+		if (loadingToolUsage) return null;
 		return topToolCalls.reduce((acc, curr) => acc + curr.count, 0);
 	});
 
@@ -158,41 +164,45 @@
 			id: 'active-mcps',
 			label: 'MCP ĐANG BẬT',
 			value: serverAndEntries.entries.length,
+			loading: serverAndEntries.loading || loading,
 			icon: RadioTower,
 			color: 'text-indigo-600 dark:text-indigo-400',
 			bgColor: 'bg-indigo-50 dark:bg-indigo-950/40',
 			href: '/mcp-catalog',
-			sublabel: `${totalServers} phiên bản đang triển khai`
+			sublabel: `${totalServers} server instance đang triển khai`
 		},
 		{
 			id: 'connected-agents',
 			label: 'AGENT KẾT NỐI',
-			value: usersData.length || 1,
+			value: usersData.length,
+			loading,
 			icon: Users,
 			color: 'text-emerald-600 dark:text-emerald-400',
 			bgColor: 'bg-emerald-50 dark:bg-emerald-950/40',
 			href: '/agent-auth-scopes',
-			sublabel: 'Agent & Danh tính hợp lệ'
+			sublabel: 'Agent identities / API Keys'
 		},
 		{
 			id: 'granted-tools',
 			label: 'TOOL ĐANG CẤP',
-			value: totalEnabledTools,
+			value: totalKnownTools,
+			loading: serverAndEntries.loading || loading,
 			icon: Wrench,
 			color: 'text-blue-600 dark:text-blue-400',
 			bgColor: 'bg-blue-50 dark:bg-blue-950/40',
 			href: '/mcp-catalog',
-			sublabel: 'Quyền khả dụng cho Agent'
+			sublabel: totalKnownTools !== null ? 'Tool khai báo trong catalog' : 'Chưa có dữ liệu runtime'
 		},
 		{
 			id: 'today-calls',
 			label: 'TOOL CALLS (30 NGÀY)',
 			value: todayToolCalls,
+			loading: loadingToolUsage,
 			icon: Activity,
 			color: 'text-amber-600 dark:text-amber-400',
 			bgColor: 'bg-amber-50 dark:bg-amber-950/40',
 			href: '/admin/audit-logs',
-			sublabel: 'Lịch sử gọi qua Composite Gateway'
+			sublabel: 'Ghi nhận từ Audit log native'
 		}
 	]);
 </script>
@@ -219,11 +229,15 @@
 						</div>
 					</div>
 					<div class="mt-4">
-						{#if loading}
+						{#if stat.loading}
 							<div class="skeleton h-8 w-16 rounded-md"></div>
-						{:else}
+						{:else if stat.value !== null}
 							<div class="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
 								<TweenedMetric target={stat.value} />
+							</div>
+						{:else}
+							<div class="text-2xl font-bold text-slate-400 dark:text-slate-500 tracking-tight">
+								—
 							</div>
 						{/if}
 						<div class="text-xs text-slate-400 mt-1 flex items-center justify-between">
@@ -257,11 +271,17 @@
 					</p>
 
 					<div class="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-						<div class="bg-black/40 backdrop-blur-md rounded-xl px-4 py-2.5 font-mono text-xs text-indigo-200 border border-indigo-500/30 flex-1 truncate flex items-center justify-between">
-							<span class="truncate">{mcpGatewayUrl}</span>
+						<div class="bg-black/40 backdrop-blur-md rounded-xl px-4 py-2.5 font-mono text-xs text-indigo-200 border border-indigo-500/30 flex-1 truncate flex items-center justify-between min-h-10">
+							{#if mcpGatewayUrl}
+								<span class="truncate">{mcpGatewayUrl}</span>
+							{:else}
+								<span class="text-slate-400 italic">Đang tải endpoint runtime...</span>
+							{/if}
 						</div>
 						<div class="flex items-center gap-2">
-							<CopyButton text={mcpGatewayUrl} classes={{ button: 'btn btn-primary btn-sm text-xs' }} />
+							{#if mcpGatewayUrl}
+								<CopyButton text={mcpGatewayUrl} classes={{ button: 'btn btn-primary btn-sm text-xs' }} />
+							{/if}
 							<a href="/domain" class="btn btn-ghost btn-sm text-white hover:bg-white/10 text-xs">
 								Chi tiết Domain
 							</a>
@@ -278,26 +298,23 @@
 							<ShieldCheck class="size-4 text-indigo-600 dark:text-indigo-400" />
 							<span>Yêu cầu kết nối Agent</span>
 						</h3>
-						<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-							E4 Ready
-						</span>
 					</div>
 					<p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
 						Chính sách <strong>Dangerous-by-default</strong> yêu cầu mọi Agent mới phải được phê duyệt tường minh trước khi nhận quyền gọi tool.
 					</p>
 				</div>
 
-				<div class="my-4 p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-center flex flex-col items-center justify-center gap-2">
-					<Lock class="size-6 text-slate-400" />
-					<span class="text-xs font-semibold text-slate-600 dark:text-slate-300">Không có yêu cầu chờ duyệt</span>
-					<span class="text-[11px] text-slate-400">Toàn bộ agent đã được cấp định danh hợp lệ.</span>
+				<div class="my-4 p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-center flex flex-col items-center justify-center gap-1.5">
+					<Lock class="size-5 text-slate-400" />
+					<span class="text-xs font-semibold text-slate-600 dark:text-slate-300">Tính năng phê duyệt kết nối</span>
+					<span class="text-[11px] text-slate-400">Quy trình Agent Approval & Pending State sẽ được kích hoạt tại Epic E4.</span>
 				</div>
 
 				<a
 					href="/agent-auth-scopes"
 					class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center justify-center gap-1 pt-1"
 				>
-					Quản lý danh tính Agent <ChevronRight class="size-3" />
+					Xem danh sách Agent Identities <ChevronRight class="size-3" />
 				</a>
 			</div>
 		</div>
@@ -335,7 +352,8 @@
 			{:else}
 				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 					{#each serverAndEntries.entries.slice(0, 6) as entry (entry.id)}
-						{@const toolCount = entry.manifest?.toolPreview?.length ?? 5}
+						{@const knownTools = entry.manifest?.toolPreview?.length}
+						{@const isCatalogConfigured = !entry.oauthCredentialConfigured && entry.manifest?.runtime === 'remote' && entry.manifest?.remoteConfig?.staticOAuthRequired ? false : true}
 						<div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
 							<div>
 								<div class="flex items-start justify-between gap-3 mb-3">
@@ -356,9 +374,15 @@
 											</span>
 										</div>
 									</div>
-									<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 shrink-0">
-										BẬT
-									</span>
+									{#if isCatalogConfigured}
+										<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 shrink-0">
+											SẴN SÀNG
+										</span>
+									{:else}
+										<span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 shrink-0">
+											CẦN AUTH
+										</span>
+									{/if}
 								</div>
 
 								<p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 min-h-8">
@@ -368,7 +392,7 @@
 
 							<div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
 								<span class="font-medium text-slate-600 dark:text-slate-300">
-									{toolCount} tools được cấp
+									{knownTools !== undefined ? `${knownTools} tools khai báo` : 'Chưa có dữ liệu tool'}
 								</span>
 								<a
 									href={`/mcp-catalog/c/${entry.id}?view=tools`}

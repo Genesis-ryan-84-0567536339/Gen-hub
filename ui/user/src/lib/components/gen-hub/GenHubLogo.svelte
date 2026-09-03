@@ -4,9 +4,10 @@
 	interface Props {
 		class?: string;
 		collapsed?: boolean;
+		variant?: 'dark' | 'light' | 'auto';
 	}
 
-	let { class: klass, collapsed = false }: Props = $props();
+	let { class: klass, collapsed = false, variant = 'auto' }: Props = $props();
 </script>
 
 <div class={twMerge('flex items-center gap-3', klass)}>
@@ -17,15 +18,26 @@
 	</div>
 	{#if !collapsed}
 		<div class="flex flex-col min-w-0">
-			<div class="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
-				<span>Gen Hub</span>
-				<span
-					class="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30"
-				>
-					v2
-				</span>
+			<div
+				class={twMerge(
+					'font-extrabold text-base tracking-tight truncate',
+					variant === 'dark' && 'text-white',
+					variant === 'light' && 'text-slate-900',
+					variant === 'auto' && 'text-slate-900 dark:text-white'
+				)}
+			>
+				Gen Hub
 			</div>
-			<div class="text-[11px] text-slate-400 font-normal truncate">Personal MCP Gateway</div>
+			<div
+				class={twMerge(
+					'text-[11px] font-normal truncate',
+					variant === 'dark' && 'text-slate-400',
+					variant === 'light' && 'text-slate-500',
+					variant === 'auto' && 'text-slate-500 dark:text-slate-400'
+				)}
+			>
+				Personal MCP Gateway
+			</div>
 		</div>
 	{/if}
 </div>

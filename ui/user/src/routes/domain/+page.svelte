@@ -16,18 +16,19 @@
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 
-	let currentHost = $state('localhost');
-	let currentOrigin = $state('http://localhost');
+	let mounted = $state(false);
+	let currentHost = $state('');
+	let currentOrigin = $state('');
 	let isHttps = $state(false);
 
 	onMount(() => {
+		mounted = true;
 		currentHost = window.location.host;
 		currentOrigin = window.location.origin;
 		isHttps = window.location.protocol === 'https:';
 	});
 
-	let mcpEndpoint = $derived(`${currentOrigin}/mcp`);
-	let oauthCallbackUrl = $derived(`${currentOrigin}/auth/oauth/callback`);
+	let mcpEndpoint = $derived(mounted && currentOrigin ? `${currentOrigin}/mcp` : '');
 </script>
 
 <svelte:head>
@@ -52,44 +53,72 @@
 		</div>
 
 		<!-- Grid of Runtime Status Cards -->
-		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-			<!-- Public Domain Card -->
-			<div class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
-				<div class="flex items-center justify-between mb-3">
-					<div class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+			<!-- Public Host Card -->
+			<div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
+				<div class="flex items-center justify-between mb-2">
+					<div class="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
 						<Globe class="size-4 text-indigo-600 dark:text-indigo-400" />
-						<span>Public Host / Domain</span>
+						<span>Current Host</span>
 					</div>
-					<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
-						<CheckCircle2 class="size-3" /> Hoạt động
-					</span>
 				</div>
-				<div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800">
-					<code class="text-sm font-mono text-slate-800 dark:text-slate-200 truncate">{currentHost}</code>
-					<CopyButton text={currentHost} />
+				<div class="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800 my-1 flex items-center justify-between">
+					{#if mounted && currentHost}
+						<code class="text-xs font-mono text-slate-800 dark:text-slate-200 truncate">{currentHost}</code>
+						<CopyButton text={currentHost} />
+					{:else}
+						<span class="text-xs text-slate-400 italic">Đang tải...</span>
+					{/if}
 				</div>
+				<div class="text-[11px] text-slate-500">Host nhận diện từ phiên truy cập hiện tại.</div>
+			</div>
+
+			<!-- DNS Status Card -->
+			<div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
+				<div class="flex items-center justify-between mb-2">
+					<div class="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+						<Terminal class="size-4 text-indigo-600 dark:text-indigo-400" />
+						<span>DNS Status</span>
+					</div>
+					<span class="text-[10px] font-semibold text-slate-400">E1 Scope</span>
+				</div>
+				<div class="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800 my-1">
+					<span class="text-xs font-medium text-slate-500 dark:text-slate-400">Chưa có dữ liệu runtime</span>
+				</div>
+				<div class="text-[11px] text-slate-500">DNS check tự động được kích hoạt tại E1.</div>
 			</div>
 
 			<!-- HTTPS Status Card -->
-			<div class="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
-				<div class="flex items-center justify-between mb-3">
-					<div class="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+			<div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
+				<div class="flex items-center justify-between mb-2">
+					<div class="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
 						<Lock class="size-4 text-indigo-600 dark:text-indigo-400" />
-						<span>Trạng thái HTTPS / SSL</span>
+						<span>HTTPS / SSL</span>
 					</div>
-					{#if isHttps}
-						<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40">
-							<CheckCircle2 class="size-3" /> Đã bảo mật (HTTPS)
-						</span>
-					{:else}
-						<span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40">
-							<AlertCircle class="size-3" /> HTTP (Môi trường cục bộ)
-						</span>
+					{#if mounted}
+						{#if isHttps}
+							<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200">
+								<CheckCircle2 class="size-3" /> HTTPS
+							</span>
+						{:else}
+							<span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200">
+								<AlertCircle class="size-3" /> HTTP
+							</span>
+						{/if}
 					{/if}
 				</div>
-				<p class="text-xs text-slate-500 dark:text-slate-400">
-					{isHttps ? 'Kết nối tới Gateway được mã hóa an toàn qua giao thức HTTPS.' : 'Đang chạy qua giao thức HTTP cục bộ. Production yêu cầu HTTPS chuẩn qua E1.'}
-				</p>
+				<div class="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3 border border-slate-100 dark:border-slate-800 my-1">
+					<span class="text-xs font-medium text-slate-700 dark:text-slate-300">
+						{#if !mounted}
+							Đang kiểm tra...
+						{:else if isHttps}
+							Đã bảo mật (HTTPS)
+						{:else}
+							HTTP / chưa có HTTPS
+						{/if}
+					</span>
+				</div>
+				<div class="text-[11px] text-slate-500">Môi trường production yêu cầu HTTPS.</div>
 			</div>
 		</div>
 
@@ -109,9 +138,13 @@
 				<label for="mcp-endpoint-input" class="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
 					Primary MCP Gateway URL
 				</label>
-				<div class="flex items-center justify-between bg-slate-900 text-slate-100 rounded-xl px-4 py-3 font-mono text-sm border border-slate-800 shadow-inner">
-					<span id="mcp-endpoint-input" class="truncate text-indigo-300 font-medium">{mcpEndpoint}</span>
-					<CopyButton text={mcpEndpoint} classes={{ button: 'btn-ghost text-white hover:bg-slate-800' }} />
+				<div class="flex items-center justify-between bg-slate-900 text-slate-100 rounded-xl px-4 py-3 font-mono text-sm border border-slate-800 shadow-inner min-h-12">
+					{#if mcpEndpoint}
+						<span id="mcp-endpoint-input" class="truncate text-indigo-300 font-medium">{mcpEndpoint}</span>
+						<CopyButton text={mcpEndpoint} classes={{ button: 'btn-ghost text-white hover:bg-slate-800' }} />
+					{:else}
+						<span class="text-slate-400 italic text-xs">Đang tải endpoint runtime...</span>
+					{/if}
 				</div>
 			</div>
 
@@ -120,13 +153,9 @@
 					<KeyRound class="size-3.5 text-slate-400" />
 					<span>OAuth Callback Redirect URI</span>
 				</label>
-				<div class="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 rounded-xl px-3 py-2 border border-slate-200 dark:border-slate-700 text-xs font-mono">
-					<span id="oauth-callback-input" class="truncate text-slate-700 dark:text-slate-300">{oauthCallbackUrl}</span>
-					<CopyButton text={oauthCallbackUrl} />
+				<div class="bg-slate-50 dark:bg-slate-800/60 rounded-xl px-3 py-2 border border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+					Chưa có dữ liệu runtime (Sẽ được cấu hình chính thức tại Epic E1 / First-run setup).
 				</div>
-				<p class="text-[11px] text-slate-500">
-					Dùng đường dẫn này để cấu hình Redirect URI trong các App tích hợp (Google Cloud Console, GitHub OAuth App, v.v.).
-				</p>
 			</div>
 		</div>
 
