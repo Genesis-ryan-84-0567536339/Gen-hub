@@ -12,32 +12,32 @@
 
 <div class={twMerge('flex items-center gap-3', klass)}>
 	<div
-		class="size-10 rounded-xl bg-gradient-to-br from-indigo-500 via-indigo-600 to-indigo-700 flex items-center justify-center text-white font-black text-xl shadow-md shadow-indigo-500/20 shrink-0"
+		class="size-9 rounded-[11px] bg-gradient-to-br from-[#7c3aed] to-[#4f46e5] flex items-center justify-center text-white font-extrabold text-base shadow-md shadow-indigo-600/30 shrink-0"
 	>
 		G
 	</div>
 	{#if !collapsed}
 		<div class="flex flex-col min-w-0">
-			<div
+			<b
 				class={twMerge(
-					'font-extrabold text-base tracking-tight truncate',
+					'text-[17px] leading-tight font-bold truncate',
 					variant === 'dark' && 'text-white',
-					variant === 'light' && 'text-slate-900',
-					variant === 'auto' && 'text-slate-900 dark:text-white'
+					variant === 'light' && 'text-[#172033]',
+					variant === 'auto' && 'text-[#172033] dark:text-white'
 				)}
 			>
 				Gen Hub
-			</div>
-			<div
+			</b>
+			<small
 				class={twMerge(
-					'text-[11px] font-normal truncate',
-					variant === 'dark' && 'text-slate-400',
-					variant === 'light' && 'text-slate-500',
-					variant === 'auto' && 'text-slate-500 dark:text-slate-400'
+					'text-xs leading-none truncate mt-0.5',
+					variant === 'dark' && 'text-[#9ca3af]',
+					variant === 'light' && 'text-[#6b7280]',
+					variant === 'auto' && 'text-[#6b7280] dark:text-[#9ca3af]'
 				)}
 			>
-				Personal MCP Gateway
-			</div>
+				MCP Gateway
+			</small>
 		</div>
 	{/if}
 </div>

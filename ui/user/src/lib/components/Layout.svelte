@@ -4,6 +4,7 @@
 	type NavLink = {
 		id: string;
 		href?: string;
+		iconSymbol?: string;
 		icon?: Component;
 		label: string;
 		disabled?: boolean;
@@ -53,7 +54,6 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { columnResize } from '$lib/actions/resize';
-	import Navbar from '$lib/components/Navbar.svelte';
 	import GenHubLogo from '$lib/components/gen-hub/GenHubLogo.svelte';
 	import {
 		ADMIN_AGENT_DISABLED_MESSAGE,
@@ -170,22 +170,6 @@
 		localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify(navCollapsed));
 	}
 
-	function navSectionSlide(
-		node: Element,
-		{ id, axis = 'y' }: { id: string; axis?: 'x' | 'y' }
-	): TransitionConfig {
-		if (animatingNavSectionId !== id) {
-			return { duration: 0 };
-		}
-		return slide(node, { axis, duration: 200 });
-	}
-
-	function clearNavSectionAnimation(id: string) {
-		if (animatingNavSectionId === id) {
-			animatingNavSectionId = null;
-		}
-	}
-
 	type LayoutContext = {
 		initLayout: () => void;
 		getLayout: () => LayoutState;
@@ -276,51 +260,47 @@
 	);
 
 	let isBootStrapUser = $derived(profile.current.isBootstrapUser?.() ?? false);
-	let isAtLeastPowerUser = $derived(profile.current.groups.includes(Group.POWERUSER));
-	let isAtLeastPowerUserPlus = $derived(profile.current.groups.includes(Group.POWERUSER_PLUS));
-
-	let hasAccessibleModels = $derived(accessibleModels.current.length > 0);
 	let hasLicenseEntitlementViolations = $derived(
 		(version.current.licenseEntitlementViolations?.length ?? 0) > 0
 	);
 	const isNearUserLimit = $derived(validateVersionUserLimit(version.current));
 
-	// Gen Hub Standard Navigation Hierarchy (Prototype v2 SSOT)
+	// Prototype HTML SSOT Navigation Hierarchy (6 items exact)
 	let genHubPrimaryLinks = $derived<NavLink[]>([
 		{
-			id: 'genhub-dashboard',
-			icon: LayoutDashboard,
+			id: 'dashboard',
+			iconSymbol: '⌂',
 			label: 'Tổng quan',
 			href: '/admin/dashboard'
 		},
 		{
-			id: 'genhub-mcp-catalog',
-			icon: RadioTower,
+			id: 'mcp',
+			iconSymbol: '◫',
 			label: 'Kho MCP',
 			href: '/mcp-catalog'
 		},
 		{
-			id: 'genhub-agents',
-			icon: Users,
+			id: 'agents',
+			iconSymbol: '◎',
 			label: 'Agent kết nối',
 			href: '/agent-auth-scopes'
 		},
 		{
-			id: 'genhub-vault',
-			icon: Shield,
+			id: 'vault',
+			iconSymbol: '▣',
 			label: 'Két bảo mật',
 			href: '/vault'
 		},
 		{
-			id: 'genhub-audit',
-			icon: ScrollText,
-			label: 'Audit / Activity',
+			id: 'activity',
+			iconSymbol: '≡',
+			label: 'Lịch sử hoạt động',
 			href: '/admin/audit-logs'
 		},
 		{
-			id: 'genhub-domain',
-			icon: Globe,
-			label: 'Domain & Endpoint',
+			id: 'settings',
+			iconSymbol: '⚙',
+			label: 'Domain & Cài đặt',
 			href: '/domain'
 		}
 	]);
@@ -766,21 +746,21 @@
 	});
 </script>
 
-<div class="flex min-h-dvh items-center bg-[#f5f7fb] text-slate-800 dark:bg-slate-950 dark:text-slate-100">
+<div class="flex min-h-screen bg-[#f5f7fb] text-[#172033] dark:bg-slate-950 dark:text-slate-100">
 	<div class="relative flex min-w-0 grow">
 		{#if leftSidebar}
 			{@render leftSidebar()}
 		{:else if layout.sidebarOpen && !hideSidebar}
 			<aside
 				class={twMerge(
-					'bg-[#111827] text-slate-200 flex max-h-dvh w-full min-w-dvw shrink-0 flex-col md:w-[250px] md:max-w-[260px] md:min-w-[240px] border-r border-slate-800 shadow-xl z-30',
+					'bg-[#111827] text-[#e5e7eb] flex max-h-screen w-full min-w-full shrink-0 flex-col md:w-[248px] md:max-w-[248px] md:min-w-[248px] p-5 pt-5 pb-5 z-30 sticky top-0 h-screen',
 					classes?.sidebarRoot
 				)}
 				transition:slide={{ axis: 'x' }}
 				bind:this={nav}
 			>
 				<!-- Brand Header -->
-				<div class="flex h-[72px] shrink-0 items-center justify-between px-5 border-b border-slate-800/80">
+				<div class="flex items-center justify-between pb-[22px] px-2.5">
 					<GenHubLogo variant="dark" />
 					{#if responsive.isMobile}
 						<IconButton
@@ -797,7 +777,7 @@
 				<div
 					bind:this={sidebarScroll}
 					class={twMerge(
-						'scrollbar-default-thin flex max-h-[calc(100vh-72px)] grow flex-col gap-1 overflow-y-auto p-3 font-medium',
+						'scrollbar-default-thin flex max-h-[calc(100vh-140px)] grow flex-col gap-1.5 overflow-y-auto font-medium',
 						classes?.sidebar
 					)}
 				>
@@ -822,10 +802,6 @@
 						</div>
 					{:else}
 						<div class="flex flex-col gap-1 h-full">
-							<div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 pt-2 pb-1.5">
-								Điều phối Gateway
-							</div>
-
 							{#each genHubPrimaryLinks as link (link.id)}
 								{@render navLink(link)}
 							{/each}
@@ -833,13 +809,13 @@
 							<div class="flex grow"></div>
 
 							{#if advancedManagementLinks.length > 0}
-								<div class="border-t border-slate-800/80 pt-2 mt-2">
+								<div class="border-t border-[#293244] pt-2 mt-2">
 									<button
 										id="advanced-settings-btn"
-										class="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 rounded-xl transition-colors"
+										class="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-[#1f2937] rounded-[10px] transition-colors font-semibold"
 										onclick={() => (showAdvancedPane = true)}
 									>
-										<Settings class="size-4 shrink-0" />
+										<span class="w-[22px] text-center text-sm font-normal">⚙</span>
 										<span class="truncate">Hạ tầng mở rộng (Obot)</span>
 									</button>
 								</div>
@@ -848,17 +824,11 @@
 					{/if}
 				</div>
 
-				{#if !responsive.isMobile}
-					<div class="flex justify-end p-2 border-t border-slate-800/60">
-						<IconButton
-							tooltip={{ text: 'Thu gọn Sidebar' }}
-							onclick={() => (layout.sidebarOpen = false)}
-							class="text-slate-500 hover:text-slate-300"
-						>
-							<PanelLeftClose class="size-5" />
-						</IconButton>
-					</div>
-				{/if}
+				<!-- Aside Foot -->
+				<div class="mt-auto pt-3 px-2.5 border-t border-[#293244] text-[#9ca3af] text-[12px] leading-relaxed">
+					Gen Hub · Personal MCP Gateway<br />
+					Nền tảng Obot Open Source
+				</div>
 			</aside>
 			{#if !responsive.isMobile && !disableResize}
 				<div
@@ -900,15 +870,15 @@
 				{:else if canShowCommunitySignup}
 					<CommunitySignupBanner onDismiss={handleDismissCommunitySignupBanner} />
 				{/if}
-				<header class="h-[72px] bg-white dark:bg-slate-900 border-b border-slate-200/80 dark:border-slate-800 px-6 flex items-center justify-between shadow-xs">
-					<div class="flex items-center gap-3">
+				<header class="h-[72px] bg-white/88 backdrop-blur-md dark:bg-slate-900/90 border-b border-[#e6e9ef] dark:border-slate-800 px-7 flex items-center justify-between shadow-xs">
+					<div class="flex items-center gap-2.5">
 						{#if !layout.sidebarOpen || hideSidebar}
 							<IconButton
 								class="w-fit mr-2"
 								tooltip={{ text: 'Mở Menu', placement: 'right' }}
 								onclick={() => (layout.sidebarOpen = true)}
 							>
-								<Menu class="size-6 text-slate-700 dark:text-slate-300" />
+								<Menu class="size-6 text-[#374151] dark:text-slate-300" />
 							</IconButton>
 							<GenHubLogo variant="auto" />
 						{/if}
@@ -927,25 +897,36 @@
 							</IconButton>
 						{/if}
 						<div class="flex flex-col">
-							{#if subtitle}
-								<span class="text-[11px] font-medium text-slate-400 dark:text-slate-500">{subtitle}</span>
-							{/if}
-							<h1 class="text-lg font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+							<h1 class="text-[19px] font-bold text-[#172033] dark:text-white leading-tight flex items-center gap-2">
 								{#if titleContent}
 									{@render titleContent()}
 								{:else}
-									{title || 'Gen Hub'}
+									{title || 'Tổng quan'}
 								{/if}
 							</h1>
+							<p class="text-xs text-[#6b7280] dark:text-slate-400 mt-[3px]">
+								{subtitle || 'Một cổng MCP duy nhất cho toàn bộ agent của bạn'}
+							</p>
 						</div>
 					</div>
 
 					<div class="flex items-center gap-3">
+						<!-- Prototype Top Actions: Chip & Avatar -->
+						<div class="hidden sm:inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-bold bg-[#ecfdf3] text-[#137333] dark:bg-emerald-950/40 dark:text-emerald-400">
+							<span class="size-2 rounded-full bg-[#16a34a] shadow-[0_0_0_4px_rgba(22,163,74,0.10)]"></span>
+							<span>Gateway hoạt động</span>
+						</div>
+
 						{#if rightNavActions}
 							{@render rightNavActions()}
 						{/if}
+
 						{#if !hideProfileButton}
 							<Profile />
+						{:else}
+							<div class="size-9 rounded-full bg-[#e5e7eb] dark:bg-slate-800 flex items-center justify-center font-extrabold text-[#374151] dark:text-slate-200 text-sm">
+								R
+							</div>
 						{/if}
 					</div>
 				</header>
@@ -953,13 +934,13 @@
 
 			<div
 				class={twMerge(
-					'flex flex-1 flex-col items-center justify-start p-6 md:p-8',
+					'flex flex-1 flex-col items-center justify-start p-6 md:p-[26px]',
 					classes?.container
 				)}
 			>
 				<div
 					class={twMerge(
-						'flex h-full w-full max-w-7xl flex-col',
+						'flex h-full w-full max-w-[1500px] flex-col',
 						classes?.childrenContainer ?? ''
 					)}
 				>
@@ -982,7 +963,7 @@
 			<IconButton
 				onclick={() => (layout.sidebarOpen = true)}
 				tooltip={{ text: 'Mở Menu Sidebar' }}
-				class="bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 size-10 rounded-full"
+				class="bg-[#4f46e5] text-white shadow-lg hover:bg-indigo-700 size-10 rounded-full"
 			>
 				<PanelLeftOpen class="size-5" />
 			</IconButton>
@@ -1013,11 +994,11 @@
 {/snippet}
 
 {#snippet navLink(link: NavLink)}
-	{@const isActive = link.href && (pathname === link.href || pathname.startsWith(`${link.href}/`))}
+	{@const isActive = link.href && (pathname === link.href || (link.href !== '/admin/dashboard' && pathname.startsWith(`${link.href}/`)))}
 	<div class="flex flex-col">
 		{#if link.collapsible && !link.href}
 			<button
-				class="flex w-full items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800/80 hover:text-white transition-colors"
+				class="flex w-full items-center justify-between px-3 py-2.5 rounded-[10px] text-xs font-semibold text-[#cbd5e1] hover:bg-[#1f2937] hover:text-white transition-colors"
 				onclick={() => toggleNavCollapsed(link.id)}
 				id={`sidebar-collapse-${link.id}`}
 			>
@@ -1040,14 +1021,16 @@
 				id={`sidebar-link-${link.id}`}
 				href={resolve(link.href as `/${string}`)}
 				class={twMerge(
-					'flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors',
+					'flex items-center gap-2.5 px-3 py-[11px] rounded-[10px] text-[13px] font-[650] transition-colors',
 					isActive
-						? 'bg-indigo-600 text-white font-semibold shadow-xs'
-						: 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
+						? 'bg-[#292f43] text-white'
+						: 'text-[#cbd5e1] hover:bg-[#1f2937] hover:text-white'
 				)}
 				onclick={saveSidebarScroll}
 			>
-				{#if link.icon}
+				{#if link.iconSymbol}
+					<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0">{link.iconSymbol}</span>
+				{:else if link.icon}
 					<link.icon class={twMerge('size-4', isActive ? 'text-white' : 'text-slate-400')} />
 				{/if}
 				<span class="truncate">{link.label}</span>

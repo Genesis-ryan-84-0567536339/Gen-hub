@@ -4,12 +4,7 @@
 	import Layout from '$lib/components/Layout.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import TweenedMetric from '$lib/components/TweenedMetric.svelte';
-	import TokenUsageTimelineCard from '$lib/components/admin/token-usage/TokenUsageTimelineCard.svelte';
-	import { formatTokenUsageUSD } from '$lib/components/admin/token-usage/tokenUsageTimeline';
 	import { DEFAULT_MCP_CATALOG_ID } from '$lib/constants';
-	import { formatNumber } from '$lib/format';
-	import Loading from '$lib/icons/Loading.svelte';
-	import { stripMarkdownToText } from '$lib/markdown';
 	import {
 		AdminService,
 		UserService,
@@ -19,33 +14,14 @@
 	} from '$lib/services';
 	import type { TopServerUsageRow, TopToolCallRow } from '$lib/services/dashboard/types';
 	import {
-		avgToolCallResponseTimeFromStats,
 		compileServerAndEntries,
 		topServersFromStats,
 		topToolCallsFromStats
 	} from '$lib/services/dashboard/utils';
-	import { getMCPDisplayName } from '$lib/services/user/mcp';
-	import { errors, mcpServersAndEntries, profile, version } from '$lib/stores';
-	import {
-		Activity,
-		ChevronRight,
-		CircleDollarSign,
-		Coins,
-		RadioTower,
-		Server,
-		ShieldAlert,
-		Users,
-		Wrench,
-		ArrowUpRight,
-		ShieldCheck,
-		Lock,
-		CheckCircle2,
-		AlertCircle,
-		Sparkles
-	} from '@lucide/svelte';
-	import { isWithinInterval, subMonths } from 'date-fns';
+	import { errors, mcpServersAndEntries } from '$lib/stores';
+	import { subMonths } from 'date-fns';
 	import { onMount } from 'svelte';
-	import { fade, fly } from 'svelte/transition';
+	import { fade } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
 
 	let loading = $state(true);
@@ -90,23 +66,9 @@
 	});
 
 	const serverAndEntries = $derived(mcpServersAndEntries.current);
-	const { popularServers, totalServers } = $derived(
+	const { totalServers } = $derived(
 		compileServerAndEntries(serversData, serverAndEntries.entries, false)
 	);
-
-	let totalKnownTools = $derived.by<number | null>(() => {
-		if (serverAndEntries.loading || loading) return null;
-		let count = 0;
-		let hasKnownPreviews = false;
-		for (const entry of serverAndEntries.entries) {
-			const preview = entry.manifest?.toolPreview;
-			if (preview && preview.length > 0) {
-				count += preview.length;
-				hasKnownPreviews = true;
-			}
-		}
-		return hasKnownPreviews ? count : null;
-	});
 
 	let todayToolCalls = $derived.by<number | null>(() => {
 		if (loadingToolUsage) return null;
@@ -165,241 +127,224 @@
 			label: 'MCP ĐANG BẬT',
 			value: serverAndEntries.entries.length,
 			loading: serverAndEntries.loading || loading,
-			icon: RadioTower,
-			color: 'text-indigo-600 dark:text-indigo-400',
-			bgColor: 'bg-indigo-50 dark:bg-indigo-950/40',
-			href: '/mcp-catalog',
-			sublabel: `${totalServers} server instance đang triển khai`
+			sub: `trên tổng số ${totalServers || serverAndEntries.entries.length} dịch vụ`
 		},
 		{
 			id: 'connected-agents',
-			label: 'AGENT KẾT NỐI',
+			label: 'AGENT ĐÃ DUYỆT',
 			value: usersData.length,
 			loading,
-			icon: Users,
-			color: 'text-emerald-600 dark:text-emerald-400',
-			bgColor: 'bg-emerald-50 dark:bg-emerald-950/40',
-			href: '/agent-auth-scopes',
-			sublabel: 'Agent identities / API Keys'
-		},
-		{
-			id: 'granted-tools',
-			label: 'TOOL ĐANG CẤP',
-			value: totalKnownTools,
-			loading: serverAndEntries.loading || loading,
-			icon: Wrench,
-			color: 'text-blue-600 dark:text-blue-400',
-			bgColor: 'bg-blue-50 dark:bg-blue-950/40',
-			href: '/mcp-catalog',
-			sublabel: totalKnownTools !== null ? 'Tool khai báo trong catalog' : 'Chưa có dữ liệu runtime'
+			sub: 'kết nối qua gateway'
 		},
 		{
 			id: 'today-calls',
-			label: 'TOOL CALLS (30 NGÀY)',
+			label: 'TOOL CALL HÔM NAY',
 			value: todayToolCalls,
 			loading: loadingToolUsage,
-			icon: Activity,
-			color: 'text-amber-600 dark:text-amber-400',
-			bgColor: 'bg-amber-50 dark:bg-amber-950/40',
-			href: '/admin/audit-logs',
-			sublabel: 'Ghi nhận từ Audit log native'
+			sub: todayToolCalls !== null ? 'ghi nhận từ audit log' : 'chưa có dữ liệu'
+		},
+		{
+			id: 'vault-count',
+			label: 'CREDENTIAL',
+			value: serverAndEntries.entries.filter((e) => e.oauthCredentialConfigured).length,
+			loading: serverAndEntries.loading || loading,
+			sub: 'được lưu trong vault'
 		}
 	]);
+
+	function getMcpIcon(name: string): string {
+		const lower = name.toLowerCase();
+		if (lower.includes('git')) return '◉';
+		if (lower.includes('drive')) return '△';
+		if (lower.includes('search')) return '⌕';
+		if (lower.includes('postgre') || lower.includes('db') || lower.includes('data')) return 'DB';
+		if (lower.includes('file')) return '▤';
+		if (lower.includes('mail')) return 'M';
+		if (lower.includes('cal')) return '17';
+		if (lower.includes('slack')) return '#';
+		return '◈';
+	}
 </script>
 
 <svelte:head>
 	<title>Gen Hub | Tổng quan</title>
 </svelte:head>
 
-<Layout title="Tổng quan" subtitle="Trung tâm Giám sát Cổng Composite MCP">
-	<div class="flex flex-col gap-6 w-full max-w-7xl" in:fade={{ duration: 150 }}>
+<Layout title="Tổng quan" subtitle="Một cổng MCP duy nhất cho toàn bộ agent của bạn">
+	<div class="flex flex-col gap-5 w-full" in:fade={{ duration: 150 }}>
 		<!-- 4 Stat Cards Top Row -->
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 			{#each statCards as stat (stat.id)}
-				<a
-					href={resolve(stat.href as `/${string}`)}
-					class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all duration-200 hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between group"
-				>
-					<div class="flex items-center justify-between">
-						<span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 tracking-wider uppercase">
-							{stat.label}
-						</span>
-						<div class={twMerge('size-8 rounded-xl flex items-center justify-center', stat.bgColor)}>
-							<stat.icon class={twMerge('size-4', stat.color)} />
-						</div>
+				<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-[18px] shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between">
+					<div class="text-[12px] text-[#6b7280] dark:text-slate-400 font-bold tracking-wider uppercase">
+						{stat.label}
 					</div>
-					<div class="mt-4">
+					<div class="text-[28px] font-extrabold my-2 text-[#172033] dark:text-white tracking-tight">
 						{#if stat.loading}
 							<div class="skeleton h-8 w-16 rounded-md"></div>
 						{:else if stat.value !== null}
-							<div class="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-								<TweenedMetric target={stat.value} />
-							</div>
+							<TweenedMetric target={stat.value} />
 						{:else}
-							<div class="text-2xl font-bold text-slate-400 dark:text-slate-500 tracking-tight">
-								—
-							</div>
+							<span class="text-slate-400">—</span>
 						{/if}
-						<div class="text-xs text-slate-400 mt-1 flex items-center justify-between">
-							<span>{stat.sublabel}</span>
-							<ChevronRight class="size-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400" />
-						</div>
 					</div>
-				</a>
+					<div class="text-[12px] text-[#6b7280] dark:text-slate-400 truncate">
+						{stat.sub}
+					</div>
+				</div>
 			{/each}
 		</div>
 
-		<!-- Middle Row: Composite Gateway Banner & Pending Connection Card -->
-		<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-			<!-- Composite Gateway Card (8 cols) -->
-			<div class="lg:col-span-8 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-950 p-6 text-white shadow-md flex flex-col justify-between relative overflow-hidden">
-				<div class="absolute -right-10 -bottom-10 size-60 rounded-full bg-indigo-500/10 blur-2xl pointer-events-none"></div>
-				<div class="relative z-10">
-					<div class="flex items-center gap-2 mb-2">
-						<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider uppercase bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
-							SSOT GATEWAY
-						</span>
-						<span class="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
-							<CheckCircle2 class="size-3.5" /> Sẵn sàng kết nối
-						</span>
-					</div>
-					<h2 class="text-xl font-bold tracking-tight text-white mb-2">
-						Composite MCP Gateway
-					</h2>
-					<p class="text-xs text-indigo-200/80 max-w-xl leading-relaxed">
-						Mọi AI Agent và IDE (Cursor, VS Code, Windsurf) chỉ cần kết nối vào <strong>một Endpoint MCP duy nhất</strong>. Hub tự động điều phối quyền gọi tool, giữ kín secret nguồn và ghi nhận toàn bộ audit trail.
-					</p>
-
-					<div class="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-						<div class="bg-black/40 backdrop-blur-md rounded-xl px-4 py-2.5 font-mono text-xs text-indigo-200 border border-indigo-500/30 flex-1 truncate flex items-center justify-between min-h-10">
-							{#if mcpGatewayUrl}
-								<span class="truncate">{mcpGatewayUrl}</span>
-							{:else}
-								<span class="text-slate-400 italic">Đang tải endpoint runtime...</span>
-							{/if}
-						</div>
-						<div class="flex items-center gap-2">
-							{#if mcpGatewayUrl}
-								<CopyButton text={mcpGatewayUrl} classes={{ button: 'btn btn-primary btn-sm text-xs' }} />
-							{/if}
-							<a href="/domain" class="btn btn-ghost btn-sm text-white hover:bg-white/10 text-xs">
-								Chi tiết Domain
-							</a>
-						</div>
-					</div>
-				</div>
+		<!-- Gateway Section: Ổ cắm tổng MCP -->
+		<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-5 shadow-[0_2px_10px_rgba(31,41,55,0.03)] grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+			<div class="lg:col-span-6 flex flex-col gap-1.5">
+				<h3 class="text-[18px] font-bold text-[#172033] dark:text-white m-0">Ổ cắm tổng MCP</h3>
+				<p class="text-[13px] text-[#6b7280] dark:text-slate-400 m-0 leading-relaxed">
+					Agent chỉ kết nối vào endpoint này. Gen Hub sẽ tự định tuyến tới GitHub, Google Drive, Database, Search và các MCP khác theo quyền bạn cấp.
+				</p>
 			</div>
-
-			<!-- Pending Agent Requests (4 cols) -->
-			<div class="lg:col-span-4 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
-				<div>
-					<div class="flex items-center justify-between mb-3">
-						<h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-							<ShieldCheck class="size-4 text-indigo-600 dark:text-indigo-400" />
-							<span>Yêu cầu kết nối Agent</span>
-						</h3>
-					</div>
-					<p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-						Chính sách <strong>Dangerous-by-default</strong> yêu cầu mọi Agent mới phải được phê duyệt tường minh trước khi nhận quyền gọi tool.
-					</p>
+			<div class="lg:col-span-6 flex flex-col gap-1.5">
+				<div class="bg-[#0f172a] text-[#e2e8f0] p-3.5 rounded-xl flex items-center gap-2.5 overflow-hidden">
+					<code class="font-mono text-xs truncate flex-1 text-slate-200">
+						{#if mcpGatewayUrl}
+							{mcpGatewayUrl}
+						{:else}
+							<span class="text-slate-400 italic">Đang tải endpoint runtime...</span>
+						{/if}
+					</code>
+					{#if mcpGatewayUrl}
+						<CopyButton
+							text={mcpGatewayUrl}
+							classes={{ button: 'border-0 bg-[#27324a] text-white rounded-lg px-2.5 py-1.5 font-bold text-xs hover:bg-[#344262]' }}
+						/>
+					{/if}
 				</div>
-
-				<div class="my-4 p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-center flex flex-col items-center justify-center gap-1.5">
-					<Lock class="size-5 text-slate-400" />
-					<span class="text-xs font-semibold text-slate-600 dark:text-slate-300">Tính năng phê duyệt kết nối</span>
-					<span class="text-[11px] text-slate-400">Quy trình Agent Approval & Pending State sẽ được kích hoạt tại Epic E4.</span>
+				<div class="text-[12px] text-[#6b7280] dark:text-slate-400">
+					Domain đang cấu hình theo runtime. Cấu hình chi tiết ở mục “Domain & Cài đặt”.
 				</div>
-
-				<a
-					href="/agent-auth-scopes"
-					class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center justify-center gap-1 pt-1"
-				>
-					Xem danh sách Agent Identities <ChevronRight class="size-3" />
-				</a>
 			</div>
 		</div>
 
-		<!-- Active MCPs Grid Section -->
-		<div class="flex flex-col gap-4">
+		<!-- Pending Agent Requests Section -->
+		<div class="flex flex-col gap-3 mt-1">
 			<div class="flex items-center justify-between">
 				<div>
-					<h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-						<RadioTower class="size-5 text-indigo-600 dark:text-indigo-400" />
-						<span>MCP Đang Hoạt Động Trên Hub</span>
-					</h3>
-					<p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-						Danh mục MCP được cấp quyền qua Composite Gateway cho các Agent.
-					</p>
+					<h2 class="text-[16px] font-bold text-[#172033] dark:text-white m-0">Yêu cầu kết nối mới</h2>
+					<p class="text-[12px] text-[#6b7280] dark:text-slate-400 mt-1 m-0">Agent mới phải được bạn duyệt trước khi nhìn thấy tool.</p>
+				</div>
+				<a
+					href="/agent-auth-scopes"
+					class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-200 px-3 py-1.5 rounded-[10px] font-bold text-[12px] hover:bg-[#f8fafc]"
+				>
+					Xem tất cả
+				</a>
+			</div>
+
+			<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-[18px] shadow-[0_2px_10px_rgba(31,41,55,0.03)]">
+				<div class="flex flex-col sm:flex-row items-start gap-3.5">
+					<div class="size-11 rounded-[13px] bg-[#111827] text-white flex items-center justify-center font-black text-lg shrink-0">
+						A
+					</div>
+					<div class="flex-1 min-w-0">
+						<h4 class="text-[14px] font-bold text-[#172033] dark:text-white m-0 truncate">
+							Antigravity IDE · Máy Fedora (Mẫu kết nối)
+						</h4>
+						<div class="text-[12px] text-[#6b7280] dark:text-slate-400 mt-0.5">
+							Quy trình Agent Approval & Pending State sẽ được kết nối hoàn chỉnh tại Epic E4.
+						</div>
+
+						<div class="flex flex-wrap gap-2 mt-3">
+							<span class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold">GitHub</span>
+							<span class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold">Google Drive</span>
+							<span class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold">Web Search</span>
+							<span class="px-2.5 py-1.5 border border-[#e6e9ef] dark:border-slate-800 rounded-lg text-xs bg-[#fafafa] dark:bg-slate-800 text-slate-500">Database</span>
+							<span class="px-2.5 py-1.5 border border-[#e6e9ef] dark:border-slate-800 rounded-lg text-xs bg-[#fafafa] dark:bg-slate-800 text-slate-500">Filesystem</span>
+						</div>
+
+						<div class="flex flex-wrap gap-2 mt-3.5">
+							<button class="bg-[#4f46e5] border border-[#4f46e5] text-white px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed" disabled>
+								Duyệt kết nối (Kích hoạt ở E4)
+							</button>
+							<button class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-300 px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed" disabled>
+								Cấp toàn bộ tool
+							</button>
+							<button class="border border-[#fecaca] bg-[#fef2f2] text-[#dc2626] px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed" disabled>
+								Từ chối
+							</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Active MCPs Section: MCP đang dùng -->
+		<div class="flex flex-col gap-3 mt-1">
+			<div class="flex items-center justify-between">
+				<div>
+					<h2 class="text-[16px] font-bold text-[#172033] dark:text-white m-0">MCP đang dùng</h2>
+					<p class="text-[12px] text-[#6b7280] dark:text-slate-400 mt-1 m-0">Bật/tắt trực tiếp từ trung tâm.</p>
 				</div>
 				<a
 					href="/mcp-catalog"
-					class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+					class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-200 px-3 py-1.5 rounded-[10px] font-bold text-[12px] hover:bg-[#f8fafc]"
 				>
-					Xem toàn bộ kho MCP ({serverAndEntries.entries.length}) <ChevronRight class="size-3" />
+					Quản lý MCP
 				</a>
 			</div>
 
 			{#if serverAndEntries.loading}
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
 					{#each Array.from({ length: 3 }) as _, i (i)}
-						<Skeleton type="card" class="h-44 rounded-2xl" />
+						<Skeleton type="card" class="h-32 rounded-2xl" />
 					{/each}
 				</div>
 			{:else if serverAndEntries.entries.length === 0}
-				<div class="rounded-2xl border border-slate-200/80 bg-white p-12 text-center text-slate-400 dark:border-slate-800 dark:bg-slate-900">
+				<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-400">
 					Chưa có MCP Catalog Entry nào được khởi tạo.
 				</div>
 			{:else}
-				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+				<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
 					{#each serverAndEntries.entries.slice(0, 6) as entry (entry.id)}
-						{@const knownTools = entry.manifest?.toolPreview?.length}
-						{@const isCatalogConfigured = !entry.oauthCredentialConfigured && entry.manifest?.runtime === 'remote' && entry.manifest?.remoteConfig?.staticOAuthRequired ? false : true}
-						<div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
-							<div>
-								<div class="flex items-start justify-between gap-3 mb-3">
-									<div class="flex items-center gap-3 min-w-0">
+						{@const name = entry.manifest?.name || entry.id}
+						{@const desc = entry.manifest?.description || 'Dịch vụ kết nối tích hợp'}
+						{@const isConfigured = entry.oauthCredentialConfigured || !entry.manifest?.remoteConfig?.staticOAuthRequired}
+						<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-4 shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between">
+							<div class="flex justify-between items-start gap-3">
+								<div class="flex gap-2.5 min-w-0">
+									<div class="size-[38px] rounded-[10px] bg-[#f3f4f6] dark:bg-slate-800 flex items-center justify-center text-[19px] font-bold text-slate-700 dark:text-slate-200 shrink-0">
 										{#if entry.manifest?.icon}
-											<img src={entry.manifest.icon} alt={entry.manifest.name} class="size-9 rounded-xl p-1 bg-slate-100 dark:bg-slate-800 shrink-0" />
+											<img src={entry.manifest.icon} alt={name} class="size-6 object-contain" />
 										{:else}
-											<div class="size-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 flex items-center justify-center shrink-0">
-												<Server class="size-5" />
-											</div>
+											{getMcpIcon(name)}
 										{/if}
-										<div class="flex flex-col min-w-0">
-											<h4 class="text-sm font-bold text-slate-900 dark:text-white truncate">
-												{entry.manifest?.name || entry.id}
-											</h4>
-											<span class="text-[11px] text-slate-400 truncate">
-												{entry.manifest?.runtime === 'composite' ? 'Composite Layer' : 'Remote MCP'}
-											</span>
-										</div>
 									</div>
-									{#if isCatalogConfigured}
-										<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 shrink-0">
-											SẴN SÀNG
-										</span>
-									{:else}
-										<span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40 shrink-0">
-											CẦN AUTH
-										</span>
-									{/if}
+									<div class="flex flex-col min-w-0">
+										<h4 class="text-[14px] font-bold text-[#172033] dark:text-white m-0 truncate leading-tight">
+											{name}
+										</h4>
+										<small class="text-xs text-[#6b7280] dark:text-slate-400 truncate mt-0.5">
+											{desc}
+										</small>
+									</div>
 								</div>
 
-								<p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 min-h-8">
-									{entry.manifest?.description || 'Dịch vụ kết nối tích hợp trong hệ thống Gateway.'}
-								</p>
+								<!-- Switch visual element (Read-only / disabled in E2) -->
+								<div class="relative w-[42px] h-6 bg-[#4f46e5] rounded-full shrink-0" title="Chính sách bật/tắt MCP sẽ kết nối tại E3">
+									<div class="absolute top-[3px] left-[21px] size-[18px] bg-white rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"></div>
+								</div>
 							</div>
 
-							<div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
-								<span class="font-medium text-slate-600 dark:text-slate-300">
-									{knownTools !== undefined ? `${knownTools} tools khai báo` : 'Chưa có dữ liệu tool'}
+							<div class="flex justify-between items-center mt-3.5 pt-3 border-t border-[#e6e9ef] dark:border-slate-800 text-xs text-[#6b7280] dark:text-slate-400">
+								<span class="text-[#16a34a] font-bold flex items-center gap-1">
+									● Đang hoạt động
 								</span>
-								<a
-									href={`/mcp-catalog/c/${entry.id}?view=tools`}
-									class="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1"
-								>
-									Quản lý tool <ChevronRight class="size-3" />
-								</a>
+								<span class="truncate">
+									{#if isConfigured}
+										Đã kết nối
+									{:else}
+										Cần cấu hình
+									{/if}
+								</span>
 							</div>
 						</div>
 					{/each}
