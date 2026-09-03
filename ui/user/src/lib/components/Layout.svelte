@@ -359,7 +359,12 @@
 								href: '/agent',
 								label: 'Khởi chạy Agent (Obot)',
 								collapsible: false,
-								disabled: isBootStrapUser || !agentLinkEnabled
+								disabled: isBootStrapUser || !agentLinkEnabled,
+								note: !agentLinkEnabled
+									? profile.current.hasAdminAccess?.()
+										? renderAdminAgentDisabledNote
+										: renderUserAgentDisabledNote
+									: undefined
 							}
 						]
 					: [])
@@ -1056,6 +1061,14 @@
 	{/if}
 {/snippet}
 
+{#snippet renderAdminAgentDisabledNote()}
+	<p class="mt-1 text-sm">{ADMIN_AGENT_DISABLED_MESSAGE}</p>
+{/snippet}
+
+{#snippet renderUserAgentDisabledNote()}
+	<p class="mt-1 text-sm">{USER_AGENT_DISABLED_MESSAGE}</p>
+{/snippet}
+
 {#snippet navLink(link: NavLink)}
 	{@const isActive = link.href && (pathname === link.href || (link.href !== '/admin/dashboard' && pathname.startsWith(`${link.href}/`)))}
 	<div class="flex flex-col">
@@ -1079,7 +1092,7 @@
 					{/if}
 				</div>
 			</button>
-		{:else if link.href}
+		{:else if link.href && !link.disabled}
 			<a
 				id={`sidebar-link-${link.id}`}
 				href={resolve(link.href as `/${string}`)}
@@ -1099,11 +1112,20 @@
 				<span class="truncate">{link.label}</span>
 			</a>
 		{:else}
-			<div class="flex items-center gap-2.5 px-3 py-2.5 text-xs text-slate-500 cursor-not-allowed">
-				{#if link.icon}
-					<link.icon class="size-4" />
+			<div class="flex items-center justify-between px-3 py-2.5 text-xs text-slate-500 cursor-not-allowed">
+				<div class="flex items-center gap-2.5 min-w-0">
+					{#if link.iconSymbol}
+						<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0">{link.iconSymbol}</span>
+					{:else if link.icon}
+						<link.icon class="size-4 text-slate-500" />
+					{/if}
+					<span class="truncate">{link.label}</span>
+				</div>
+				{#if link.note}
+					<InfoTooltip>
+						{@render link.note()}
+					</InfoTooltip>
 				{/if}
-				<span>{link.label}</span>
 			</div>
 		{/if}
 
@@ -1111,18 +1133,32 @@
 			<div class="flex flex-col pl-7 pr-2 py-1 gap-0.5">
 				{#each link.items as item (item.href)}
 					{@const isSubActive = item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))}
-					<a
-						id={`sidebar-sublink-${item.id}`}
-						href={resolve(item.href as `/${string}`)}
-						class={twMerge(
-							'px-2.5 py-1.5 rounded-lg text-[11px] font-normal transition-colors truncate',
-							isSubActive
-								? 'text-indigo-400 font-semibold bg-slate-800/90'
-								: 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-						)}
-					>
-						{item.label}
-					</a>
+					{#if item.disabled}
+						<div
+							id={`sidebar-sublink-${item.id}`}
+							class="flex items-center justify-between px-2.5 py-1.5 text-[11px] font-normal text-slate-500 cursor-not-allowed"
+						>
+							<span class="truncate">{item.label}</span>
+							{#if item.note}
+								<InfoTooltip>
+									{@render item.note()}
+								</InfoTooltip>
+							{/if}
+						</div>
+					{:else}
+						<a
+							id={`sidebar-sublink-${item.id}`}
+							href={resolve(item.href as `/${string}`)}
+							class={twMerge(
+								'px-2.5 py-1.5 rounded-lg text-[11px] font-normal transition-colors truncate',
+								isSubActive
+									? 'text-indigo-400 font-semibold bg-slate-800/90'
+									: 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+							)}
+						>
+							{item.label}
+						</a>
+					{/if}
 				{/each}
 			</div>
 		{/if}

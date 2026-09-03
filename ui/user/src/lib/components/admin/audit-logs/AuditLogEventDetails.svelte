@@ -46,7 +46,7 @@
 		<div class="flex items-center justify-between pr-10">
 			<div class="flex items-center gap-2">
 				<span class="text-xs font-bold uppercase tracking-wider text-primary">Request Inspector</span>
-				<span class="text-xs text-muted-content font-mono">#{auditLog.id?.slice(0, 10)}</span>
+				<span class="text-xs text-muted-content font-mono">#{auditLog.id?.toString().slice(0, 10)}</span>
 			</div>
 			<IconButton onclick={onClose} class="absolute top-4 right-4">
 				<X class="size-5" />
@@ -183,11 +183,11 @@
 
 				{#if showForensics}
 					<div class="p-4 pt-0 border-t border-base-200 dark:border-base-400/40 flex flex-col gap-4 text-xs" in:slide={{ axis: 'y' }}>
-						{#if details?.trace || details?.network}
+						{#if details?.startedAt || details?.trace || details?.network}
 							<div class="flex flex-col gap-1.5 mt-3">
 								<span class="font-semibold text-slate-700 dark:text-slate-300">Trace & Network:</span>
 								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
-									{@render metaRow('Started At', details?.trace?.startedAt)}
+									{@render metaRow('Started At', details?.startedAt ? formatLogTimestamp(details.startedAt, userDeviceSettings.timeFormat) : undefined)}
 									{@render metaRow('Request ID', details?.trace?.requestID)}
 									{@render metaRow('Session ID', details?.trace?.sessionID)}
 									{@render metaRow('Idempotency Key', details?.trace?.idempotencyKey)}
@@ -199,6 +199,8 @@
 						{/if}
 
 						{#if details?.client || details?.agent}
+							{@const agentCli = [details?.agent?.cliName, details?.agent?.cliVersion].filter(Boolean).join(' ')}
+							{@const agentModel = [details?.agent?.model, details?.agent?.modelID].filter(Boolean).join(' / ')}
 							<div class="flex flex-col gap-1.5 mt-2">
 								<span class="font-semibold text-slate-700 dark:text-slate-300">Client & Agent Context:</span>
 								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
@@ -207,8 +209,8 @@
 									{@render metaRow('User Agent', details?.client?.userAgent)}
 									{@render metaRow('Agent Provider', details?.agent?.provider)}
 									{@render metaRow('Agent Version', details?.agent?.version)}
-									{@render metaRow('Agent CLI', details?.agent?.cli)}
-									{@render metaRow('Agent Model', details?.agent?.model)}
+									{@render metaRow('Agent CLI', agentCli || undefined)}
+									{@render metaRow('Agent Model', agentModel || undefined)}
 									{@render metaRow('Permission Mode', details?.agent?.permissionMode)}
 								</div>
 							</div>
@@ -232,8 +234,8 @@
 							<div class="flex flex-col gap-1.5 mt-2">
 								<span class="font-semibold text-slate-700 dark:text-slate-300">Scope Context:</span>
 								<div class="bg-base-200 dark:bg-base-400/30 p-3 rounded-xl flex flex-col gap-1">
-									{@render metaRow('Workspace ID', details.scope.workspaceID)}
-									{@render metaRow('Catalog Entry ID', details.scope.catalogEntryID)}
+									{@render metaRow('Workspace ID', details.scope.powerUserWorkspaceID)}
+									{@render metaRow('Catalog Entry Name', details.scope.mcpServerCatalogEntryName)}
 								</div>
 							</div>
 						{/if}
