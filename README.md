@@ -191,9 +191,9 @@ Dashboard sau đó chỉ hiển thị trạng thái domain/endpoint và thông t
 | Epic | Scope | Dependency | Acceptance | Status |
 |---|---|---|---|---|
 | **E0 — Foundation / README SSOT** | Đổi fork upstream thành Gen Hub SSOT, ghi baseline, architecture, security invariants, roadmap | None | README chứa spec/SSOT, không chứa secret | **Done** |
-| **E1 — First-run domain + HTTPS** | Installer/TUI domain, DNS check, HTTPS, admin bootstrap, runtime config | E0 | Clean VPS setup xong và truy cập được HTTPS | **In Progress** |
+| **E1 — First-run domain + HTTPS** | Installer/TUI domain, DNS check, HTTPS, admin bootstrap, runtime config | E0 | Clean VPS setup xong và truy cập được HTTPS | **Done** |
 | **E2 — Vietnamese UI shell + Dashboard** | Branding, nav tối giản, Dashboard/MCP/Agents/Vault/Audit/Domain, responsive | E0 | UI build/check pass; desktop/mobile dùng được; tiếng Việt là chính | **Done** |
-| **E3 — Composite MCP + per-tool control** | Một endpoint tổng, catalog và bật/tắt tool | E1 | Agent kết nối một endpoint và chỉ thấy tool được grant | Blocked by E1 |
+| **E3 — Composite MCP + per-tool control** | Một endpoint tổng, catalog và bật/tắt tool | E1 | Agent kết nối một endpoint và chỉ thấy tool được grant | **In Progress** |
 | **E4 — Agent approval + access profiles** | Pending/approve/revoke, quyền theo MCP/tool, dangerous default-off | E3 | Agent chưa approve không dùng được; approved agent chỉ gọi đúng tool được cấp | Blocked by E3 |
 | **E5 — Vault + connector setup** | Credential/OAuth cho catalog MCP mục tiêu | E1 + E3 | Connector hoạt động mà agent không nhận source token; không có secret trong Git/log UI | Blocked |
 | **E6 — Audit / Activity inspector** | Activity list, filter, inspector, export | E4 + E5 | Tool call test tạo audit record truy được từ UI | Blocked |
