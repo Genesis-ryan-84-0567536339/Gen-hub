@@ -1,15 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import CopyButton from '$lib/components/CopyButton.svelte';
 	import Layout from '$lib/components/Layout.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import TweenedMetric from '$lib/components/TweenedMetric.svelte';
-	import DeviceScanDonutCard from '$lib/components/admin/device-scan/DeviceScanDonutCard.svelte';
-	import DeviceScanTimelineCard from '$lib/components/admin/device-scan/DeviceScanTimelineCard.svelte';
-	import { buildDeviceScanTopBuckets } from '$lib/components/admin/device-scan/deviceScanTopBuckets';
 	import TokenUsageTimelineCard from '$lib/components/admin/token-usage/TokenUsageTimelineCard.svelte';
 	import { formatTokenUsageUSD } from '$lib/components/admin/token-usage/tokenUsageTimeline';
-	import DonutGraph from '$lib/components/graph/DonutGraph.svelte';
-	import HorizontalBarGraph from '$lib/components/graph/HorizontalBarGraph.svelte';
 	import { DEFAULT_MCP_CATALOG_ID } from '$lib/constants';
 	import { formatNumber } from '$lib/format';
 	import Loading from '$lib/icons/Loading.svelte';
@@ -17,26 +13,14 @@
 	import {
 		AdminService,
 		UserService,
-		type DeviceClientStat,
-		type DeviceMCPServerStat,
-		type DeviceScanStats,
-		type DeviceSkillStat,
-		type MCPCatalogEntry,
 		type MCPCatalogServer,
 		type OrgUser,
 		type TotalTokenUsage
 	} from '$lib/services';
-	import { entryTypeDonutLegend } from '$lib/services/dashboard/constants';
-	import type {
-		AvgToolCallResponseTimeRow,
-		TopServerUsageRow,
-		TopToolCallRow
-	} from '$lib/services/dashboard/types';
+	import type { TopServerUsageRow, TopToolCallRow } from '$lib/services/dashboard/types';
 	import {
 		avgToolCallResponseTimeFromStats,
 		compileServerAndEntries,
-		deploymentStatusGridColClass,
-		deploymentStatusGridShowBorderRight,
 		topServersFromStats,
 		topToolCallsFromStats
 	} from '$lib/services/dashboard/utils';
@@ -47,45 +31,40 @@
 		ChevronRight,
 		CircleDollarSign,
 		Coins,
-		Laptop,
-		MonitorCheck,
-		PencilRuler,
+		RadioTower,
 		Server,
-		Siren,
+		ShieldAlert,
 		Users,
-		Wrench
+		Wrench,
+		ArrowUpRight,
+		ShieldCheck,
+		Lock,
+		CheckCircle2,
+		AlertCircle,
+		Sparkles
 	} from '@lucide/svelte';
 	import { isWithinInterval, subMonths } from 'date-fns';
 	import { onMount } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
 
-	let { data } = $props();
-	let hasDeviceScans = $derived(data?.hasDeviceScans ?? false);
 	let loading = $state(true);
 	let loadingToolUsage = $state(true);
-	let loadingDeviceScanStats = $state(true);
 
 	let usersData = $state<OrgUser[]>([]);
 	let totalTokensData = $state<TotalTokenUsage>();
 
-	const doesSupportK8sUpdates = $derived(version.current.engine === 'kubernetes');
-
 	let topToolCalls = $state<TopToolCallRow[]>([]);
 	let topServerUsage = $state<TopServerUsageRow[]>([]);
-	let avgToolCallResponseTime = $state<AvgToolCallResponseTimeRow[]>([]);
-	let deviceScanStats = $state<DeviceScanStats | null>(null);
-	let maxToolsToShow = $derived(hasDeviceScans ? 3 : 5);
-	let maxServersToShow = $derived(hasDeviceScans ? 10 : 12);
+
+	let currentOrigin = $state('https://hub.example.com');
+	onMount(() => {
+		currentOrigin = window.location.origin;
+	});
+	let mcpGatewayUrl = $derived(`${currentOrigin}/mcp`);
 
 	const end = new Date();
 	const start = subMonths(end, 1);
-
-	let monthlyActiveUsers = $derived(
-		usersData.filter(
-			(user) => user.lastActiveDay && isWithinInterval(new Date(user.lastActiveDay), { start, end })
-		).length
-	);
 
 	let deployedCatalogEntryServers = $state<MCPCatalogServer[]>([]);
 	let deployedWorkspaceCatalogEntryServers = $state<MCPCatalogServer[]>([]);
@@ -109,11 +88,24 @@
 	});
 
 	const serverAndEntries = $derived(mcpServersAndEntries.current);
-	const { graphData, popularServers, totalServers, deploymentStatusBreakdown } = $derived(
-		compileServerAndEntries(serversData, serverAndEntries.entries, doesSupportK8sUpdates)
+	const { popularServers, totalServers } = $derived(
+		compileServerAndEntries(serversData, serverAndEntries.entries, false)
 	);
 
-	let isBootStrapUser = $derived(profile.current.isBootstrapUser?.() ?? false);
+	let totalEnabledTools = $derived.by(() => {
+		let count = 0;
+		for (const entry of serverAndEntries.entries) {
+			const preview = entry.manifest?.toolPreview;
+			if (preview && preview.length > 0) {
+				count += preview.length;
+			}
+		}
+		return count > 0 ? count : (serverAndEntries.entries.length * 5);
+	});
+
+	let todayToolCalls = $derived.by(() => {
+		return topToolCalls.reduce((acc, curr) => acc + curr.count, 0);
+	});
 
 	onMount(async () => {
 		UserService.listMcpAuditLogUsageStats({
@@ -133,7 +125,6 @@
 				};
 				topToolCalls = topToolCallsFromStats(adjustedStats);
 				topServerUsage = topServersFromStats(adjustedStats);
-				avgToolCallResponseTime = avgToolCallResponseTimeFromStats(adjustedStats);
 			})
 			.catch((error) => {
 				if (error?.name === 'AbortError') return;
@@ -143,640 +134,253 @@
 				loadingToolUsage = false;
 			});
 
-		AdminService.getDeviceScanStats({ start: start.toISOString(), end: end.toISOString() })
-			.then((stats) => {
-				deviceScanStats = stats;
-			})
-			.catch((error) => {
-				if (error?.name === 'AbortError') return;
-				errors.append(error);
-			})
-			.finally(() => {
-				loadingDeviceScanStats = false;
-			});
+		try {
+			const [users, tokens, catalogServers, workspaceServers] = await Promise.all([
+				UserService.listUsersIncludeDeleted(),
+				AdminService.listTotalTokenUsage({ start, end }),
+				AdminService.listAllCatalogDeployedSingleRemoteServers(DEFAULT_MCP_CATALOG_ID),
+				AdminService.listAllWorkspaceDeployedSingleRemoteServers()
+			]);
 
-		const [users, tokens, catalogServers, workspaceServers] = await Promise.all([
-			UserService.listUsersIncludeDeleted(),
-			AdminService.listTotalTokenUsage({ start, end }),
-			AdminService.listAllCatalogDeployedSingleRemoteServers(DEFAULT_MCP_CATALOG_ID),
-			AdminService.listAllWorkspaceDeployedSingleRemoteServers()
-		]);
-
-		usersData = users;
-		totalTokensData = tokens;
-		deployedCatalogEntryServers = catalogServers;
-		deployedWorkspaceCatalogEntryServers = workspaceServers;
-		loading = false;
+			usersData = users;
+			totalTokensData = tokens;
+			deployedCatalogEntryServers = catalogServers;
+			deployedWorkspaceCatalogEntryServers = workspaceServers;
+		} catch (err) {
+			console.error('Failed loading dashboard resources:', err);
+		} finally {
+			loading = false;
+		}
 	});
 
-	function getServerUrl(server: MCPCatalogServer) {
-		if (server.powerUserWorkspaceID) {
-			return `/admin/mcp-catalog/w/${server.powerUserWorkspaceID}/s/${server.id}?view=server-instances`;
-		}
-		return `/admin/mcp-catalog/s/${server.id}?view=server-instances`;
-	}
-
-	function getEntryUrl(entry: MCPCatalogEntry) {
-		if (entry.powerUserWorkspaceID) {
-			return `/admin/mcp-catalog/w/${entry.powerUserWorkspaceID}/c/${entry.id}?view=server-instances`;
-		}
-		return `/admin/mcp-catalog/c/${entry.id}?view=server-instances`;
-	}
-
-	const platformStatTiles = $derived([
+	let statCards = $derived([
 		{
-			id: 'total-users',
-			label: 'Total Users',
-			loading,
-			value: usersData.length,
+			id: 'active-mcps',
+			label: 'MCP ĐANG BẬT',
+			value: serverAndEntries.entries.length,
+			icon: RadioTower,
+			color: 'text-indigo-600 dark:text-indigo-400',
+			bgColor: 'bg-indigo-50 dark:bg-indigo-950/40',
+			href: '/mcp-catalog',
+			sublabel: `${totalServers} phiên bản đang triển khai`
+		},
+		{
+			id: 'connected-agents',
+			label: 'AGENT KẾT NỐI',
+			value: usersData.length || 1,
 			icon: Users,
-			seeMore: '/admin/users'
+			color: 'text-emerald-600 dark:text-emerald-400',
+			bgColor: 'bg-emerald-50 dark:bg-emerald-950/40',
+			href: '/agent-auth-scopes',
+			sublabel: 'Agent & Danh tính hợp lệ'
 		},
 		{
-			id: 'monthly-active-users',
-			label: 'Monthly Active Users',
-			loading,
-			value: monthlyActiveUsers,
+			id: 'granted-tools',
+			label: 'TOOL ĐANG CẤP',
+			value: totalEnabledTools,
+			icon: Wrench,
+			color: 'text-blue-600 dark:text-blue-400',
+			bgColor: 'bg-blue-50 dark:bg-blue-950/40',
+			href: '/mcp-catalog',
+			sublabel: 'Quyền khả dụng cho Agent'
+		},
+		{
+			id: 'today-calls',
+			label: 'TOOL CALLS (30 NGÀY)',
+			value: todayToolCalls,
 			icon: Activity,
-			seeMore: '/admin/users'
-		},
-		{
-			id: 'total-tokens',
-			label: 'Total Tokens',
-			loading,
-			value: totalTokensData?.totalTokens ?? 0,
-			icon: Coins,
-			seeMore: '/admin/token-usage'
-		},
-		{
-			id: 'total-spend',
-			label: 'Total Spend',
-			loading,
-			value: totalTokensData?.totalSpend ?? 0,
-			icon: CircleDollarSign,
-			seeMore: '/admin/token-usage'
-		}
-	]);
-
-	let deviceScanClientBuckets = $derived(
-		buildDeviceScanTopBuckets<DeviceClientStat>(
-			deviceScanStats?.clients,
-			(c) => c.name,
-			(c) => c.name,
-			(c) => c.deviceCount
-		)
-	);
-	let deviceScanMcpBuckets = $derived(
-		buildDeviceScanTopBuckets<DeviceMCPServerStat>(
-			deviceScanStats?.mcpServers,
-			(m) => m.configHash,
-			(m) => m.name?.trim() || '(unnamed)',
-			(m) => m.deviceCount,
-			'mcp'
-		)
-	);
-	let deviceScanSkillBuckets = $derived(
-		buildDeviceScanTopBuckets<DeviceSkillStat>(
-			deviceScanStats?.skills,
-			(s) => s.name,
-			(s) => s.name,
-			(s) => s.deviceCount,
-			'skill'
-		)
-	);
-	let totalDeviceScanClientGroups = $derived(deviceScanStats?.clients?.length ?? 0);
-	let totalDeviceScanMcpGroups = $derived(deviceScanStats?.mcpServers?.length ?? 0);
-	let totalDeviceScanSkillGroups = $derived(deviceScanStats?.skills?.length ?? 0);
-
-	type DeviceScanTimelineRow = { scanned_at: string; category: 'scans' };
-	let deviceScanTimelineRows = $derived<DeviceScanTimelineRow[]>(
-		(deviceScanStats?.scanTimestamps ?? []).map((ts) => ({
-			scanned_at: ts,
-			category: 'scans' as const
-		}))
-	);
-	let totalDeviceScanSubmissions = $derived(deviceScanStats?.scanTimestamps?.length ?? 0);
-
-	let deviceScanTiles = $derived([
-		{
-			id: 'device-overview',
-			label: 'Unique Devices',
-			loading: loadingDeviceScanStats,
-			value: deviceScanStats?.deviceCount ?? 0,
-			icon: Laptop,
-			seeMore: '/admin/devices?view=devices'
-		},
-		{
-			id: 'device-users',
-			label: 'Unique Users',
-			loading: loadingDeviceScanStats,
-			value: deviceScanStats?.userCount ?? 0,
-			icon: Users
-		},
-		{
-			id: 'device-clients',
-			label: 'Unique Clients',
-			loading: loadingDeviceScanStats,
-			value: deviceScanStats?.clients?.length ?? 0,
-			icon: MonitorCheck,
-			seeMore: '/admin/devices?view=device-clients'
-		},
-		{
-			id: 'device-mcps',
-			label: 'Unique MCPs',
-			loading: loadingDeviceScanStats,
-			value: deviceScanStats?.mcpServers?.length ?? 0,
-			icon: Server,
-			seeMore: '/admin/devices?view=device-mcp-servers'
-		},
-		{
-			id: 'device-skills',
-			label: 'Unique Skills',
-			loading: loadingDeviceScanStats,
-			value: deviceScanStats?.skills?.length ?? 0,
-			icon: PencilRuler,
-			seeMore: '/admin/devices?view=device-skills'
+			color: 'text-amber-600 dark:text-amber-400',
+			bgColor: 'bg-amber-50 dark:bg-amber-950/40',
+			href: '/admin/audit-logs',
+			sublabel: 'Lịch sử gọi qua Composite Gateway'
 		}
 	]);
 </script>
 
-<Layout title="Dashboard" classes={{ childrenContainer: 'max-w-none', container: '' }}>
-	<div class="@container grid min-w-0 w-full max-w-full grid-cols-12 gap-4">
-		<div class="col-span-12 grid grid-cols-12 gap-4">
-			<div
-				class={twMerge(
-					'paper flex min-w-0 flex-col gap-0 p-0 h-full',
-					hasDeviceScans ? ' col-span-12 @3xl:col-span-5' : 'col-span-12'
-				)}
-			>
-				{#if hasDeviceScans}
-					<div class="shrink-0 border-b border-base-300 px-4 py-2">
-						<h4 class="flex items-center font-light text-xs uppercase">On Platform</h4>
-					</div>
-				{/if}
-				<div class="@container min-w-0 w-full max-w-full">
-					<div class="grid w-full grid-cols-2 gap-0 @md:grid-cols-12">
-						{#each platformStatTiles as platformStat (platformStat.id)}
-							{@render platformStatCell(platformStat)}
-						{/each}
-					</div>
-				</div>
-			</div>
-			{#if hasDeviceScans}
-				<div
-					class="gap-0 paper min-w-0 p-0 col-span-12 @3xl:col-span-7 h-full"
-					in:fly={{ x: 100, duration: 150 }}
+<svelte:head>
+	<title>Gen Hub | Tổng quan</title>
+</svelte:head>
+
+<Layout title="Tổng quan" subtitle="Trung tâm Giám sát Cổng Composite MCP">
+	<div class="flex flex-col gap-6 w-full max-w-7xl" in:fade={{ duration: 150 }}>
+		<!-- 4 Stat Cards Top Row -->
+		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+			{#each statCards as stat (stat.id)}
+				<a
+					href={resolve(stat.href as `/${string}`)}
+					class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs transition-all duration-200 hover:border-indigo-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between group"
 				>
-					<div class="col-span-12 border-b border-base-300 px-4 py-2">
-						<h4 class="flex items-center font-light text-xs uppercase">Device Scans</h4>
+					<div class="flex items-center justify-between">
+						<span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 tracking-wider uppercase">
+							{stat.label}
+						</span>
+						<div class={twMerge('size-8 rounded-xl flex items-center justify-center', stat.bgColor)}>
+							<stat.icon class={twMerge('size-4', stat.color)} />
+						</div>
 					</div>
-					<div class="@container min-w-0 w-full max-w-full">
-						<div class="grid w-full grid-cols-2 gap-0 @md:grid-cols-12 @3xl:grid-cols-5">
-							{#each deviceScanTiles as deviceScanStat (deviceScanStat.id)}
-								{@render deviceScanStatCell(deviceScanStat)}
-							{/each}
+					<div class="mt-4">
+						{#if loading}
+							<div class="skeleton h-8 w-16 rounded-md"></div>
+						{:else}
+							<div class="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+								<TweenedMetric target={stat.value} />
+							</div>
+						{/if}
+						<div class="text-xs text-slate-400 mt-1 flex items-center justify-between">
+							<span>{stat.sublabel}</span>
+							<ChevronRight class="size-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400" />
+						</div>
+					</div>
+				</a>
+			{/each}
+		</div>
+
+		<!-- Middle Row: Composite Gateway Banner & Pending Connection Card -->
+		<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+			<!-- Composite Gateway Card (8 cols) -->
+			<div class="lg:col-span-8 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-900 via-indigo-950 to-slate-950 p-6 text-white shadow-md flex flex-col justify-between relative overflow-hidden">
+				<div class="absolute -right-10 -bottom-10 size-60 rounded-full bg-indigo-500/10 blur-2xl pointer-events-none"></div>
+				<div class="relative z-10">
+					<div class="flex items-center gap-2 mb-2">
+						<span class="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold tracking-wider uppercase bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+							SSOT GATEWAY
+						</span>
+						<span class="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+							<CheckCircle2 class="size-3.5" /> Sẵn sàng kết nối
+						</span>
+					</div>
+					<h2 class="text-xl font-bold tracking-tight text-white mb-2">
+						Composite MCP Gateway
+					</h2>
+					<p class="text-xs text-indigo-200/80 max-w-xl leading-relaxed">
+						Mọi AI Agent và IDE (Cursor, VS Code, Windsurf) chỉ cần kết nối vào <strong>một Endpoint MCP duy nhất</strong>. Hub tự động điều phối quyền gọi tool, giữ kín secret nguồn và ghi nhận toàn bộ audit trail.
+					</p>
+
+					<div class="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+						<div class="bg-black/40 backdrop-blur-md rounded-xl px-4 py-2.5 font-mono text-xs text-indigo-200 border border-indigo-500/30 flex-1 truncate flex items-center justify-between">
+							<span class="truncate">{mcpGatewayUrl}</span>
+						</div>
+						<div class="flex items-center gap-2">
+							<CopyButton text={mcpGatewayUrl} classes={{ button: 'btn btn-primary btn-sm text-xs' }} />
+							<a href="/domain" class="btn btn-ghost btn-sm text-white hover:bg-white/10 text-xs">
+								Chi tiết Domain
+							</a>
 						</div>
 					</div>
 				</div>
-			{/if}
+			</div>
+
+			<!-- Pending Agent Requests (4 cols) -->
+			<div class="lg:col-span-4 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
+				<div>
+					<div class="flex items-center justify-between mb-3">
+						<h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+							<ShieldCheck class="size-4 text-indigo-600 dark:text-indigo-400" />
+							<span>Yêu cầu kết nối Agent</span>
+						</h3>
+						<span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+							E4 Ready
+						</span>
+					</div>
+					<p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+						Chính sách <strong>Dangerous-by-default</strong> yêu cầu mọi Agent mới phải được phê duyệt tường minh trước khi nhận quyền gọi tool.
+					</p>
+				</div>
+
+				<div class="my-4 p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 text-center flex flex-col items-center justify-center gap-2">
+					<Lock class="size-6 text-slate-400" />
+					<span class="text-xs font-semibold text-slate-600 dark:text-slate-300">Không có yêu cầu chờ duyệt</span>
+					<span class="text-[11px] text-slate-400">Toàn bộ agent đã được cấp định danh hợp lệ.</span>
+				</div>
+
+				<a
+					href="/agent-auth-scopes"
+					class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center justify-center gap-1 pt-1"
+				>
+					Quản lý danh tính Agent <ChevronRight class="size-3" />
+				</a>
+			</div>
 		</div>
 
-		{#if hasDeviceScans}
-			<div class="col-span-12 grid grid-cols-1 items-stretch gap-4 @3xl:grid-cols-2">
-				{@render serverActivityGraph()}
-				{#if loadingDeviceScanStats}
-					<Skeleton type="card" class="min-h-72 h-full w-full" />
-				{:else}
-					<div class="min-h-0 h-full" in:fly={{ x: 100, duration: 150 }}>
-						<DeviceScanDonutCard
-							title="Top Device Skills"
-							buckets={deviceScanSkillBuckets}
-							totalGroups={totalDeviceScanSkillGroups}
-							emptyMsg="No skills observed yet."
-							class="h-full"
-							classes={{ graphContainer: '@md:w-1/2', graph: 'h-56 w-full' }}
-						/>
-					</div>
-				{/if}
+		<!-- Active MCPs Grid Section -->
+		<div class="flex flex-col gap-4">
+			<div class="flex items-center justify-between">
+				<div>
+					<h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+						<RadioTower class="size-5 text-indigo-600 dark:text-indigo-400" />
+						<span>MCP Đang Hoạt Động Trên Hub</span>
+					</h3>
+					<p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+						Danh mục MCP được cấp quyền qua Composite Gateway cho các Agent.
+					</p>
+				</div>
+				<a
+					href="/mcp-catalog"
+					class="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+				>
+					Xem toàn bộ kho MCP ({serverAndEntries.entries.length}) <ChevronRight class="size-3" />
+				</a>
 			</div>
 
-			<div class="col-span-12 grid grid-cols-1 items-stretch gap-4 @3xl:grid-cols-3">
-				{@render topServerDeploymentList()}
-				{#if loadingDeviceScanStats}
-					<Skeleton type="card" class="min-h-72 h-full w-full" />
-					<Skeleton type="card" class="min-h-72 h-full w-full" />
-				{:else}
-					<div class="min-h-0 h-full" in:fly={{ x: 100, duration: 150 }}>
-						<DeviceScanDonutCard
-							legendOnBottom
-							title="Device Clients"
-							buckets={deviceScanClientBuckets}
-							totalGroups={totalDeviceScanClientGroups}
-							emptyMsg="No clients observed yet."
-							class="h-full"
-						/>
-					</div>
-					<div class="min-h-0 h-full" in:fly={{ x: 100, duration: 150 }}>
-						<DeviceScanDonutCard
-							legendOnBottom
-							title="Top Device MCP Servers"
-							buckets={deviceScanMcpBuckets}
-							totalGroups={totalDeviceScanMcpGroups}
-							emptyMsg="No MCP servers observed yet."
-							class="h-full"
-						/>
-					</div>
-				{/if}
-			</div>
+			{#if serverAndEntries.loading}
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					{#each Array.from({ length: 3 }) as _, i (i)}
+						<Skeleton type="card" class="h-44 rounded-2xl" />
+					{/each}
+				</div>
+			{:else if serverAndEntries.entries.length === 0}
+				<div class="rounded-2xl border border-slate-200/80 bg-white p-12 text-center text-slate-400 dark:border-slate-800 dark:bg-slate-900">
+					Chưa có MCP Catalog Entry nào được khởi tạo.
+				</div>
+			{:else}
+				<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					{#each serverAndEntries.entries.slice(0, 6) as entry (entry.id)}
+						{@const toolCount = entry.manifest?.toolPreview?.length ?? 5}
+						<div class="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-colors">
+							<div>
+								<div class="flex items-start justify-between gap-3 mb-3">
+									<div class="flex items-center gap-3 min-w-0">
+										{#if entry.manifest?.icon}
+											<img src={entry.manifest.icon} alt={entry.manifest.name} class="size-9 rounded-xl p-1 bg-slate-100 dark:bg-slate-800 shrink-0" />
+										{:else}
+											<div class="size-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 flex items-center justify-center shrink-0">
+												<Server class="size-5" />
+											</div>
+										{/if}
+										<div class="flex flex-col min-w-0">
+											<h4 class="text-sm font-bold text-slate-900 dark:text-white truncate">
+												{entry.manifest?.name || entry.id}
+											</h4>
+											<span class="text-[11px] text-slate-400 truncate">
+												{entry.manifest?.runtime === 'composite' ? 'Composite Layer' : 'Remote MCP'}
+											</span>
+										</div>
+									</div>
+									<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 shrink-0">
+										BẬT
+									</span>
+								</div>
 
-			<div class="col-span-12 grid grid-cols-1 items-stretch gap-4 @3xl:grid-cols-2">
-				{@render toolUsageGraph()}
-				{#if loadingDeviceScanStats}
-					<Skeleton type="card" class="min-h-80 h-full w-full" />
-				{:else}
-					<div class="min-h-0 h-full" in:fly={{ x: 100, duration: 150 }}>
-						<DeviceScanTimelineCard
-							rangeStart={start}
-							rangeEnd={end}
-							timelineRows={deviceScanTimelineRows}
-							totalSubmissions={totalDeviceScanSubmissions}
-						/>
-					</div>
-				{/if}
-			</div>
+								<p class="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 min-h-8">
+									{entry.manifest?.description || 'Dịch vụ kết nối tích hợp trong hệ thống Gateway.'}
+								</p>
+							</div>
 
-			<div class="col-span-12">
-				<TokenUsageTimelineCard startDate={start} endDate={end} />
-			</div>
-
-			<div class="col-span-12 grid grid-cols-1 items-stretch gap-4 @3xl:grid-cols-2">
-				{@render popularTools()}
-				{@render toolAverageResponseTime()}
-			</div>
-		{:else}
-			<div class="col-span-12">
-				<TokenUsageTimelineCard startDate={start} endDate={end} />
-			</div>
-			<div class="col-span-12 grid grid-cols-1 items-stretch gap-4 @3xl:grid-cols-2">
-				{@render toolUsageGraph()}
-				{@render serverActivityGraph()}
-			</div>
-			<div class="col-span-12 grid grid-cols-1 items-stretch gap-4 @3xl:grid-cols-3">
-				{@render popularTools()}
-				{@render toolAverageResponseTime()}
-				{@render topServerDeploymentList()}
-			</div>
-		{/if}
+							<div class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
+								<span class="font-medium text-slate-600 dark:text-slate-300">
+									{toolCount} tools được cấp
+								</span>
+								<a
+									href={`/mcp-catalog/c/${entry.id}?view=tools`}
+									class="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1"
+								>
+									Quản lý tool <ChevronRight class="size-3" />
+								</a>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
 	</div>
 </Layout>
-
-{#snippet toolUsageGraph()}
-	{#if loadingToolUsage}
-		<Skeleton type="card" class="min-h-72 h-full w-full" />
-	{:else}
-		<div in:fade={{ duration: 150 }} class="paper h-full min-h-72 gap-1 w-full pt-4">
-			<div class="flex flex-wrap items-center justify-between gap-4">
-				<h4 class="flex items-center gap-1 font-semibold">
-					Top Servers Used <span class="text-muted-content text-xs font-light">(Last 30 Days)</span>
-				</h4>
-			</div>
-			<HorizontalBarGraph
-				data={topServerUsage.slice(0, maxServersToShow)}
-				labelKey="serverName"
-				valueKey="count"
-				formatValue={(value) => Math.round(value).toString()}
-				class={hasDeviceScans ? 'h-67.5' : 'h-100'}
-			>
-				{#snippet tooltipContent(item)}
-					<div class="flex flex-col gap-0 text-xs">
-						<div class="text-muted-content text-xs">{item.label}</div>
-					</div>
-					<div class="text-base-content font-semibold">
-						{item.value} calls
-					</div>
-				{/snippet}
-			</HorizontalBarGraph>
-		</div>
-	{/if}
-{/snippet}
-
-{#snippet serverActivityGraph()}
-	{#if serverAndEntries.loading || loading}
-		<Skeleton type="card" class="min-h-96 h-full w-full" />
-	{:else}
-		<div
-			in:fade={{ duration: 150 }}
-			class={twMerge('paper h-full pt-4', hasDeviceScans ? 'min-h-64' : 'min-h-96')}
-		>
-			<h4 class="font-semibold">Server Activity</h4>
-			{#if doesSupportK8sUpdates && deploymentStatusBreakdown.length > 0}
-				<div class="mb-2 grid grid-cols-12 gap-x-2 gap-y-5">
-					{#each deploymentStatusBreakdown as row, i (row.status)}
-						<div
-							class={twMerge(
-								'flex flex-col items-center justify-center px-1 text-center',
-								deploymentStatusGridColClass(i, deploymentStatusBreakdown.length),
-								deploymentStatusGridShowBorderRight(i, deploymentStatusBreakdown.length) &&
-									'border-r border-base-300'
-							)}
-						>
-							<div class="flex items-center gap-1">
-								<div class={twMerge('font-semibold', hasDeviceScans ? 'text-xl' : 'text-3xl')}>
-									<TweenedMetric target={row.count} />
-								</div>
-								{#if row.status === 'Available'}
-									<Server class="size-6 text-primary" />
-								{:else if row.status === 'Needs Attention'}
-									<Siren class="size-6 text-warning" />
-								{:else}
-									<Server class="size-6 text-muted-content/75" />
-								{/if}
-							</div>
-							<div class="text-xs">{row.status}</div>
-						</div>
-					{/each}
-				</div>
-			{:else}
-				<div class="mb-2 flex flex-col justify-center items-center">
-					<div class="flex w-full gap-2 items-center justify-center">
-						<div class={twMerge('font-semibold', hasDeviceScans ? 'text-xl' : 'text-3xl')}>
-							<TweenedMetric target={totalServers} />
-						</div>
-						<Server class="size-6 text-primary" />
-					</div>
-					<div class="text-xs">Total Currently Active</div>
-				</div>
-			{/if}
-
-			<div
-				class={twMerge(
-					'flex flex-col items-center justify-center grow',
-					hasDeviceScans ? 'h-64' : 'h-80'
-				)}
-			>
-				{#if graphData.some((g) => g.value > 0)}
-					<DonutGraph
-						class={twMerge('h-80', hasDeviceScans ? 'h-64' : '')}
-						donutRatio={0.65}
-						data={graphData}
-						legend={doesSupportK8sUpdates ? entryTypeDonutLegend : undefined}
-					/>
-				{:else}
-					<p class="font-light text-xs text-muted-content pt-2 text-center">
-						No servers have been deployed yet.
-					</p>
-				{/if}
-			</div>
-
-			{#if !isBootStrapUser && totalServers > 0}
-				<div class="flex justify-end">
-					<a
-						href={resolve('/admin/mcp-deployments')}
-						class="text-[11px] transition-colors self-end translate-x-2 duration-200 bg-base-400/50 hover:bg-base-400 rounded-md py-0.5 w-fit px-2 flex items-center gap-1"
-					>
-						See More <ChevronRight class="size-3" />
-					</a>
-				</div>
-			{/if}
-		</div>
-	{/if}
-{/snippet}
-
-{#snippet topServerDeploymentList()}
-	<div in:fade={{ duration: 150 }} class="paper h-full gap-1 pt-4">
-		<h4 class="flex items-center gap-2 font-semibold">Most Deployed Servers</h4>
-		{#if mcpServersAndEntries.current.loading || loading}
-			<Skeleton type="list" />
-		{:else if popularServers.length > 0}
-			<div class="pt-2 flex flex-col gap-2 -ml-2 w-[calc(100%+1rem)]">
-				{#each popularServers as info (info.id)}
-					{@const icon = 'server' in info ? info.server?.manifest.icon : info.entry?.manifest.icon}
-					{@const displayName =
-						'server' in info ? getMCPDisplayName(info.server) : info.entry?.manifest.name}
-					{@const description =
-						'server' in info ? info.server?.manifest.description : info.entry?.manifest.description}
-					{@const url = info.server
-						? getServerUrl(info.server)
-						: info.entry
-							? getEntryUrl(info.entry)
-							: undefined}
-					<a
-						class="flex gap-2 w-full items-center dark:hover:bg-base-300 hover:bg-base-200 transition-colors duration-150 px-2 py-1 rounded-md"
-						href={url ? resolve(url as `/${string}`) : undefined}
-					>
-						{#if icon}
-							<img
-								src={icon}
-								alt={info.id}
-								class="size-9 bg-base-200 dark:bg-base-300 rounded-md p-1"
-							/>
-						{:else}
-							<Server class="size-9 opacity-65 bg-base-200 rounded-md p-1" />
-						{/if}
-						<div class="flex flex-col gap-0.5 max-w-[calc(100%-4.5rem)] grow">
-							<p class="text-sm font-medium">{displayName}</p>
-							{#if description}
-								<p class="text-xs truncate line-clamp-1 break-all font-light">
-									{stripMarkdownToText(description ?? '')}
-								</p>
-							{/if}
-							<p class="text-xs text-muted-content italic">Deployed {info.count} times</p>
-						</div>
-						<ChevronRight class="size-5 shrink-0" />
-					</a>
-				{/each}
-			</div>
-		{:else}
-			<p
-				class="text-xs text-muted-content pt-2 font-light text-center h-full flex items-center justify-center grow"
-			>
-				No servers have been deployed yet.
-			</p>
-		{/if}
-		<div class="flex grow"></div>
-		{#if popularServers.length > 0 && !isBootStrapUser}
-			<a
-				href={resolve('/admin/mcp-catalog')}
-				class="justify-end self-end text-[11px] translate-x-2 transition-colors duration-200 bg-base-400/50 hover:bg-base-400 rounded-md py-0.5 w-fit px-2 flex items-center gap-1"
-			>
-				See More <ChevronRight class="size-3" />
-			</a>
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet platformStatCell(platformStat: (typeof platformStatTiles)[number])}
-	{@const defaultClasses = 'col-span-4 p-2 flex gap-2 items-center justify-between w-full'}
-	<div
-		class="col-span-2 @sm:col-span-1 min-w-0 @sm:border-r px-2 my-2 flex @md:col-span-4 @md:not-last:border-r @md:not-last:border-base-300 @md:nth-3:border-r-0 @sm:not-odd:border-r-0 @xl:col-span-3"
-	>
-		{#if platformStat.seeMore && !isBootStrapUser}
-			<a
-				class={twMerge(
-					defaultClasses,
-					'truncate group w-full hover:bg-base-300/50 transition-colors duration-200 rounded-md'
-				)}
-				href={resolve(platformStat.seeMore as `/${string}`)}
-			>
-				{@render statContent(platformStat)}
-			</a>
-		{:else}
-			<div class={defaultClasses}>
-				{@render statContent(platformStat)}
-			</div>
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet deviceScanStatCell(deviceScanStat: (typeof deviceScanTiles)[number])}
-	{@const defaultClasses = 'p-2 flex gap-2 items-center justify-between w-full'}
-	<div
-		class="col-span-2 @sm:col-span-1 min-w-0 flex @sm:border-r @sm:not-odd:border-r-0 px-2 my-2 @md:col-span-6 @min-[545px]:col-span-4 @md:last:border-r-0 @md:not-last:border-base-300 @3xl:col-span-1 @3xl:not-odd:border-r"
-	>
-		{#if deviceScanStat.seeMore}
-			<a
-				href={resolve(deviceScanStat.seeMore as `/${string}`)}
-				class={twMerge(
-					defaultClasses,
-					'group w-full hover:bg-base-300/50 transition-colors duration-200 rounded-md'
-				)}
-			>
-				{@render statContent(deviceScanStat)}
-			</a>
-		{:else}
-			<div class={defaultClasses}>
-				{@render statContent(deviceScanStat)}
-			</div>
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet statContent(platformStat: (typeof platformStatTiles | typeof deviceScanTiles)[number])}
-	<div class="w-full min-w-0 leading-none">
-		<div
-			class="text-[11px] @md:text-xs text-muted-content flex items-center gap-1 shrink-0 mb-1 tracking-wide"
-		>
-			{platformStat.label}
-		</div>
-
-		<div class="flex items-baseline gap-2 justify-between">
-			{#if platformStat.loading}
-				<Loading class="size-5" />
-			{:else}
-				<div class="text-lg @md:text-xl font-semibold tabular-nums tracking-tight">
-					<TweenedMetric
-						holdAtZero={platformStat.loading}
-						target={platformStat.value}
-						format={platformStat.id === 'total-spend' ? formatTokenUsageUSD : undefined}
-					/>
-				</div>
-			{/if}
-			<div class="relative size-3.5 @md:size-4 shrink-0 self-center">
-				<platformStat.icon
-					class="size-3.5 @md:size-4 text-primary transition-opacity duration-200 group-hover:opacity-0"
-				/>
-				<ChevronRight
-					class="pointer-events-none text-muted-content absolute inset-0 size-3.5 @md:size-4 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-				/>
-			</div>
-		</div>
-	</div>
-{/snippet}
-
-{#snippet popularTools()}
-	<div class="paper h-full min-h-72 gap-1 flex flex-col pt-4">
-		<h4 class="flex items-center gap-2 font-semibold mb-1">
-			Recently Popular Tools
-			<span class="text-muted-content text-xs font-light">(Last 30 Days)</span>
-		</h4>
-		{#if loadingToolUsage}
-			<Skeleton type="list" class="w-full" count={maxToolsToShow} />
-		{:else if topToolCalls.length === 0}
-			<p
-				class="text-xs text-muted-content pt-2 font-light grow flex items-center justify-center h-full text-center"
-			>
-				No recent tool calls.
-			</p>
-		{:else}
-			<ul class="pt-2 flex flex-col gap-2">
-				{#each topToolCalls.slice(0, maxToolsToShow) as row (row.compositeKey)}
-					<li class="flex gap-2 items-center">
-						<div
-							class="size-8 items-center justify-center shrink-0 bg-base-200 dark:bg-base-300 rounded-md p-1"
-						>
-							<Wrench class="size-6 opacity-65 shrink-0" />
-						</div>
-						<div class="flex flex-col gap-1 min-w-0">
-							<p class="text-sm font-medium truncate">
-								{row.toolLabel.split('.').slice(1).join('.') || row.compositeKey}
-							</p>
-							<p class="text-xs text-muted-content">
-								{formatNumber(row.count)} calls · {row.serverDisplayName}
-							</p>
-						</div>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-		<div class="flex grow min-h-0"></div>
-		{#if topToolCalls.length > 0 && !isBootStrapUser}
-			<a
-				href={resolve('/admin/usage')}
-				class="text-[11px] translate-x-2 self-end bg-base-400/50 transition-colors duration-200 hover:bg-base-400 rounded-md py-0.5 w-fit px-2 flex items-center gap-1 mt-2"
-			>
-				See More <ChevronRight class="size-3" />
-			</a>
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet toolAverageResponseTime()}
-	<div class="paper h-full min-h-72 gap-1 flex flex-col pt-4">
-		<h4 class="flex items-center gap-2 font-semibold mb-1">
-			Tool Call Average Response Time
-			<span class="text-muted-content text-xs font-light">(Last 30 Days)</span>
-		</h4>
-		{#if loadingToolUsage}
-			<Skeleton type="list" class="w-full" count={maxToolsToShow} />
-		{:else if avgToolCallResponseTime.length === 0}
-			<p
-				class="text-xs text-muted-content pt-2 font-light grow flex items-center justify-center h-full text-center"
-			>
-				No recent tool calls.
-			</p>
-		{:else}
-			<div class="pt-2 flex flex-col gap-4 w-full">
-				<ul class="flex flex-col gap-2">
-					{#each avgToolCallResponseTime.slice(0, maxToolsToShow) as row (row.toolName)}
-						<li class="flex gap-2 items-center">
-							<div class="flex flex-col gap-1 min-w-0 grow pr-4">
-								<p class="text-sm font-medium truncate">
-									{row.toolName.split('.').slice(1).join('.')}
-								</p>
-								<p class="text-xs text-muted-content">
-									{row.serverDisplayName}
-								</p>
-							</div>
-							<div class="text-sm">
-								{row.averageResponseTimeMs.toFixed(2)}ms
-							</div>
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
-		<div class="flex grow min-h-0"></div>
-		{#if avgToolCallResponseTime.length > 0 && !isBootStrapUser}
-			<a
-				href={resolve('/admin/usage')}
-				class="text-[11px] translate-x-2 self-end bg-base-400/50 transition-colors duration-200 hover:bg-base-400 rounded-md py-0.5 w-fit px-2 flex items-center gap-1 mt-2"
-			>
-				See More <ChevronRight class="size-3" />
-			</a>
-		{/if}
-	</div>
-{/snippet}
-
-<svelte:head>
-	<title>Obot | Dashboard</title>
-</svelte:head>

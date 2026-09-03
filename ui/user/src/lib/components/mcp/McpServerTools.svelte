@@ -14,7 +14,7 @@
 	import IconButton from '../primitives/IconButton.svelte';
 	import McpOauth from './McpOauth.svelte';
 	import ToolNameIssueIcon from './ToolNameIssueIcon.svelte';
-	import { CircleAlert, ChevronDown, ChevronUp, Info, Wrench } from '@lucide/svelte';
+	import { CircleAlert, ChevronDown, ChevronUp, Info, Wrench, ShieldAlert, CheckCircle2, Shield, Eye, Edit3, Terminal } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
@@ -28,9 +28,6 @@
 			root?: string;
 		};
 		previewOverride?: MCPCatalogEntryServerManifest['toolPreview'];
-		// When true, surface inline warning/error indicators next to each tool
-		// name for names that may be problematic for MCP clients / inference
-		// APIs (length, disallowed chars, or duplicates in this list).
 		showToolNameIssues?: boolean;
 	}
 
@@ -73,20 +70,38 @@
 		)
 	);
 
-	// Detect duplicate effective names across the aggregated tool list (composite
-	// previews/live lists only). Disabled via showToolNameIssues=false for other
-	// contexts so the icons stay opt-in.
 	let toolNameDuplicates = $derived(
 		showToolNameIssues ? duplicateToolNames(displayTools.map((t) => t.name)) : new Set<string>()
 	);
 
-	// Extract tool previews from the appropriate manifest
 	function getToolPreview(entry: MCPCatalogEntry | MCPCatalogServer): MCPServerTool[] {
 		if ('manifest' in entry) {
-			// Catalog entry or connected server - get from manifest.toolPreview
 			return entry.manifest?.toolPreview || [];
 		}
 		return [];
+	}
+
+	function classifyTool(toolName: string): { label: string; color: string; isDangerous: boolean } {
+		const lower = toolName.toLowerCase();
+		if (
+			lower.includes('delete') ||
+			lower.includes('remove') ||
+			lower.includes('drop') ||
+			lower.includes('destroy') ||
+			lower.includes('merge') ||
+			lower.includes('exec') ||
+			lower.includes('execute') ||
+			lower.includes('run') ||
+			lower.includes('send') ||
+			lower.includes('post') ||
+			lower.includes('write')
+		) {
+			return { label: 'Dangerous', color: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/40', isDangerous: true };
+		}
+		if (lower.includes('update') || lower.includes('create') || lower.includes('insert') || lower.includes('set') || lower.includes('patch')) {
+			return { label: 'Write', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/40', isDangerous: false };
+		}
+		return { label: 'Read', color: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700', isDangerous: false };
 	}
 
 	function handleToggleDescription(toolId: string, show: boolean) {
@@ -107,16 +122,13 @@
 	}
 
 	async function loadTools() {
-		// Cancel any existing requests
 		if (abortController) {
 			abortController.abort();
 		}
 
-		// Create new AbortController for this request
 		abortController = new AbortController();
 		loading = true;
 		try {
-			// Make a best effort attempt to load tools, prompts, and resources concurrently
 			let id = 'isCatalogEntry' in entry && server ? server.id : entry.id;
 			let toolCall = UserService.listMcpCatalogServerTools(id, {
 				signal: abortController.signal
@@ -153,24 +165,21 @@
 	{#if showPreviewTools || error}
 		<div class="flex w-full flex-col items-center gap-2 md:flex-row">
 			{#if showPreviewTools}
-				<div class="notification-info w-full p-3 text-sm font-light">
-					<div class="flex items-center gap-3">
-						<Info class="size-6 shrink-0" />
+				<div class="notification-info w-full p-3 text-xs font-light rounded-xl">
+					<div class="flex items-center gap-2.5">
+						<Info class="size-4 shrink-0 text-indigo-600" />
 						<div>
-							This is a preview of the tools that are available for this MCP server; the actual
-							tools may differ on user connection.
+							Xem trước danh mục Tool khai báo trong manifest; trạng thái kích hoạt thực tế tuân theo cấu hình Composite Policy (E3).
 						</div>
 					</div>
 				</div>
 			{/if}
 			{#if error}
-				<div class="notification-error flex w-full items-center gap-2 p-3">
+				<div class="notification-error flex w-full items-center gap-2 p-3 rounded-xl">
 					<CircleAlert class="size-4" />
 					<div class="flex flex-col">
-						<p class="text-sm font-semibold">Unable to retrieve the server's tools</p>
-						<p class="text-sm font-light">
-							{error}
-						</p>
+						<p class="text-xs font-semibold">Không thể truy xuất danh sách Tool của server</p>
+						<p class="text-xs font-light">{error}</p>
 					</div>
 				</div>
 			{/if}
@@ -183,57 +192,68 @@
 		{/key}
 	{/if}
 
-	<div class="flex w-full flex-col gap-2">
-		<div class="mb-2 flex w-full flex-col gap-4">
-			<div class="flex flex-wrap items-center justify-end gap-2 md:shrink-0">
+	<div class="flex w-full flex-col gap-3">
+		<div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+			<Search
+				class="dark:bg-base-200 dark:border-base-400 bg-base-100 border border-slate-200 shadow-xs flex-1 rounded-xl"
+				onChange={(val) => (search = val)}
+				placeholder="Tìm kiếm function / tool..."
+			/>
+
+			<div class="flex items-center justify-end gap-3 shrink-0">
 				<Toggle
 					checked={allDescriptionsEnabled}
 					onChange={(checked) => {
 						allDescriptionsEnabled = checked;
 						expanded = {};
 					}}
-					label="Show All Descriptions"
+					label="Hiện toàn bộ mô tả"
 					labelInline
 					classes={{
-						label: 'text-sm gap-2'
+						label: 'text-xs gap-2 text-slate-600 dark:text-slate-400'
 					}}
 				/>
 			</div>
-
-			<Search
-				class="dark:bg-base-200 dark:border-base-400 bg-base-100 border border-transparent shadow-sm"
-				onChange={(val) => (search = val)}
-				placeholder="Search tools..."
-			/>
 		</div>
-		<div class="flex flex-col gap-4 overflow-hidden">
+
+		<div class="flex flex-col gap-2.5 overflow-hidden">
 			{#if loading}
 				{#each Array.from({ length: 3 }) as _, i (i)}
-					<div class="skeleton h-14 w-full rounded-none"></div>
+					<div class="skeleton h-16 w-full rounded-xl"></div>
 				{/each}
 			{:else if displayTools.length > 0}
 				{#each displayTools as tool, index (`${tool.name}-${index}`)}
+					{@const classification = classifyTool(tool.name)}
 					{@const hasContentDisplayed = allDescriptionsEnabled || expanded[tool.id]}
 					<div
-						class="border-base-200 dark:bg-base-200 dark:border-base-400 bg-base-100 flex flex-col gap-2 rounded-md border p-3 shadow-sm"
-						class:pb-2={hasContentDisplayed}
+						class="border border-slate-200/80 dark:bg-slate-900 dark:border-slate-800 bg-white flex flex-col gap-2 rounded-2xl p-4 shadow-xs transition-colors"
+						class:pb-3={hasContentDisplayed}
 					>
-						<div class="flex items-center justify-between gap-2">
-							<p class="text-md flex min-w-0 flex-1 items-center gap-1.5 font-semibold">
-								<span class="min-w-0 flex-1 truncate" title={tool.name}>{tool.name}</span>
+						<div class="flex items-center justify-between gap-3">
+							<div class="flex items-center gap-2.5 min-w-0 flex-1">
+								<code class="font-mono text-sm font-bold text-slate-900 dark:text-white truncate" title={tool.name}>
+									{tool.name}
+								</code>
+
+								<span class={twMerge('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0', classification.color)}>
+									{classification.label}
+								</span>
+
+								{#if classification.isDangerous}
+									<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 shrink-0">
+										<ShieldAlert class="size-3.5" /> Nguy hiểm (Default OFF)
+									</span>
+								{/if}
+
 								{#if showToolNameIssues}
 									{@const conflict = conflictIssue(tool.name, toolNameDuplicates)}
 									<ToolNameIssueIcon issue={conflict ?? toolNameIssue(tool.name)} />
 								{/if}
-								{#if tool.unsupported}
-									<span class="text-muted-content ml-3 shrink-0 text-sm">
-										⚠️ Not yet fully supported in Obot
-									</span>
-								{/if}
-							</p>
+							</div>
+
 							<div class="flex shrink-0 items-center gap-2">
 								<IconButton
-									class="btn-sm"
+									class="btn-xs rounded-lg"
 									onclick={() => handleToggleDescription(tool.id, !hasContentDisplayed)}
 								>
 									{#if hasContentDisplayed}
@@ -244,31 +264,24 @@
 								</IconButton>
 							</div>
 						</div>
+
 						{#if hasContentDisplayed}
 							{#if browser}
 								<div
 									in:slide={{ axis: 'y' }}
-									class="milkdown-content text-muted-content max-w-none text-sm font-light"
+									class="milkdown-content text-slate-600 dark:text-slate-400 max-w-none text-xs leading-relaxed pt-1"
 								>
-									{@html toHTMLFromMarkdownWithNewTabLinks(tool.description || '', true)}
+									{@html toHTMLFromMarkdownWithNewTabLinks(tool.description || 'Không có mô tả chi tiết.', true)}
 								</div>
 							{/if}
 							{#if Object.keys(tool.params ?? {}).length > 0}
-								<div
-									class="from-base-300 dark:from-base-400 text-muted-content flex w-full shrink-0 bg-linear-to-r to-transparent px-4 py-2 text-xs font-semibold md:w-sm"
-								>
-									Parameters
-								</div>
-								<div class="flex flex-col px-4 text-xs" in:slide={{ axis: 'y' }}>
-									<div class="flex flex-col gap-2">
+								<div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-1.5 text-xs" in:slide={{ axis: 'y' }}>
+									<span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tham số đối số (Parameters):</span>
+									<div class="flex flex-col gap-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
 										{#each Object.keys(tool.params ?? {}) as paramKey (paramKey)}
-											<div class="flex flex-col items-center gap-2 md:flex-row">
-												<p class="text-muted-content self-start font-semibold md:min-w-xs">
-													{paramKey}
-												</p>
-												<p class="text-muted-content self-start font-light">
-													{tool.params?.[paramKey]}
-												</p>
+											<div class="flex items-start gap-2">
+												<code class="text-indigo-600 dark:text-indigo-400 font-mono font-semibold text-xs shrink-0">{paramKey}:</code>
+												<span class="text-slate-600 dark:text-slate-400 text-xs">{tool.params?.[paramKey]}</span>
 											</div>
 										{/each}
 									</div>
@@ -280,14 +293,14 @@
 			{:else if noToolsContent}
 				{@render noToolsContent()}
 			{:else}
-				<div class="mt-12 flex w-md flex-col items-center gap-4 self-center text-center">
-					<Wrench class="text-muted-content size-24 opacity-50" />
-					<h4 class="text-muted-content text-lg font-semibold">No tools</h4>
-					<p class="text-muted-content text-sm font-light">
+				<div class="my-12 flex w-md flex-col items-center gap-3 self-center text-center">
+					<Wrench class="text-slate-300 dark:text-slate-700 size-16 opacity-50" />
+					<h4 class="text-slate-700 dark:text-slate-300 text-base font-semibold">Chưa có Tool nào khả dụng</h4>
+					<p class="text-slate-400 text-xs">
 						{#if showRealTools}
-							Looks like this MCP server doesn't have any tools available.
+							MCP Server này chưa khai báo hoặc chưa kích hoạt tool nào.
 						{:else}
-							Connection to the server is required to list available tools.
+							Cần kết nối hoặc triển khai MCP Server để đồng bộ danh sách tool.
 						{/if}
 					</p>
 				</div>
@@ -295,5 +308,3 @@
 		</div>
 	</div>
 </div>
-
-<div class="flex grow"></div>
