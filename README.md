@@ -161,6 +161,17 @@ UI Gen Hub ưu tiên đơn giản hơn bề mặt quản trị tổng quát củ
 6. **Audit / Activity** — lịch sử tool call + inspector + export.
 7. **Domain & Endpoint** — hiển thị public domain, HTTPS/runtime status và copy MCP endpoint.
 
+### Visual/UI SSOT đã duyệt
+
+Từ E2, nguồn chuẩn trực quan của giao diện là artifact đã được người dùng duyệt và được commit nguyên bản trong repo:
+
+- Path: `docs/design/prototype/gen-hub-ui-prototype.html`
+- Git blob SHA: `4e9d931eabe942c8af5ec2e2bbb145190a0ac164`
+- Implementation E2: PR `#2`, squash merge commit `72d0d92094c2fe8cc71eac9877d4b800ee8a4761`
+- `docs/design/E2_UI_SPEC.md` chỉ bổ sung constraint kỹ thuật/semantic; không thay thế artifact HTML làm Visual/UI SSOT.
+
+Khi triển khai hoặc sửa UI dựa trên thiết kế đã duyệt, executor phải đọc trực tiếp artifact này. Không chuyển artifact thành prose rồi yêu cầu “làm giống”. Dữ liệu demo trong artifact chỉ phục vụ biểu diễn; production UI phải dùng native state thật hoặc trạng thái trung tính khi backend tương ứng chưa tồn tại.
+
 ### First-run khác dashboard thường ngày
 
 Domain không phải setting cần chỉnh mỗi ngày. First-run/bootstrap chịu trách nhiệm:
@@ -181,7 +192,7 @@ Dashboard sau đó chỉ hiển thị trạng thái domain/endpoint và thông t
 |---|---|---|---|---|
 | **E0 — Foundation / README SSOT** | Đổi fork upstream thành Gen Hub SSOT, ghi baseline, architecture, security invariants, roadmap | None | README chứa spec/SSOT, không chứa secret | **Done** |
 | **E1 — First-run domain + HTTPS** | Installer/TUI domain, DNS check, HTTPS, admin bootstrap, runtime config | E0 | Clean VPS setup xong và truy cập được HTTPS | **Ready** |
-| **E2 — Vietnamese UI shell + Dashboard** | Branding, nav tối giản, Dashboard/MCP/Agents/Vault/Audit/Domain, responsive | E0 | UI build/check pass; desktop/mobile dùng được; tiếng Việt là chính | **In Progress** |
+| **E2 — Vietnamese UI shell + Dashboard** | Branding, nav tối giản, Dashboard/MCP/Agents/Vault/Audit/Domain, responsive | E0 | UI build/check pass; desktop/mobile dùng được; tiếng Việt là chính | **Done** |
 | **E3 — Composite MCP + per-tool control** | Một endpoint tổng, catalog và bật/tắt tool | E1 | Agent kết nối một endpoint và chỉ thấy tool được grant | Blocked by E1 |
 | **E4 — Agent approval + access profiles** | Pending/approve/revoke, quyền theo MCP/tool, dangerous default-off | E3 | Agent chưa approve không dùng được; approved agent chỉ gọi đúng tool được cấp | Blocked by E3 |
 | **E5 — Vault + connector setup** | Credential/OAuth cho catalog MCP mục tiêu | E1 + E3 | Connector hoạt động mà agent không nhận source token; không có secret trong Git/log UI | Blocked |
