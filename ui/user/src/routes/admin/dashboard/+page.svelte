@@ -10,7 +10,8 @@
 		UserService,
 		type MCPCatalogServer,
 		type OrgUser,
-		type TotalTokenUsage
+		type TotalTokenUsage,
+		type GlobalPublishPolicy
 	} from '$lib/services';
 	import type { TopServerUsageRow, TopToolCallRow } from '$lib/services/dashboard/types';
 	import {
@@ -26,6 +27,8 @@
 
 	let loading = $state(true);
 	let loadingToolUsage = $state(true);
+	let globalPolicy = $state<GlobalPublishPolicy | null>(null);
+	let updatingPolicyMap = $state<Record<string, boolean>>({});
 
 	let topToolCalls = $state<TopToolCallRow[]>([]);
 	let topServerUsage = $state<TopServerUsageRow[]>([]);
@@ -77,7 +80,49 @@
 		return serverAndEntries.entries.filter((e) => e.oauthCredentialConfigured).length;
 	});
 
+	let activeMcpCount = $derived.by(() => {
+		if (!globalPolicy || !serverAndEntries.entries.length) return null;
+		let count = 0;
+		for (const entry of serverAndEntries.entries) {
+			const serverKey = entry.id;
+			const policy = globalPolicy.mcpServers?.[serverKey];
+			// Default is ON (true) unless explicitly disabled
+			if (policy ? policy.enabled : true) {
+				count++;
+			}
+		}
+		return count;
+	});
+
+	async function fetchGlobalPolicy() {
+		try {
+			globalPolicy = await AdminService.getGlobalPolicy();
+		} catch (err) {
+			console.error('Failed to load global publish policy:', err);
+		}
+	}
+
+	async function toggleMcpGlobal(entryID: string, currentEnabled: boolean) {
+		if (updatingPolicyMap[entryID]) return;
+		updatingPolicyMap[entryID] = true;
+		try {
+			const nextState = !currentEnabled;
+			const updated = await AdminService.updateGlobalPolicy({
+				mcpServerName: entryID,
+				enabled: nextState
+			});
+			globalPolicy = updated;
+		} catch (err) {
+			console.error('Failed to toggle MCP global publish policy:', err);
+			errors.append(err);
+		} finally {
+			updatingPolicyMap[entryID] = false;
+		}
+	}
+
 	onMount(async () => {
+		fetchGlobalPolicy();
+
 		UserService.listMcpAuditLogUsageStats({
 			start_time: startToday.toISOString(),
 			end_time: endToday.toISOString()
@@ -123,9 +168,9 @@
 		{
 			id: 'active-mcps',
 			label: 'MCP ĐANG BẬT',
-			value: null,
-			loading: false,
-			sub: 'kích hoạt ở E3'
+			value: activeMcpCount,
+			loading: loading || serverAndEntries.loading,
+			sub: 'chính sách toàn cục E3'
 		},
 		{
 			id: 'connected-agents',
@@ -310,7 +355,10 @@
 					{#each serverAndEntries.entries.slice(0, 6) as entry (entry.id)}
 						{@const name = entry.manifest?.name || entry.id}
 						{@const desc = entry.manifest?.description || 'Dịch vụ kết nối tích hợp'}
-						<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-4 shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between">
+						{@const mcpPolicy = globalPolicy?.mcpServers?.[entry.id]}
+						{@const isEnabled = mcpPolicy ? mcpPolicy.enabled : true}
+						{@const isUpdating = updatingPolicyMap[entry.id] || false}
+						<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-4 shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between transition-opacity {isUpdating ? 'opacity-50' : ''}">
 							<div class="flex justify-between items-start gap-3">
 								<div class="flex gap-2.5 min-w-0">
 									<div class="size-[38px] rounded-[10px] bg-[#f3f4f6] dark:bg-slate-800 flex items-center justify-center text-[19px] font-bold text-slate-700 dark:text-slate-200 shrink-0">
@@ -330,15 +378,22 @@
 									</div>
 								</div>
 
-								<!-- Switch visual element (Disabled neutral state for E3) -->
-								<div class="relative w-[42px] h-6 bg-slate-300 dark:bg-slate-700 rounded-full shrink-0 opacity-70 cursor-not-allowed" title="Chính sách bật/tắt MCP sẽ kết nối tại E3">
-									<div class="absolute top-[3px] left-[3px] size-[18px] bg-white rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)]"></div>
-								</div>
+								<!-- Switch visual element: Active global policy toggle -->
+								<button
+									type="button"
+									onclick={() => toggleMcpGlobal(entry.id, isEnabled)}
+									disabled={isUpdating}
+									aria-label="Bật tắt MCP {name}"
+									class="relative w-[42px] h-6 rounded-full shrink-0 transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f46e5] cursor-pointer {isEnabled ? 'bg-[#10b981]' : 'bg-slate-300 dark:bg-slate-700'}"
+									title={isEnabled ? 'Nhấn để tắt MCP khỏi endpoint tổng' : 'Nhấn để bật MCP trên endpoint tổng'}
+								>
+									<span class="absolute top-[3px] transition-transform duration-200 size-[18px] bg-white rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.25)] {isEnabled ? 'translate-x-[20px]' : 'translate-x-[3px]'}"></span>
+								</button>
 							</div>
 
 							<div class="flex justify-between items-center mt-3.5 pt-3 border-t border-[#e6e9ef] dark:border-slate-800 text-xs text-[#6b7280] dark:text-slate-400">
-								<span class="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
-									○ Chưa có policy E3
+								<span class="font-medium flex items-center gap-1 {isEnabled ? 'text-[#059669] dark:text-[#34d399]' : 'text-slate-400 dark:text-slate-500'}">
+									{isEnabled ? '● Đang hoạt động' : '○ Đã tắt'}
 								</span>
 								<span class="truncate">
 									{#if entry.oauthCredentialConfigured}

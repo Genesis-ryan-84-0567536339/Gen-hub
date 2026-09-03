@@ -31,7 +31,8 @@ import type {
 	AccessControlRuleManifest,
 	K8sServerDetail,
 	MCPAllowedSecretBindingTarget,
-	MCPSubField
+	MCPSubField,
+	GlobalPublishPolicy
 } from '../user/types';
 import type {
 	MCPCatalog,
@@ -824,6 +825,20 @@ export async function listAllCatalogDeployedSingleRemoteServers(
 	)) as ItemsResponse<MCPCatalogServer>;
 	return response.items ?? [];
 }
+
+// Global Publish Policy (E3)
+
+export async function getGlobalPolicy(opts?: { fetch?: Fetcher }): Promise<GlobalPublishPolicy> {
+	return (await doGet('/global-policy', opts)) as GlobalPublishPolicy;
+}
+
+export async function updateGlobalPolicy(
+	payload: { mcpServerName: string; enabled?: boolean; toolName?: string; toolEnabled?: boolean },
+	opts?: { fetch?: Fetcher }
+): Promise<GlobalPublishPolicy> {
+	return (await doPut('/global-policy', payload, opts)) as GlobalPublishPolicy;
+}
+
 
 // MCP catalog entries
 

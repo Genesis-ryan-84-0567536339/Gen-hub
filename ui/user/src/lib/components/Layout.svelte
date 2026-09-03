@@ -239,7 +239,7 @@
 		alwaysShowHeaderTitle,
 		titleContent
 	}: Props = $props();
-	let nav = $state<HTMLDivElement>();
+	let nav = $state<HTMLElement>();
 	let sidebarScroll = $state<HTMLDivElement>();
 	let pathname = $derived(page.url.pathname);
 
@@ -898,7 +898,7 @@
 					Nền tảng Obot Open Source
 				</div>
 			</aside>
-			{#if !responsive.isMobile && !disableResize}
+			{#if !responsive.isMobile && !disableResize && nav}
 				<div
 					role="none"
 					class="h-inherit border-r-slate-800 relative -ml-1 w-2 cursor-col-resize border-r hover:border-indigo-500 transition-colors"
