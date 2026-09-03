@@ -17,6 +17,7 @@ Tùy chọn:
   --key-path <path>       Đường dẫn private key (khi dùng custom TLS)
   --skip-dns              Bỏ qua bước xác minh DNS lookup
   --env-file <path>       File lưu trữ cấu hình runtime (mặc định: /data/gen-hub.env)
+  --apply                 Tự động áp dụng/khởi động runtime sau khi ghi cấu hình
   -h, --help              Hiển thị trợ giúp này
 
 Ví dụ:
@@ -33,6 +34,7 @@ CERT_PATH=""
 KEY_PATH=""
 SKIP_DNS="false"
 ENV_FILE="/data/gen-hub.env"
+APPLY="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -68,6 +70,10 @@ while [[ $# -gt 0 ]]; do
       ENV_FILE="$2"
       shift 2
       ;;
+    --apply)
+      APPLY="true"
+      shift 1
+      ;;
     -h|--help)
       usage
       ;;
@@ -83,7 +89,7 @@ if [[ -z "${DOMAIN}" ]]; then
   usage
 fi
 
-# Clean up domain syntax
+# Clean up and normalize domain syntax
 DOMAIN="$(echo "${DOMAIN}" | tr '[:upper:]' '[:lower:]' | sed -e 's|^https://||' -e 's|^http://||' -e 's|/.*$||')"
 
 if [[ ! "${DOMAIN}" =~ ^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$ && "${DOMAIN}" != "localhost" ]]; then
@@ -91,42 +97,73 @@ if [[ ! "${DOMAIN}" =~ ^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z
   exit 1
 fi
 
+# Normalize TLS mode
+TLS_MODE="$(echo "${TLS_MODE}" | tr '[:upper:]' '[:lower:]')"
+case "${TLS_MODE}" in
+  none)
+    SERVER_URL="http://${DOMAIN}:${HTTP_PORT}"
+    ENABLE_TLS="false"
+    ;;
+  letsencrypt)
+    SERVER_URL="https://${DOMAIN}"
+    ENABLE_TLS="true"
+    ;;
+  custom)
+    SERVER_URL="https://${DOMAIN}"
+    ENABLE_TLS="true"
+    if [[ -z "${CERT_PATH}" || -z "${KEY_PATH}" ]]; then
+      echo "Lỗi: --tls-mode custom bắt buộc phải có --cert-path và --key-path." >&2
+      exit 1
+    fi
+    if [[ ! -f "${CERT_PATH}" ]]; then
+      echo "Lỗi: Không tìm thấy TLS certificate tại '${CERT_PATH}'." >&2
+      exit 1
+    fi
+    if [[ ! -f "${KEY_PATH}" ]]; then
+      echo "Lỗi: Không tìm thấy TLS private key tại '${KEY_PATH}'." >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "Lỗi: --tls-mode '${TLS_MODE}' không hợp lệ. Chỉ chấp nhận 'letsencrypt', 'custom' hoặc 'none'." >&2
+    exit 1
+    ;;
+esac
+
 echo "=== [Gen Hub] Bắt đầu cấu hình First-Run Domain & HTTPS (E1) ==="
 echo "Domain:      ${DOMAIN}"
 echo "TLS Mode:    ${TLS_MODE}"
+echo "Server URL:  ${SERVER_URL}"
 
-# DNS Lookup Check
+# DNS Lookup Check (Factual & Strict)
 if [[ "${SKIP_DNS}" != "true" && "${DOMAIN}" != "localhost" ]]; then
   echo "Đang kiểm tra DNS readiness cho ${DOMAIN}..."
+  RESOLVED=""
   if command -v host >/dev/null 2>&1; then
-    DNS_OUTPUT=$(host "${DOMAIN}" || true)
+    if host "${DOMAIN}" >/dev/null 2>&1; then
+      RESOLVED="true"
+    fi
   elif command -v nslookup >/dev/null 2>&1; then
-    DNS_OUTPUT=$(nslookup "${DOMAIN}" || true)
+    if nslookup "${DOMAIN}" >/dev/null 2>&1; then
+      RESOLVED="true"
+    fi
   elif command -v getent >/dev/null 2>&1; then
-    DNS_OUTPUT=$(getent hosts "${DOMAIN}" || true)
-  else
-    DNS_OUTPUT="Resolver utility not available on host; skipped live check"
+    if getent hosts "${DOMAIN}" >/dev/null 2>&1; then
+      RESOLVED="true"
+    fi
   fi
 
-  if [[ -z "${DNS_OUTPUT}" ]]; then
-    echo "Cảnh báo: Không thể phân giải DNS cho domain ${DOMAIN}. Hãy đảm bảo bản ghi A/AAAA đã trỏ đúng IP." >&2
-  else
-    echo "DNS check hoàn tất."
+  if [[ "${RESOLVED}" != "true" ]]; then
+    echo "Lỗi: Không thể phân giải DNS cho domain '${DOMAIN}'." >&2
+    echo "Yêu cầu: Hãy cấu hình bản ghi A/AAAA trỏ về địa chỉ IP của máy chủ này trước, hoặc truyền cờ '--skip-dns' nếu đang cài đặt offline/staging." >&2
+    exit 1
   fi
-fi
-
-# Calculate Server URL and MCP Endpoint
-if [[ "${TLS_MODE}" != "none" ]]; then
-  SERVER_URL="https://${DOMAIN}"
-  ENABLE_TLS="true"
-else
-  SERVER_URL="http://${DOMAIN}:${HTTP_PORT}"
-  ENABLE_TLS="false"
+  echo "Xác minh DNS readiness thành công."
 fi
 
 MCP_ENDPOINT="${SERVER_URL}/mcp"
 
-# Write persisted environment file idempotently
+# Write persisted environment file idempotently with 0600 permissions
 echo "Ghi cấu hình runtime vào ${ENV_FILE}..."
 mkdir -p "$(dirname "${ENV_FILE}")" 2>/dev/null || ENV_FILE="${HOME}/.gen-hub.env"
 
@@ -152,5 +189,18 @@ echo "=== [Gen Hub] Cấu hình hoàn tất thành công ==="
 echo "Server URL:    ${SERVER_URL}"
 echo "MCP Endpoint:  ${MCP_ENDPOINT}"
 echo "Env File:      ${ENV_FILE}"
-echo ""
-echo "Bạn có thể khởi động Hub với: export \$(cat ${ENV_FILE} | xargs) && ./run.sh"
+
+if [[ "${APPLY}" == "true" ]]; then
+  echo ""
+  echo "Đang áp dụng cấu hình runtime vào Gen Hub service..."
+  if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet gen-hub 2>/dev/null; then
+    echo "Khởi động lại service gen-hub qua systemd..."
+    systemctl restart gen-hub
+  elif [[ -f "deploy/docker-compose.prod.yaml" ]] && command -v docker >/dev/null 2>&1; then
+    echo "Khởi động container stack qua docker compose..."
+    export GEN_HUB_DOMAIN="${DOMAIN}"
+    docker compose -f deploy/docker-compose.prod.yaml up -d --remove-orphans
+  else
+    echo "Cấu hình đã sẵn sàng. Chạy 'export \$(cat ${ENV_FILE} | xargs) && ./run.sh' để khởi động Hub."
+  fi
+fi

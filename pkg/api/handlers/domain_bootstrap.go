@@ -1,13 +1,10 @@
 package handlers
 
 import (
-	"context"
-	"net"
-	"net/http"
 	"strings"
 
 	"github.com/obot-platform/obot/pkg/api"
-	"github.com/obot-platform/obot/pkg/cli"
+	"github.com/obot-platform/obot/pkg/domain"
 )
 
 type DomainBootstrapHandler struct {
@@ -41,9 +38,9 @@ type CheckDNSResponse struct {
 	Error       string   `json:"error,omitempty"`
 }
 
-// GetStatus returns the current runtime domain configuration.
+// GetStatus returns the current runtime domain configuration neutrally.
 func (h *DomainBootstrapHandler) GetStatus(req api.Context) error {
-	cfg, err := cli.LoadRuntimeConfig()
+	cfg, err := domain.LoadRuntimeConfig()
 	if err == nil && cfg != nil && cfg.Domain != "" {
 		return req.Write(DomainStatusResponse{
 			Domain:            cfg.Domain,
@@ -56,15 +53,16 @@ func (h *DomainBootstrapHandler) GetStatus(req api.Context) error {
 		})
 	}
 
-	// Fallback to serverURL runtime
+	// Neutral runtime fallback: do not manufacture fake endpoint if serverURL is empty
 	serverURL := strings.TrimRight(h.serverURL, "/")
-	host := req.Request.Host
-	if host == "" {
-		host = "localhost:8080"
+	var mcpEndpoint string
+	var tlsActive bool
+	if serverURL != "" {
+		tlsActive = strings.HasPrefix(serverURL, "https://")
+		mcpEndpoint = serverURL + "/mcp"
 	}
-	tlsActive := strings.HasPrefix(serverURL, "https://")
-	mcpEndpoint := serverURL + "/mcp"
 
+	host := req.Request.Host
 	return req.Write(DomainStatusResponse{
 		Domain:            host,
 		ServerURL:         serverURL,
@@ -75,14 +73,14 @@ func (h *DomainBootstrapHandler) GetStatus(req api.Context) error {
 	})
 }
 
-// CheckDNS validates domain syntax and performs live DNS lookup without saving.
+// CheckDNS validates domain syntax and performs live DNS lookup without modifying state.
 func (h *DomainBootstrapHandler) CheckDNS(req api.Context) error {
 	var body CheckDNSRequest
 	if err := req.Read(&body); err != nil {
 		return err
 	}
 
-	domain, err := cli.ValidateDomainSyntax(body.Domain)
+	domainName, err := domain.ValidateDomainSyntax(body.Domain)
 	if err != nil {
 		return req.Write(CheckDNSResponse{
 			Domain: body.Domain,
@@ -92,17 +90,17 @@ func (h *DomainBootstrapHandler) CheckDNS(req api.Context) error {
 	}
 
 	ctx := req.Context()
-	ips, err := cli.CheckDNSReadiness(ctx, domain)
+	ips, err := domain.CheckDNSReadiness(ctx, domainName)
 	if err != nil {
 		return req.Write(CheckDNSResponse{
-			Domain: domain,
+			Domain: domainName,
 			Valid:  false,
 			Error:  err.Error(),
 		})
 	}
 
 	return req.Write(CheckDNSResponse{
-		Domain:      domain,
+		Domain:      domainName,
 		Valid:       true,
 		ResolvedIPs: ips,
 	})

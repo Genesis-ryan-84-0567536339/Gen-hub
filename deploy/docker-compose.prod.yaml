@@ -1,16 +1,18 @@
-# Gen Hub Production Stack with Automatic HTTPS (E1)
+# Gen Hub Production Stack with Native Container Runtime & Automatic HTTPS (E1)
 services:
   gen-hub:
-    image: ghcr.io/genesis-ryan-84-0567536339/gen-hub:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
     container_name: gen-hub-core
     restart: unless-stopped
     environment:
       - OBOT_SERVER_HOSTNAME=https://${GEN_HUB_DOMAIN}
       - OBOT_SERVER_UI_HOSTNAME=https://${GEN_HUB_DOMAIN}
       - OBOT_SERVER_PORT=8080
-      - POSTGRES_USER=obot
-      - POSTGRES_PASSWORD=${GEN_HUB_DB_PASSWORD:-obot_secure_pass}
-      - POSTGRES_DB=obot
+      - POSTGRES_USER=${GEN_HUB_DB_USER:-obot}
+      - POSTGRES_PASSWORD=${GEN_HUB_DB_PASSWORD:?Database password must be provided}
+      - POSTGRES_DB=${GEN_HUB_DB_NAME:-obot}
     volumes:
       - gen_hub_data:/data
     networks:
@@ -24,7 +26,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      - GEN_HUB_DOMAIN=${GEN_HUB_DOMAIN}
+      - GEN_HUB_DOMAIN=${GEN_HUB_DOMAIN:?Public domain must be provided}
     volumes:
       - ./Caddyfile.template:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

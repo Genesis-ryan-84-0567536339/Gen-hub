@@ -4,8 +4,8 @@
 {$GEN_HUB_DOMAIN:localhost} {
     encode gzip zstd
 
-    # Reverse proxy to Gen Hub core service
-    reverse_proxy localhost:8080 {
+    # Reverse proxy to Gen Hub core service within Docker container network
+    reverse_proxy gen-hub:8080 {
         header_up Host {host}
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-Proto {scheme}
