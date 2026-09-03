@@ -17,7 +17,6 @@ import (
 	"strings"
 
 	"github.com/obot-platform/obot/pkg/mcp"
-	"github.com/obot-platform/obot/pkg/policy"
 )
 
 const (
@@ -34,18 +33,16 @@ type pendingRequest struct {
 
 // hookProcessor filters MCP messages for one proxied HTTP exchange.
 type hookProcessor struct {
-	ctx           context.Context
-	runner        mcp.HookRunner
-	hooks         mcp.Hooks
-	servers       mcp.HookServerConfigs
-	audit         *proxyAudit
-	store         *hookCorrelationStore
-	mcpServerName string
-	policyManager *policy.PolicyManager
-	sessionID     string
-	request       *pendingRequest
-	requestID     string
-	disabled      bool
+	ctx       context.Context
+	runner    mcp.HookRunner
+	hooks     mcp.Hooks
+	servers   mcp.HookServerConfigs
+	audit     *proxyAudit
+	store     *hookCorrelationStore
+	sessionID string
+	request   *pendingRequest
+	requestID string
+	disabled  bool
 
 	requestError    error
 	requestResponse []byte
@@ -100,25 +97,18 @@ type hookSSELine struct {
 	value, ending string
 }
 
-func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks, servers mcp.HookServerConfigs, audit *proxyAudit, store *hookCorrelationStore, mcpServerName ...string) (*hookProcessor, error) {
-	var serverName string
-	if len(mcpServerName) > 0 {
-		serverName = mcpServerName[0]
-	}
-	pm := policy.GetDefaultManager()
+func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks, servers mcp.HookServerConfigs, audit *proxyAudit, store *hookCorrelationStore) (*hookProcessor, error) {
 	processor := &hookProcessor{
-		ctx:           req.Context(),
-		runner:        runner,
-		hooks:         hooks,
-		servers:       servers,
-		audit:         audit,
-		store:         store,
-		mcpServerName: serverName,
-		policyManager: pm,
-		sessionID:     mcpSessionID(req.Header, req.URL),
-		disabled:      runner == nil || len(hooks) == 0,
+		ctx:       req.Context(),
+		runner:    runner,
+		hooks:     hooks,
+		servers:   servers,
+		audit:     audit,
+		store:     store,
+		sessionID: mcpSessionID(req.Header, req.URL),
+		disabled:  runner == nil || len(hooks) == 0,
 	}
-	if req.Method != http.MethodPost || req.Body == nil {
+	if req.Method != http.MethodPost || req.Body == nil || (processor.disabled && processor.audit == nil) {
 		return processor, nil
 	}
 
@@ -151,31 +141,16 @@ func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks,
 			clearMCPHookRequestHeaders(req)
 			setMCPRequestBody(req, body)
 		}
-		if processor.audit != nil {
-			processor.audit.recordClientResponse(body)
-		}
+		processor.audit.recordClientResponse(body)
 		return processor, nil
 	}
-
-	// Enforce Global Publish Policy on inbound tool calls independently of hooks
-	if message.Method == "tools/call" {
-		toolName := mcpHookMessageName(message)
-		if err := pm.EnforceToolCall(processor.mcpServerName, toolName); err != nil {
-			processor.requestError = err
-			processor.requestResponse = mcpHookErrorResponse(message, "request", err)
-			return processor, nil
-		}
-	}
-
 	if processor.disabled {
 		return processor, nil
 	}
 
 	filtered, err := processor.filterRequest(body, message, hookOriginClient)
 	filtered.hooks.captureBody(body)
-	if processor.audit != nil {
-		processor.audit.recordRequestHooks(filtered.hooks)
-	}
+	processor.audit.recordRequestHooks(filtered.hooks)
 	if filtered.hooks.err != nil {
 		processor.requestError = fmt.Errorf("failed to call request hooks: %w", filtered.hooks.err)
 		processor.requestResponse = filtered.body
@@ -191,10 +166,8 @@ func newHookProcessor(req *http.Request, runner mcp.HookRunner, hooks mcp.Hooks,
 
 	processor.requestID = filtered.requestID
 	processor.request = &filtered.request
-	if processor.store != nil {
-		if err := processor.store.save(processor.ctx, processor.sessionID, processor.requestID, hookOriginClient, *processor.request); err != nil {
-			return nil, err
-		}
+	if err := processor.store.save(processor.ctx, processor.sessionID, processor.requestID, hookOriginClient, *processor.request); err != nil {
+		return nil, err
 	}
 	return processor, nil
 }
@@ -272,7 +245,7 @@ func (h *hookProcessor) blockedRequest() ([]byte, bool, error) {
 }
 
 func (h *hookProcessor) filterResponse(resp *http.Response) error {
-	if h == nil {
+	if h == nil || h.disabled {
 		return nil
 	}
 	if resp.Body != nil {
@@ -289,7 +262,7 @@ func (h *hookProcessor) filterResponse(resp *http.Response) error {
 	if sessionID := resp.Header.Get(mcpSessionHeader); sessionID != "" {
 		previousSessionID := h.sessionID
 		h.sessionID = sessionID
-		if h.request != nil && sessionID != previousSessionID && h.store != nil {
+		if h.request != nil && sessionID != previousSessionID {
 			if err := h.store.save(h.ctx, h.sessionID, h.requestID, hookOriginClient, *h.request); err != nil {
 				return err
 			}
@@ -342,20 +315,6 @@ func (h *hookProcessor) filterResponseMessage(body []byte, origin hookOrigin) []
 		return body
 	}
 
-	// 1. Authoritatively apply Global Publish Policy on tools/list (even if hooks are disabled or not correlated)
-	if len(wireMessage.Result) > 0 && h.policyManager != nil {
-		if filteredResult, err := h.policyManager.FilterToolsList(h.mcpServerName, wireMessage.Result); err == nil {
-			wireMessage.Result = filteredResult
-			if mutatedBody, err := json.Marshal(wireMessage); err == nil {
-				body = mutatedBody
-			}
-		}
-	}
-
-	if h.disabled {
-		return body
-	}
-
 	request, ok, err := h.takePendingRequest(wireMessage.ID, origin)
 	if err != nil {
 		return mcpHookErrorResponse(wireMessage, "response", err)
@@ -375,15 +334,11 @@ func (h *hookProcessor) filterResponseMessage(body []byte, origin hookOrigin) []
 		result.responseChanged = true
 		result.err = fmt.Errorf("failed to call response hooks: %w", hookErr)
 		body = mcpHookErrorResponse(wireMessage, "response", hookErr)
-		if h.audit != nil {
-			h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
-		}
+		h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
 		return body
 	}
 	if !result.mutated && len(result.mutations) == 0 {
-		if h.audit != nil {
-			h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
-		}
+		h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
 		return body
 	}
 
@@ -396,9 +351,7 @@ func (h *hookProcessor) filterResponseMessage(body []byte, origin hookOrigin) []
 		result.responseChanged = true
 		result.err = err
 		body = mcpHookErrorResponse(wireMessage, "response", err)
-		if h.audit != nil {
-			h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
-		}
+		h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
 		return body
 	}
 
@@ -407,15 +360,13 @@ func (h *hookProcessor) filterResponseMessage(body []byte, origin hookOrigin) []
 		result.responseChanged = true
 		result.err = fmt.Errorf("failed to marshal response mutated by MCP hook: %w", err)
 		body = mcpHookErrorResponse(wireMessage, "response", result.err)
-		if h.audit != nil {
-			h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
-		}
+		h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
 		return body
 	}
+	// Mutation metadata can change the wire response when only the request was
+	// mutated. That does not mean a response hook mutated the response body.
 	result.responseChanged = result.mutated
-	if h.audit != nil {
-		h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
-	}
+	h.audit.recordResponseHooks(mcp.MessageIDString(wireMessage.ID), result)
 	return filtered
 }
 
@@ -426,31 +377,21 @@ func (h *hookProcessor) filterRequestMessage(body []byte, wireMessage mcp.Messag
 
 	if filtered.hooks.err != nil {
 		filtered.hooks.err = fmt.Errorf("failed to call request hooks: %w", filtered.hooks.err)
-		if h.audit != nil {
-			h.audit.recordStreamRequestHooks(auditID, filtered.hooks)
-		}
+		h.audit.recordStreamRequestHooks(auditID, filtered.hooks)
 		return filtered.body
 	}
 	if err != nil {
 		filtered.hooks.err = err
-		if h.audit != nil {
-			h.audit.recordStreamRequestHooks(auditID, filtered.hooks)
-		}
+		h.audit.recordStreamRequestHooks(auditID, filtered.hooks)
 		return mcpHookErrorResponse(wireMessage, "request", err)
 	}
 
-	if h.store != nil {
-		if err := h.store.save(h.ctx, h.sessionID, filtered.requestID, hookOriginServer, filtered.request); err != nil {
-			filtered.hooks.err = err
-			if h.audit != nil {
-				h.audit.recordStreamRequestHooks(auditID, filtered.hooks)
-			}
-			return mcpHookErrorResponse(wireMessage, "request", err)
-		}
-	}
-	if h.audit != nil {
+	if err := h.store.save(h.ctx, h.sessionID, filtered.requestID, hookOriginServer, filtered.request); err != nil {
+		filtered.hooks.err = err
 		h.audit.recordStreamRequestHooks(auditID, filtered.hooks)
+		return mcpHookErrorResponse(wireMessage, "request", err)
 	}
+	h.audit.recordStreamRequestHooks(auditID, filtered.hooks)
 	return filtered.body
 }
 
@@ -493,13 +434,8 @@ func (h *hookProcessor) takePendingRequest(wireID any, origin hookOrigin) (pendi
 	if origin == hookOriginClient && h.request != nil && requestID == h.requestID {
 		request := *h.request
 		h.request = nil
-		if h.store != nil {
-			h.store.delete(h.ctx, h.sessionID, requestID, origin)
-		}
+		h.store.delete(h.ctx, h.sessionID, requestID, origin)
 		return request, true, nil
-	}
-	if h.store == nil {
-		return pendingRequest{}, false, nil
 	}
 	request, found, err := h.store.loadAndDelete(h.ctx, h.sessionID, requestID, origin)
 	if err != nil || !found {

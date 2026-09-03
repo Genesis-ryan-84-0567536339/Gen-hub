@@ -140,17 +140,12 @@ func NewRouter(ctx context.Context, services *services.Services) (*Router, error
 	)
 
 	domainBootstrapHandler := handlers.NewDomainBootstrapHandler(services.ServerURL)
-	globalPolicyHandler := handlers.NewGlobalPolicyHandler()
 
 	enforcement, err := handlers.NewEnforcementHandler(services.ServerURL)
 	if err != nil {
 		_ = mcpGateway.Close()
 		return nil, err
 	}
-
-	// Global Publish Policy (E3)
-	mux.HandleFunc("GET /api/global-policy", globalPolicyHandler.GetGlobalPolicy)
-	mux.HandleFunc("PUT /api/global-policy", globalPolicyHandler.UpdateGlobalPolicy)
 
 	// Domain & Setup Bootstrap (E1)
 	mux.HandleFunc("GET /api/domain/status", domainBootstrapHandler.GetStatus)

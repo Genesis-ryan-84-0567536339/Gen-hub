@@ -954,23 +954,3 @@ export type Workspace = {
 	type: string;
 };
 export type LaunchServerType = 'hosted' | 'multi' | 'remote' | 'composite';
-
-// Global Tool Publish Policy (E3)
-
-export interface ToolPolicy {
-	name: string;
-	enabled: boolean;
-	dangerous: boolean;
-}
-
-export interface MCPPolicy {
-	mcpServerName: string;
-	enabled: boolean;
-	tools: Record<string, ToolPolicy>;
-}
-
-export interface GlobalPublishPolicy {
-	version: number;
-	updatedAt: string;
-	mcpServers: Record<string, MCPPolicy>;
-}

@@ -272,7 +272,7 @@ func (h *Handler) Proxy(req api.Context) error {
 			return fmt.Errorf("failed to prepare MCP request audit log: %w", err)
 		}
 
-		hooks, err := newHookProcessor(req.Request, h.hookRunner, hookConfig, hookServers, audit, newHookCorrelationStore(req.Storage, serverConfig.AuditLogMetadata), serverConfig.MCPServerName)
+		hooks, err := newHookProcessor(req.Request, h.hookRunner, hookConfig, hookServers, audit, newHookCorrelationStore(req.Storage, serverConfig.AuditLogMetadata))
 		if err != nil {
 			return fmt.Errorf("failed to prepare MCP request hooks: %w", err)
 		}
