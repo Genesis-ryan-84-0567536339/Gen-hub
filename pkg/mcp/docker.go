@@ -83,11 +83,12 @@ func newDockerBackend(ctx context.Context, authEnabled bool, exposedPort int, op
 	}
 
 	if err = d.cleanupDeprecatedContainers(ctx); err != nil {
-		return nil, fmt.Errorf("failed to cleanup deprecated containers: %w", err)
+		slog.Warn("failed to cleanup deprecated containers, continuing without Docker container cleanup", "error", err)
 	}
 	d.startDeploymentCacheEventWatcher(ctx)
 	return d, nil
 }
+
 
 func detectDockerBackendNetwork(ctx context.Context, cli *client.Client) (bool, string, string, error) {
 	return dockerBackendNetworkConfig(

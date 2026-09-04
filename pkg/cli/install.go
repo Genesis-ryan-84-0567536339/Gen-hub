@@ -3,10 +3,13 @@ package cli
 import (
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 )
+
 
 // getLocalIP attempts to detect the local primary IPv4 address of the server.
 func getLocalIP() string {
@@ -66,13 +69,13 @@ func NewInstallTUICommand() *cobra.Command {
 				return err
 			}
 
-			var useTunnel bool
-			promptTunnel := &survey.Confirm{
-				Message: "Máy chủ ở đằng sau NAT / Router mạng nhà (Cần dùng Tunnel để public ra Internet)?",
-				Default: false,
+			var autoStart bool
+			promptAutoStart := &survey.Confirm{
+				Message: "Tự động khởi động Server Gen Hub ngay sau khi cài đặt?",
+				Default: true,
 			}
-			if err := survey.AskOne(promptTunnel, &useTunnel); err != nil {
-				return err
+			if err := survey.AskOne(promptAutoStart, &autoStart); err != nil {
+				autoStart = true
 			}
 
 			localIP := getLocalIP()
@@ -94,39 +97,32 @@ func NewInstallTUICommand() *cobra.Command {
 			if domain == "localhost" {
 				fmt.Printf(" 🖥️  Web Admin UI (Cục bộ):     http://localhost:8080\n")
 				fmt.Printf(" 🤖  MCP Endpoint:              http://localhost:8080/mcp\n")
-				fmt.Println("------------------------------------------------------------------")
-				fmt.Println(" 🚀 3 BƯỚC TRUY CẬP VÀ CẤU HÌNH TIẾP THEO:")
-				fmt.Println("  1️⃣  Khởi động Server ngay:")
-				fmt.Println("      ./bin/gen-hub server")
-				fmt.Println("  2️⃣  Mở Web Admin UI trên Trình duyệt:")
-				fmt.Println("      http://localhost:8080")
-				fmt.Println("  3️⃣  Cấu hình Tên miền (Domain), HTTPS & Tunnel từ Web GUI hoặc CLI:")
-				fmt.Println("      - Đổi Tên miền công cộng trong Web Admin UI -> Domain Settings")
-				fmt.Println("      - Mở Tunnel kết nối ra ngoài Internet (khi ở sau NAT/Router):")
-				fmt.Println("        ./bin/gen-hub tunnel --url http://localhost:8080")
-				fmt.Println("      - Cấu hình Caddy Reverse Proxy (Tự động cấp SSL Cổng 80/443)")
 			} else {
 				fmt.Printf(" 📍 IP Máy chủ cục bộ (LAN IP): %s\n", localIP)
 				fmt.Printf(" 🖥️  Web Admin UI:              %s://%s:8080\n", scheme, domain)
 				fmt.Printf(" 🤖  MCP Endpoint:              %s://%s:8080/mcp\n", scheme, domain)
-				fmt.Println("------------------------------------------------------------------")
-				fmt.Println(" 📌 HƯỚNG DẪN CẤU HÌNH KẾT NỐI (NETWORK & DNS CONFIGURATION):")
-				fmt.Printf("  1. Trỏ DNS A Record: Vui lòng truy cập trang quản lý DNS tên miền '%s'\n", domain)
-				fmt.Printf("     và tạo bản ghi:  A  ->  <IP_PUBLIC_CỦA_MÁY_CHỦ> (hoặc IP: %s)\n", localIP)
-				fmt.Println("     (Nếu thử nghiệm nội bộ, thêm dòng sau vào /etc/hosts: ")
-				fmt.Printf("      %s  %s)\n", localIP, domain)
-				if useHTTPS {
-					fmt.Println("  2. Cấu hình HTTPS & Firewall:")
-					fmt.Println("     - Mở cổng 80 & 443 trên Firewall/Router để Let's Encrypt tự động xác thực SSL.")
-					fmt.Println("     - Caddy/Gen Hub sẽ tự động cấp chứng chỉ TLS công cộng.")
+			}
+			fmt.Println("------------------------------------------------------------------")
+
+			if autoStart {
+				fmt.Println(" 🚀 ĐANG TỰ ĐỘNG KHỞI ĐỘNG SERVER GEN HUB...")
+				executable, err := os.Executable()
+				if err != nil {
+					executable = "./bin/gen-hub"
 				}
-				if useTunnel {
-					fmt.Println("  3. Kết nối Tunnel (Khi nằm sau NAT / Router mạng nhà không có IP Tĩnh):")
-					fmt.Println("     - Mở Tunnel: ./bin/gen-hub tunnel --url http://localhost:8080")
+				cmd := exec.Command(executable, "server")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				if err := cmd.Start(); err != nil {
+					fmt.Printf("  ⚠️ Không thể tự khởi động server: %v\n", err)
+					fmt.Println("  👉 Hãy chạy thủ công: ./bin/gen-hub server")
+				} else {
+					fmt.Printf("  ✅ Server đã được khởi động thành công (PID: %d)!\n", cmd.Process.Pid)
+					fmt.Printf("  🌐 Bạn có thể mở ngay trình duyệt tại: %s://%s:8080\n", scheme, domain)
 				}
-				fmt.Println("------------------------------------------------------------------")
-				fmt.Println(" 🚀 LỆNH KHỞI ĐỘNG HỆ THỐNG:")
-				fmt.Println("  👉 Chạy Server Gen Hub ngay:")
+			} else {
+				fmt.Println(" 🚀 LỆNH KHỞI ĐỘNG HỆ THỐNG THỦ CÔNG:")
+				fmt.Println("  👉 Chạy Server Gen Hub:")
 				fmt.Println("     ./bin/gen-hub server")
 			}
 			fmt.Println("==================================================================")
@@ -135,5 +131,6 @@ func NewInstallTUICommand() *cobra.Command {
 		},
 	}
 }
+
 
 
