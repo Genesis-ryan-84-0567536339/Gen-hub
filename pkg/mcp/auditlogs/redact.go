@@ -3,6 +3,7 @@ package auditlogs
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -12,15 +13,17 @@ const (
 	OutcomeDenied  = "Denied"
 )
 
-var sensitiveHeaders = []string{
-	"authorization",
-	"cookie",
-	"set-cookie",
-	"x-api-key",
-	"proxy-authorization",
-	"x-auth-token",
-	"x-session-token",
-}
+var (
+	sensitiveHeaders = []string{
+		"authorization",
+		"cookie",
+		"set-cookie",
+		"x-api-key",
+		"proxy-authorization",
+		"x-auth-token",
+		"x-session-token",
+	}
+)
 
 // RedactHeaders scrubs sensitive authentication tokens and cookies from HTTP header maps.
 func RedactHeaders(headers http.Header) http.Header {
@@ -44,14 +47,7 @@ func RedactHeaderMap(headers map[string]string) map[string]string {
 	redacted := make(map[string]string, len(headers))
 	for k, v := range headers {
 		lowerK := strings.ToLower(k)
-		isSensitive := false
-		for _, s := range sensitiveHeaders {
-			if lowerK == s {
-				isSensitive = true
-				break
-			}
-		}
-		if isSensitive {
+		if slices.Contains(sensitiveHeaders, lowerK) {
 			redacted[k] = "[REDACTED]"
 		} else {
 			redacted[k] = v

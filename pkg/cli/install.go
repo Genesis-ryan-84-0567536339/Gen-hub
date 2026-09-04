@@ -12,7 +12,7 @@ func NewInstallTUICommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install",
 		Short: "Interactive TUI installer for Gen Hub (First-run wizard)",
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			fmt.Println("==================================================")
 			fmt.Println("   🚀 GEN HUB v1 — INTERACTIVE TUI INSTALLER      ")
 			fmt.Println("==================================================")

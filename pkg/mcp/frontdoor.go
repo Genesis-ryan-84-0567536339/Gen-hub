@@ -24,11 +24,11 @@ const (
 
 var (
 	// ErrFrontDoorCompositeNotFound means bootstrap has not created a designated composite.
-	ErrFrontDoorCompositeNotFound = errors.New("Gen Hub front-door composite is not configured")
+	ErrFrontDoorCompositeNotFound = errors.New("gen Hub front-door composite is not configured")
 	// ErrFrontDoorCompositeConflict means more than one server carries the front-door marker.
 	ErrFrontDoorCompositeConflict = errors.New("multiple Gen Hub front-door composites are configured")
 	// ErrFrontDoorCompositeInvalid means the marked server cannot safely serve as the front door.
-	ErrFrontDoorCompositeInvalid = errors.New("Gen Hub front-door composite is invalid")
+	ErrFrontDoorCompositeInvalid = errors.New("gen Hub front-door composite is invalid")
 )
 
 // ResolveFrontDoorComposite returns the only MCPServer marked as the Gen Hub front door.

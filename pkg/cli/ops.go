@@ -13,7 +13,7 @@ func NewBackupCommand() *cobra.Command {
 		Use:   "backup [path]",
 		Short: "Backup Gen Hub database, persistent volume, and encryption configuration",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			path := args[0]
 			fmt.Printf("Gen Hub backup initialized to destination: %s\n", path)
 			return nil
@@ -27,7 +27,7 @@ func NewRestoreCommand() *cobra.Command {
 		Use:   "restore [path]",
 		Short: "Restore Gen Hub database and configuration from backup archive",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			path := args[0]
 			if _, err := os.Stat(path); os.IsNotExist(err) {
 				return fmt.Errorf("backup file does not exist: %s", path)
@@ -44,7 +44,7 @@ func NewUpdateCommand() *cobra.Command {
 		Use:   "update [version]",
 		Short: "Update Gen Hub installation to target version safely",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			version := args[0]
 			fmt.Printf("Gen Hub installation update initiated to version: %s\n", version)
 			return nil

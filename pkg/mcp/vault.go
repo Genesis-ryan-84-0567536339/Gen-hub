@@ -5,17 +5,19 @@ import (
 	"strings"
 )
 
-// SupportedConnectors lists the 8 target connectors required for Gen Hub v1 (FINAL_PRODUCT_SPEC.md Section 9)
-var SupportedConnectors = []string{
-	"github",
-	"google-drive",
-	"web-search",
-	"postgresql",
-	"filesystem",
-	"gmail",
-	"google-calendar",
-	"slack",
-}
+var (
+	// SupportedConnectors lists the 8 target connectors required for Gen Hub v1 (FINAL_PRODUCT_SPEC.md Section 9)
+	SupportedConnectors = []string{
+		"github",
+		"google-drive",
+		"web-search",
+		"postgresql",
+		"filesystem",
+		"gmail",
+		"google-calendar",
+		"slack",
+	}
+)
 
 // IsConnectorSupported returns true if the connector is in the official Gen Hub v1 target catalog.
 func IsConnectorSupported(connectorID string) bool {
