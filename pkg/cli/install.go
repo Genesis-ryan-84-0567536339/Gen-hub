@@ -89,9 +89,10 @@ func NewInstallTUICommand() *cobra.Command {
 			fmt.Printf("[5/5] ✨ Hoàn tất cài đặt cho domain: %s\n\n", domain)
 
 			scheme := "http"
-			if useHTTPS {
+			if useHTTPS && domain != "localhost" {
 				scheme = "https"
 			}
+
 
 			fmt.Println("==================================================================")
 			fmt.Printf(" 🎉 Gen Hub v1 Cài đặt hoàn tất thành công!\n")
