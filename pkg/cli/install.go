@@ -38,8 +38,12 @@ func NewInstallTUICommand() *cobra.Command {
 			var dbChoice string
 			promptDB := &survey.Select{
 				Message: "Chọn Nền tảng Cơ sở dữ liệu (Database):",
-				Options: []string{"PostgreSQL (Tự động chạy container)", "SQLite Cục bộ", "PostgreSQL Bên ngoài (Custom DSN)"},
-				Default: "PostgreSQL (Tự động chạy container)",
+				Options: []string{
+					"(Recommended) PostgreSQL 16 (Tự động chạy Container Stack)",
+					"SQLite Cục bộ (Gọn nhẹ cho Dev / Test)",
+					"PostgreSQL Bên ngoài (Custom DSN)",
+				},
+				Default: "(Recommended) PostgreSQL 16 (Tự động chạy Container Stack)",
 			}
 			if err := survey.AskOne(promptDB, &dbChoice); err != nil {
 				return err
