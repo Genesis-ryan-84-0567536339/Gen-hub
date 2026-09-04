@@ -15,16 +15,6 @@ type DomainBootstrapHandler struct {
 	checkDNS          func(api.Context, string) ([]string, error)
 }
 
-func NewDomainBootstrapHandler(serverURL string) *DomainBootstrapHandler {
-	return &DomainBootstrapHandler{
-		serverURL:         serverURL,
-		loadRuntimeConfig: domain.LoadRuntimeConfig,
-		checkDNS: func(req api.Context, domainName string) ([]string, error) {
-			return domain.CheckDNSReadiness(req.Context(), domainName)
-		},
-	}
-}
-
 type DomainStatusResponse struct {
 	Domain            string   `json:"domain"`
 	ServerURL         string   `json:"serverURL"`
@@ -49,6 +39,16 @@ type CheckDNSResponse struct {
 	Valid       bool     `json:"valid"`
 	ResolvedIPs []string `json:"resolvedIPs,omitempty"`
 	Error       string   `json:"error,omitempty"`
+}
+
+func NewDomainBootstrapHandler(serverURL string) *DomainBootstrapHandler {
+	return &DomainBootstrapHandler{
+		serverURL:         serverURL,
+		loadRuntimeConfig: domain.LoadRuntimeConfig,
+		checkDNS: func(req api.Context, domainName string) ([]string, error) {
+			return domain.CheckDNSReadiness(req.Context(), domainName)
+		},
+	}
 }
 
 // GetStatus returns the current runtime domain configuration neutrally.

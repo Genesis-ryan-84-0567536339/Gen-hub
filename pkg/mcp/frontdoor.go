@@ -93,8 +93,8 @@ func EnsureFrontDoorComposite(ctx context.Context, client kclient.Client, namesp
 			Alias:  "Composite Hub",
 			UserID: ownerID,
 			Manifest: types.MCPServerManifest{
-				Name:         "Composite Hub",
-				Runtime:      types.RuntimeComposite,
+				Name:            "Composite Hub",
+				Runtime:         types.RuntimeComposite,
 				CompositeConfig: &types.CompositeRuntimeConfig{},
 			},
 		},
@@ -110,4 +110,3 @@ func EnsureFrontDoorComposite(ctx context.Context, client kclient.Client, namesp
 	}
 	return server, nil
 }
-

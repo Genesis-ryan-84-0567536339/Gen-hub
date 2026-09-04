@@ -69,7 +69,6 @@
 	} from '$lib/context/layout.svelte';
 	import Bots from '$lib/icons/Bots.svelte';
 	import { localState } from '$lib/runes/localState.svelte';
-	import { Group } from '$lib/services';
 	import {
 		accessibleModels,
 		defaultModelAliases,
@@ -98,30 +97,19 @@
 		ChevronUp,
 		RadioTower,
 		Users,
-		BotMessageSquare,
-		PencilRuler,
 		LockOpen,
 		Bot,
-		LayoutDashboard,
 		Notebook,
 		Laptop,
 		PanelLeftOpen,
-		Settings,
-		PanelLeftClose,
-		Brain,
 		Container,
 		LayoutGrid,
-		KeyRound,
 		Menu,
 		X,
-		Server,
-		Shield,
-		Activity,
-		Globe,
-		ScrollText
+		Server
 	} from '@lucide/svelte';
 	import { tick, untrack } from 'svelte';
-	import { fade, slide, type TransitionConfig } from 'svelte/transition';
+	import { fade, slide } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
 
 	let navCollapsed = $state({ ...navCollapsedCache });
@@ -218,7 +206,7 @@
 	const {
 		classes,
 		children,
-		onRenderSubContent,
+		onRenderSubContent: _onRenderSubContent,
 		hideSidebar,
 		whiteBackground,
 		main,
@@ -228,15 +216,15 @@
 		showBackButton,
 		onBackButtonClick,
 		leftSidebar,
-		leftMenu: overrideLeftMenu,
+		leftMenu: _overrideLeftMenu,
 		rightSidebar,
-		rightMenu: overrideRightMenu,
+		rightMenu: _overrideRightMenu,
 		mobileDock,
 		banner,
 		layoutContext,
 		disableResize,
 		hideProfileButton,
-		alwaysShowHeaderTitle,
+		alwaysShowHeaderTitle: _alwaysShowHeaderTitle,
 		titleContent
 	}: Props = $props();
 	let nav = $state<HTMLElement>();
@@ -860,7 +848,9 @@
 								<span>Quay lại Gen Hub</span>
 							</button>
 
-							<div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 pt-3 pb-1">
+							<div
+								class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 pt-3 pb-1"
+							>
 								Hạ tầng Obot
 							</div>
 
@@ -893,7 +883,9 @@
 				</div>
 
 				<!-- Aside Foot -->
-				<div class="mt-auto pt-3 px-2.5 border-t border-[#293244] text-[#9ca3af] text-[12px] leading-relaxed">
+				<div
+					class="mt-auto pt-3 px-2.5 border-t border-[#293244] text-[#9ca3af] text-[12px] leading-relaxed"
+				>
 					Gen Hub · Personal MCP Gateway<br />
 					Nền tảng Obot Open Source
 				</div>
@@ -938,7 +930,9 @@
 				{:else if canShowCommunitySignup}
 					<CommunitySignupBanner onDismiss={handleDismissCommunitySignupBanner} />
 				{/if}
-				<header class="h-[72px] bg-white/88 backdrop-blur-md dark:bg-slate-900/90 border-b border-[#e6e9ef] dark:border-slate-800 px-7 flex items-center justify-between shadow-xs">
+				<header
+					class="h-[72px] bg-white/88 backdrop-blur-md dark:bg-slate-900/90 border-b border-[#e6e9ef] dark:border-slate-800 px-7 flex items-center justify-between shadow-xs"
+				>
 					<div class="flex items-center gap-2.5">
 						{#if !layout.sidebarOpen || hideSidebar}
 							<IconButton
@@ -965,7 +959,9 @@
 							</IconButton>
 						{/if}
 						<div class="flex flex-col">
-							<h1 class="text-[19px] font-bold text-[#172033] dark:text-white leading-tight flex items-center gap-2">
+							<h1
+								class="text-[19px] font-bold text-[#172033] dark:text-white leading-tight flex items-center gap-2"
+							>
 								{#if titleContent}
 									{@render titleContent()}
 								{:else}
@@ -980,7 +976,9 @@
 
 					<div class="flex items-center gap-3">
 						<!-- Prototype Top Actions: Neutral Gateway Chip & Avatar -->
-						<div class="hidden sm:inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+						<div
+							class="hidden sm:inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+						>
 							<span class="size-2 rounded-full bg-slate-400 dark:bg-slate-500"></span>
 							<span>MCP Gateway</span>
 						</div>
@@ -992,7 +990,9 @@
 						{#if !hideProfileButton}
 							<Profile />
 						{:else}
-							<div class="size-9 rounded-full bg-[#e5e7eb] dark:bg-slate-800 flex items-center justify-center font-extrabold text-[#374151] dark:text-slate-200 text-sm">
+							<div
+								class="size-9 rounded-full bg-[#e5e7eb] dark:bg-slate-800 flex items-center justify-center font-extrabold text-[#374151] dark:text-slate-200 text-sm"
+							>
 								R
 							</div>
 						{/if}
@@ -1070,7 +1070,10 @@
 {/snippet}
 
 {#snippet navLink(link: NavLink)}
-	{@const isActive = link.href && (pathname === link.href || (link.href !== '/admin/dashboard' && pathname.startsWith(`${link.href}/`)))}
+	{@const isActive =
+		link.href &&
+		(pathname === link.href ||
+			(link.href !== '/admin/dashboard' && pathname.startsWith(`${link.href}/`)))}
 	<div class="flex flex-col">
 		{#if link.collapsible && !link.href}
 			<button
@@ -1105,17 +1108,23 @@
 				onclick={saveSidebarScroll}
 			>
 				{#if link.iconSymbol}
-					<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0">{link.iconSymbol}</span>
+					<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0"
+						>{link.iconSymbol}</span
+					>
 				{:else if link.icon}
 					<link.icon class={twMerge('size-4', isActive ? 'text-white' : 'text-slate-400')} />
 				{/if}
 				<span class="truncate">{link.label}</span>
 			</a>
 		{:else}
-			<div class="flex items-center justify-between px-3 py-2.5 text-xs text-slate-500 cursor-not-allowed">
+			<div
+				class="flex items-center justify-between px-3 py-2.5 text-xs text-slate-500 cursor-not-allowed"
+			>
 				<div class="flex items-center gap-2.5 min-w-0">
 					{#if link.iconSymbol}
-						<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0">{link.iconSymbol}</span>
+						<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0"
+							>{link.iconSymbol}</span
+						>
 					{:else if link.icon}
 						<link.icon class="size-4 text-slate-500" />
 					{/if}
@@ -1132,7 +1141,8 @@
 		{#if link.items && !isNavCollapsed(link.id)}
 			<div class="flex flex-col pl-7 pr-2 py-1 gap-0.5">
 				{#each link.items as item (item.href)}
-					{@const isSubActive = item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))}
+					{@const isSubActive =
+						item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))}
 					{#if item.disabled}
 						<div
 							id={`sidebar-sublink-${item.id}`}

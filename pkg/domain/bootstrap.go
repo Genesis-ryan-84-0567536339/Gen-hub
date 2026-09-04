@@ -20,18 +20,14 @@ const (
 	DefaultRuntimeConfigRelPath = "gen-hub/runtime-config.json"
 	DefaultRuntimeEnvFile       = "/data/gen-hub.env"
 	RuntimeConfigFileEnv        = "GEN_HUB_RUNTIME_CONFIG_FILE"
-)
 
-// TLSMode constants
-const (
+	// TLSMode constants
 	TLSModeNone        = "none"
 	TLSModeLetsEncrypt = "letsencrypt"
 	TLSModeCustom      = "custom"
-)
 
-// Bootstrap state constants describe only the first-run infrastructure state.
-// The ready state is reserved for the later product-level readiness check.
-const (
+	// Bootstrap state constants describe only the first-run infrastructure state.
+	// The ready state is reserved for the later product-level readiness check.
 	BootstrapStateUnconfigured = "unconfigured"
 	BootstrapStateDNSNotReady  = "dns_not_ready"
 	BootstrapStateTLSPending   = "tls_pending"
@@ -133,7 +129,7 @@ func ValidateDomainSyntax(rawDomain string) (string, error) {
 			return "", fmt.Errorf("domain label %q in %q cannot start or end with a hyphen", label, domain)
 		}
 		for _, r := range label {
-			if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
 				return "", fmt.Errorf("domain label %q in %q contains invalid character %q", label, domain, r)
 			}
 		}
@@ -345,18 +341,18 @@ func WriteRuntimeEnvFile(path string, cfg *RuntimeConfig) error {
 
 	var sb strings.Builder
 	sb.WriteString("# Gen Hub Persisted Runtime Configuration (E1)\n")
-	sb.WriteString(fmt.Sprintf("# Generated at %s\n\n", cfg.ConfiguredAt.Format(time.RFC3339)))
-	sb.WriteString(fmt.Sprintf("GEN_HUB_DOMAIN=%s\n", strconv.Quote(cfg.Domain)))
-	sb.WriteString(fmt.Sprintf("OBOT_SERVER_HOSTNAME=%s\n", strconv.Quote(cfg.ServerURL)))
-	sb.WriteString(fmt.Sprintf("OBOT_SERVER_UI_HOSTNAME=%s\n", strconv.Quote(cfg.ServerURL)))
-	sb.WriteString(fmt.Sprintf("GEN_HUB_MCP_ENDPOINT=%s\n", strconv.Quote(cfg.MCPEndpoint)))
-	sb.WriteString(fmt.Sprintf("GEN_HUB_ENABLE_TLS=%t\n", cfg.EnableTLS))
-	sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_MODE=%s\n", cfg.TLSMode))
+	fmt.Fprintf(&sb, "# Generated at %s\n\n", cfg.ConfiguredAt.Format(time.RFC3339))
+	fmt.Fprintf(&sb, "GEN_HUB_DOMAIN=%s\n", strconv.Quote(cfg.Domain))
+	fmt.Fprintf(&sb, "OBOT_SERVER_HOSTNAME=%s\n", strconv.Quote(cfg.ServerURL))
+	fmt.Fprintf(&sb, "OBOT_SERVER_UI_HOSTNAME=%s\n", strconv.Quote(cfg.ServerURL))
+	fmt.Fprintf(&sb, "GEN_HUB_MCP_ENDPOINT=%s\n", strconv.Quote(cfg.MCPEndpoint))
+	fmt.Fprintf(&sb, "GEN_HUB_ENABLE_TLS=%t\n", cfg.EnableTLS)
+	fmt.Fprintf(&sb, "GEN_HUB_TLS_MODE=%s\n", cfg.TLSMode)
 	if cfg.HTTPPort > 0 {
-		sb.WriteString(fmt.Sprintf("GEN_HUB_HTTP_PORT=%d\n", cfg.HTTPPort))
+		fmt.Fprintf(&sb, "GEN_HUB_HTTP_PORT=%d\n", cfg.HTTPPort)
 	}
 	if cfg.HTTPSPort > 0 {
-		sb.WriteString(fmt.Sprintf("GEN_HUB_HTTPS_PORT=%d\n", cfg.HTTPSPort))
+		fmt.Fprintf(&sb, "GEN_HUB_HTTPS_PORT=%d\n", cfg.HTTPSPort)
 	}
 	if cfg.CertPath != "" {
 		sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_CERT_PATH=%s\n", strconv.Quote(cfg.CertPath)))

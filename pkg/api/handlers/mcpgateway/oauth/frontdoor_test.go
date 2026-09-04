@@ -59,4 +59,3 @@ func TestFrontDoorResourceMustMatchPublicOriginExactly(t *testing.T) {
 		}
 	}
 }
-

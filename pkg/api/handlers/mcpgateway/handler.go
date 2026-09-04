@@ -53,7 +53,7 @@ type Handler struct {
 	secretBindingAllowedLabel string
 	serverURL                 string
 	// frontDoorProxy is an internal test seam; production always calls Proxy directly.
-	frontDoorProxy            func(api.Context) error
+	frontDoorProxy func(api.Context) error
 }
 
 func auditLogMetadataForPrincipal(metadata map[string]string, user user.Info) map[string]string {

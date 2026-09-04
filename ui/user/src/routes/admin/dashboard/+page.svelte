@@ -5,13 +5,7 @@
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import TweenedMetric from '$lib/components/TweenedMetric.svelte';
 	import { DEFAULT_MCP_CATALOG_ID } from '$lib/constants';
-	import {
-		AdminService,
-		UserService,
-		type MCPCatalogServer,
-		type OrgUser,
-		type TotalTokenUsage
-	} from '$lib/services';
+	import { AdminService, UserService, type MCPCatalogServer } from '$lib/services';
 	import type { TopServerUsageRow, TopToolCallRow } from '$lib/services/dashboard/types';
 	import {
 		compileServerAndEntries,
@@ -22,7 +16,6 @@
 	import { startOfDay, endOfDay } from 'date-fns';
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import { twMerge } from 'tailwind-merge';
 
 	let loading = $state(true);
 	let loadingToolUsage = $state(true);
@@ -64,7 +57,7 @@
 	});
 
 	const serverAndEntries = $derived(mcpServersAndEntries.current);
-	const { totalServers } = $derived(
+	const { totalServers: _totalServers } = $derived(
 		compileServerAndEntries(serversData, serverAndEntries.entries, false)
 	);
 
@@ -178,11 +171,17 @@
 		<!-- 4 Stat Cards Top Row -->
 		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 			{#each statCards as stat (stat.id)}
-				<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-[18px] shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between">
-					<div class="text-[12px] text-[#6b7280] dark:text-slate-400 font-bold tracking-wider uppercase">
+				<div
+					class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-[18px] shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between"
+				>
+					<div
+						class="text-[12px] text-[#6b7280] dark:text-slate-400 font-bold tracking-wider uppercase"
+					>
 						{stat.label}
 					</div>
-					<div class="text-[28px] font-extrabold my-2 text-[#172033] dark:text-white tracking-tight">
+					<div
+						class="text-[28px] font-extrabold my-2 text-[#172033] dark:text-white tracking-tight"
+					>
 						{#if stat.loading}
 							<div class="skeleton h-8 w-16 rounded-md"></div>
 						{:else if stat.value !== null}
@@ -199,15 +198,20 @@
 		</div>
 
 		<!-- Gateway Section: Ổ cắm tổng MCP -->
-		<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-5 shadow-[0_2px_10px_rgba(31,41,55,0.03)] grid grid-cols-1 lg:grid-cols-12 gap-5 items-center">
+		<div
+			class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-5 shadow-[0_2px_10px_rgba(31,41,55,0.03)] grid grid-cols-1 lg:grid-cols-12 gap-5 items-center"
+		>
 			<div class="lg:col-span-6 flex flex-col gap-1.5">
 				<h3 class="text-[18px] font-bold text-[#172033] dark:text-white m-0">Ổ cắm tổng MCP</h3>
 				<p class="text-[13px] text-[#6b7280] dark:text-slate-400 m-0 leading-relaxed">
-					Agent chỉ kết nối vào endpoint này. Gen Hub sẽ tự định tuyến tới GitHub, Google Drive, Database, Search và các MCP khác theo quyền bạn cấp.
+					Agent chỉ kết nối vào endpoint này. Gen Hub sẽ tự định tuyến tới GitHub, Google Drive,
+					Database, Search và các MCP khác theo quyền bạn cấp.
 				</p>
 			</div>
 			<div class="lg:col-span-6 flex flex-col gap-1.5">
-				<div class="bg-[#0f172a] text-[#e2e8f0] p-3.5 rounded-xl flex items-center gap-2.5 overflow-hidden">
+				<div
+					class="bg-[#0f172a] text-[#e2e8f0] p-3.5 rounded-xl flex items-center gap-2.5 overflow-hidden"
+				>
 					<code class="font-mono text-xs truncate flex-1 text-slate-200">
 						{#if mcpGatewayUrl}
 							{mcpGatewayUrl}
@@ -218,7 +222,10 @@
 					{#if mcpGatewayUrl}
 						<CopyButton
 							text={mcpGatewayUrl}
-							classes={{ button: 'border-0 bg-[#27324a] text-white rounded-lg px-2.5 py-1.5 font-bold text-xs hover:bg-[#344262]' }}
+							classes={{
+								button:
+									'border-0 bg-[#27324a] text-white rounded-lg px-2.5 py-1.5 font-bold text-xs hover:bg-[#344262]'
+							}}
 						/>
 					{/if}
 				</div>
@@ -232,20 +239,28 @@
 		<div class="flex flex-col gap-3 mt-1">
 			<div class="flex items-center justify-between">
 				<div>
-					<h2 class="text-[16px] font-bold text-[#172033] dark:text-white m-0">Yêu cầu kết nối mới</h2>
-					<p class="text-[12px] text-[#6b7280] dark:text-slate-400 mt-1 m-0">Agent mới phải được bạn duyệt trước khi nhìn thấy tool.</p>
+					<h2 class="text-[16px] font-bold text-[#172033] dark:text-white m-0">
+						Yêu cầu kết nối mới
+					</h2>
+					<p class="text-[12px] text-[#6b7280] dark:text-slate-400 mt-1 m-0">
+						Agent mới phải được bạn duyệt trước khi nhìn thấy tool.
+					</p>
 				</div>
 				<a
-					href="/agent-auth-scopes"
+					href={resolve('/agent-auth-scopes')}
 					class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-200 px-3 py-1.5 rounded-[10px] font-bold text-[12px] hover:bg-[#f8fafc]"
 				>
 					Xem tất cả
 				</a>
 			</div>
 
-			<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-[18px] shadow-[0_2px_10px_rgba(31,41,55,0.03)]">
+			<div
+				class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-[18px] shadow-[0_2px_10px_rgba(31,41,55,0.03)]"
+			>
 				<div class="flex flex-col sm:flex-row items-start gap-3.5">
-					<div class="size-11 rounded-[13px] bg-[#111827] text-white flex items-center justify-center font-black text-lg shrink-0">
+					<div
+						class="size-11 rounded-[13px] bg-[#111827] text-white flex items-center justify-center font-black text-lg shrink-0"
+					>
 						A
 					</div>
 					<div class="flex-1 min-w-0">
@@ -253,7 +268,9 @@
 							<h4 class="text-[14px] font-bold text-[#172033] dark:text-white m-0 truncate">
 								Antigravity IDE · Máy Fedora
 							</h4>
-							<span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/40">
+							<span
+								class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/40"
+							>
 								Visual Fixture · E4 Scope
 							</span>
 						</div>
@@ -262,21 +279,45 @@
 						</div>
 
 						<div class="flex flex-wrap gap-2 mt-3">
-							<span class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold">GitHub</span>
-							<span class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold">Google Drive</span>
-							<span class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold">Web Search</span>
-							<span class="px-2.5 py-1.5 border border-[#e6e9ef] dark:border-slate-800 rounded-lg text-xs bg-[#fafafa] dark:bg-slate-800 text-slate-500">Database</span>
-							<span class="px-2.5 py-1.5 border border-[#e6e9ef] dark:border-slate-800 rounded-lg text-xs bg-[#fafafa] dark:bg-slate-800 text-slate-500">Filesystem</span>
+							<span
+								class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold"
+								>GitHub</span
+							>
+							<span
+								class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold"
+								>Google Drive</span
+							>
+							<span
+								class="px-2.5 py-1.5 border border-[#c7d2fe] rounded-lg text-xs bg-[#eef2ff] text-[#3730a3] font-bold"
+								>Web Search</span
+							>
+							<span
+								class="px-2.5 py-1.5 border border-[#e6e9ef] dark:border-slate-800 rounded-lg text-xs bg-[#fafafa] dark:bg-slate-800 text-slate-500"
+								>Database</span
+							>
+							<span
+								class="px-2.5 py-1.5 border border-[#e6e9ef] dark:border-slate-800 rounded-lg text-xs bg-[#fafafa] dark:bg-slate-800 text-slate-500"
+								>Filesystem</span
+							>
 						</div>
 
 						<div class="flex flex-wrap gap-2 mt-3.5">
-							<button class="bg-[#4f46e5] border border-[#4f46e5] text-white px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed" disabled>
+							<button
+								class="bg-[#4f46e5] border border-[#4f46e5] text-white px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed"
+								disabled
+							>
 								Duyệt kết nối (Kích hoạt ở E4)
 							</button>
-							<button class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-300 px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed" disabled>
+							<button
+								class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-300 px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed"
+								disabled
+							>
 								Cấp toàn bộ tool
 							</button>
-							<button class="border border-[#fecaca] bg-[#fef2f2] text-[#dc2626] px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed" disabled>
+							<button
+								class="border border-[#fecaca] bg-[#fef2f2] text-[#dc2626] px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed"
+								disabled
+							>
 								Từ chối
 							</button>
 						</div>
@@ -290,10 +331,12 @@
 			<div class="flex items-center justify-between">
 				<div>
 					<h2 class="text-[16px] font-bold text-[#172033] dark:text-white m-0">MCP đang dùng</h2>
-					<p class="text-[12px] text-[#6b7280] dark:text-slate-400 mt-1 m-0">Danh sách máy chủ MCP khả dụng trong Gen Hub.</p>
+					<p class="text-[12px] text-[#6b7280] dark:text-slate-400 mt-1 m-0">
+						Danh sách máy chủ MCP khả dụng trong Gen Hub.
+					</p>
 				</div>
 				<a
-					href="/mcp-catalog"
+					href={resolve('/mcp-catalog')}
 					class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-200 px-3 py-1.5 rounded-[10px] font-bold text-[12px] hover:bg-[#f8fafc]"
 				>
 					Quản lý MCP
@@ -307,7 +350,9 @@
 					{/each}
 				</div>
 			{:else if serverAndEntries.entries.length === 0}
-				<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-400">
+				<div
+					class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-400"
+				>
 					Chưa có MCP Catalog Entry nào được khởi tạo.
 				</div>
 			{:else}
@@ -315,10 +360,14 @@
 					{#each serverAndEntries.entries.slice(0, 6) as entry (entry.id)}
 						{@const name = entry.manifest?.name || entry.id}
 						{@const desc = entry.manifest?.description || 'Dịch vụ kết nối tích hợp'}
-						<div class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-4 shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between">
+						<div
+							class="bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-4 shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col justify-between"
+						>
 							<div class="flex justify-between items-start gap-3">
 								<div class="flex gap-2.5 min-w-0">
-									<div class="size-[38px] rounded-[10px] bg-[#f3f4f6] dark:bg-slate-800 flex items-center justify-center text-[19px] font-bold text-slate-700 dark:text-slate-200 shrink-0">
+									<div
+										class="size-[38px] rounded-[10px] bg-[#f3f4f6] dark:bg-slate-800 flex items-center justify-center text-[19px] font-bold text-slate-700 dark:text-slate-200 shrink-0"
+									>
 										{#if entry.manifest?.icon}
 											<img src={entry.manifest.icon} alt={name} class="size-6 object-contain" />
 										{:else}
@@ -326,7 +375,9 @@
 										{/if}
 									</div>
 									<div class="flex flex-col min-w-0">
-										<h4 class="text-[14px] font-bold text-[#172033] dark:text-white m-0 truncate leading-tight">
+										<h4
+											class="text-[14px] font-bold text-[#172033] dark:text-white m-0 truncate leading-tight"
+										>
 											{name}
 										</h4>
 										<small class="text-xs text-[#6b7280] dark:text-slate-400 truncate mt-0.5">
@@ -335,13 +386,19 @@
 									</div>
 								</div>
 
-								<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#ecfdf5] text-[#059669] dark:bg-emerald-950/40 dark:text-[#34d399]">
+								<span
+									class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#ecfdf5] text-[#059669] dark:bg-emerald-950/40 dark:text-[#34d399]"
+								>
 									Khả dụng
 								</span>
 							</div>
 
-							<div class="flex justify-between items-center mt-3.5 pt-3 border-t border-[#e6e9ef] dark:border-slate-800 text-xs text-[#6b7280] dark:text-slate-400">
-								<span class="font-medium flex items-center gap-1 text-[#059669] dark:text-[#34d399]">
+							<div
+								class="flex justify-between items-center mt-3.5 pt-3 border-t border-[#e6e9ef] dark:border-slate-800 text-xs text-[#6b7280] dark:text-slate-400"
+							>
+								<span
+									class="font-medium flex items-center gap-1 text-[#059669] dark:text-[#34d399]"
+								>
 									● Đang hoạt động
 								</span>
 								<span class="truncate">

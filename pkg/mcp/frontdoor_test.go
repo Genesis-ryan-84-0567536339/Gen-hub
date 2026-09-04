@@ -12,7 +12,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-const frontDoorTestNamespace = "default"
+const (
+	frontDoorTestNamespace = "default"
+)
 
 func newFrontDoorTestClient(objects ...kclient.Object) kclient.Client {
 	return fake.NewClientBuilder().WithScheme(storagescheme.Scheme).WithObjects(objects...).Build()
@@ -101,4 +103,3 @@ func TestEnsureFrontDoorCompositeIsIdempotent(t *testing.T) {
 		t.Fatalf("expected one composite after repeated ensure, got %d", len(list.Items))
 	}
 }
-

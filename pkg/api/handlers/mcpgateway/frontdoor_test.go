@@ -81,7 +81,8 @@ func TestFrontDoorProxyResolvesMarkedCompositeServer(t *testing.T) {
 			UserID:   "user-1",
 			Template: false,
 			Manifest: types.MCPServerManifest{
-				Runtime: types.RuntimeComposite,
+				Runtime:         types.RuntimeComposite,
+				CompositeConfig: &types.CompositeRuntimeConfig{},
 			},
 		},
 	}
@@ -129,7 +130,7 @@ func TestFrontDoorProxyAuthenticatedRoutesToMarkedComposite(t *testing.T) {
 	var proxiedID string
 	handler := &Handler{frontDoorProxy: func(req api.Context) error {
 		proxiedID = req.PathValue("mcp_id")
-		req.ResponseWriter.WriteHeader(http.StatusNoContent)
+		req.WriteHeader(http.StatusNoContent)
 		return nil
 	}}
 	recorder := httptest.NewRecorder()
