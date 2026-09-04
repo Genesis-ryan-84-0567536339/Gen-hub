@@ -353,6 +353,36 @@ export interface BootstrapStatus {
 	setupEnabled: boolean;
 }
 
+export type DomainBootstrapState =
+	| 'unconfigured'
+	| 'dns_not_ready'
+	| 'tls_pending'
+	| 'configured'
+	| 'ready'
+	| 'error';
+
+export interface DomainStatus {
+	domain: string;
+	serverURL: string;
+	mcpEndpoint: string;
+	tlsActive: boolean;
+	tlsConfigured: boolean;
+	tlsMode: 'none' | 'letsencrypt' | 'custom' | '';
+	dnsStatus: string;
+	resolvedIPs?: string[];
+	state: DomainBootstrapState;
+	error?: string;
+	configComplete: boolean;
+	bootstrapComplete: boolean;
+}
+
+export interface DomainDNSCheck {
+	domain: string;
+	valid: boolean;
+	resolvedIPs?: string[];
+	error?: string;
+}
+
 // Device code
 
 export interface DeviceCodeVerificationResponse {

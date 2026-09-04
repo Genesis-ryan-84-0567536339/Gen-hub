@@ -7,6 +7,9 @@ permissions:
   actions: read
   security-events: write
 
+env:
+  IMAGE_REPOSITORY: ghcr.io/genesis-ryan-84-0567536339/gen-hub
+
 on:
   workflow_dispatch:
   push:
@@ -21,7 +24,7 @@ on:
 
 jobs:
   build:
-    runs-on: depot-ubuntu-22.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
@@ -35,36 +38,30 @@ jobs:
           # which can cause false positives in vulnerability scans.
           fetch-depth: ${{ case(github.ref_type == 'tag', 1, 0) }}
 
-      - name: Setup Depot
-        uses: depot/setup-action@v1
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
-
-      - name: Log in to Docker Hub
-        if: ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Build and push Docker images
-        uses: depot/build-push-action@v1
+        uses: docker/build-push-action@v6
         id: build-and-push
         with:
-          project: bbqjs4tj1g
           context: .
           push: true
           pull: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}-enterprise:${{ github.ref_name }}
-            ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') && format('docker.io/obot/{0}:{1}', github.event.repository.name, github.ref_name) || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ env.IMAGE_REPOSITORY }}:${{ github.ref_name }}
           build-args: |
             BASE_IMAGE=ghcr.io/obot-platform/obot/base:latest
 
@@ -78,16 +75,9 @@ jobs:
       - name: Sign Images
         env:
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
-          TAGS: >-
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}-enterprise:${{ github.ref_name }}
-            ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') && format('docker.io/obot/{0}:{1}', github.event.repository.name, github.ref_name) || '' }}
+          IMAGE: ${{ env.IMAGE_REPOSITORY }}
         run: |
-          images=""
-          for tag in ${TAGS}; do
-            images+="${tag}@${DIGEST} "
-          done
-          cosign sign --yes ${images}
+          cosign sign --yes "${IMAGE}@${DIGEST}"
 
       - name: Setup crane
         uses: imjasonh/setup-crane@v0.5
@@ -95,32 +85,27 @@ jobs:
       - name: Copy images to latest tag
         if: ${{ github.ref_type == 'tag' && !contains(github.ref_name, '-') }}
         run: |
-          crane tag ghcr.io/${{ github.repository }}:${{ github.ref_name }} latest
-          crane tag ghcr.io/${{ github.repository }}-enterprise:${{ github.ref_name }} latest
-          crane tag docker.io/obot/${{ github.event.repository.name }}:${{ github.ref_name }} latest
+          crane tag "${IMAGE_REPOSITORY}:${{ github.ref_name }}" latest
 
   image-scan:
-    runs-on: depot-ubuntu-22.04
+    runs-on: ubuntu-22.04
     needs: build
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Depot
-        uses: depot/setup-action@v1
-
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Run Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # 0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          image-ref: ${{ env.IMAGE_REPOSITORY }}:${{ github.ref_name }}
           skip-dirs: "**/venv"
           format: "sarif"
           output: "trivy-results.sarif"

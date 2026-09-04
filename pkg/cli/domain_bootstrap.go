@@ -30,6 +30,14 @@ func (d *DomainBootstrap) Customize(c *cobra.Command) {
 }
 
 func (d *DomainBootstrap) Run(cmd *cobra.Command, _ []string) error {
+	output := strings.ToLower(strings.TrimSpace(d.Output))
+	if output == "" {
+		output = "text"
+	}
+	if output != "text" && output != "json" {
+		return fmt.Errorf("invalid output format %q: must be 'text' or 'json'", d.Output)
+	}
+
 	ctx := cmd.Context()
 	opts := domain.BootstrapOptions{
 		Domain:    d.Domain,
@@ -45,7 +53,7 @@ func (d *DomainBootstrap) Run(cmd *cobra.Command, _ []string) error {
 
 	config, err := domain.ExecuteBootstrap(ctx, opts)
 	if err != nil {
-		if d.Output == "json" {
+		if output == "json" {
 			errResp := map[string]string{
 				"status": "error",
 				"error":  err.Error(),
@@ -56,7 +64,7 @@ func (d *DomainBootstrap) Run(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if d.Output == "json" {
+	if output == "json" {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(config)
 	}
 
@@ -69,6 +77,7 @@ func (d *DomainBootstrap) Run(cmd *cobra.Command, _ []string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "Resolved IPs:  %s\n", strings.Join(config.ResolvedIPs, ", "))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "TLS Enabled:   %t (Mode: %s)\n", config.EnableTLS, config.TLSMode)
-	fmt.Fprintf(cmd.OutOrStdout(), "Status:        Ready for Hub startup\n")
+	fmt.Fprintf(cmd.OutOrStdout(), "Config State:  %s\n", config.State)
+	fmt.Fprintf(cmd.OutOrStdout(), "Next Step:     Start Gen Hub and finish owner setup; product readiness is confirmed later.\n")
 	return nil
 }

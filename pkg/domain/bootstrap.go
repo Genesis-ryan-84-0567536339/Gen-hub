@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 const (
 	DefaultRuntimeConfigRelPath = "gen-hub/runtime-config.json"
 	DefaultRuntimeEnvFile       = "/data/gen-hub.env"
+	RuntimeConfigFileEnv        = "GEN_HUB_RUNTIME_CONFIG_FILE"
 )
 
 // TLSMode constants
@@ -25,6 +27,17 @@ const (
 	TLSModeNone        = "none"
 	TLSModeLetsEncrypt = "letsencrypt"
 	TLSModeCustom      = "custom"
+)
+
+// Bootstrap state constants describe only the first-run infrastructure state.
+// The ready state is reserved for the later product-level readiness check.
+const (
+	BootstrapStateUnconfigured = "unconfigured"
+	BootstrapStateDNSNotReady  = "dns_not_ready"
+	BootstrapStateTLSPending   = "tls_pending"
+	BootstrapStateConfigured   = "configured"
+	BootstrapStateReady        = "ready"
+	BootstrapStateError        = "error"
 )
 
 // RuntimeConfig stores the persisted domain and HTTPS bootstrap configuration.
@@ -41,6 +54,10 @@ type RuntimeConfig struct {
 	TLSMode           string    `json:"tlsMode"` // "letsencrypt", "custom", "none"
 	CertPath          string    `json:"certPath,omitempty"`
 	KeyPath           string    `json:"keyPath,omitempty"`
+	State             string    `json:"state"`
+	Error             string    `json:"error,omitempty"`
+	EnvFile           string    `json:"envFile,omitempty"`
+	ConfigComplete    bool      `json:"configComplete"`
 	BootstrapComplete bool      `json:"bootstrapComplete"`
 }
 
@@ -145,6 +162,10 @@ func CheckDNSReadiness(ctx context.Context, domain string) ([]string, error) {
 
 // ExecuteBootstrap executes the first-run domain and HTTPS configuration idempotently.
 func ExecuteBootstrap(ctx context.Context, opts BootstrapOptions) (*RuntimeConfig, error) {
+	return executeBootstrap(ctx, opts, CheckDNSReadiness)
+}
+
+func executeBootstrap(ctx context.Context, opts BootstrapOptions, checkDNS func(context.Context, string) ([]string, error)) (*RuntimeConfig, error) {
 	domain, err := ValidateDomainSyntax(opts.Domain)
 	if err != nil {
 		return nil, fmt.Errorf("domain validation error: %w", err)
@@ -154,12 +175,50 @@ func ExecuteBootstrap(ctx context.Context, opts BootstrapOptions) (*RuntimeConfi
 	if err != nil {
 		return nil, err
 	}
+	if err := validatePort("http-port", opts.HTTPPort); err != nil {
+		return nil, err
+	}
+	if err := validatePort("https-port", opts.HTTPSPort); err != nil {
+		return nil, err
+	}
+
+	envPath := opts.EnvFile
+	if envPath == "" {
+		envPath = os.Getenv("GEN_HUB_ENV_FILE")
+	}
+	if envPath == "" {
+		envPath = DefaultRuntimeEnvFile
+	}
+
+	cfg := &RuntimeConfig{
+		Domain:       domain,
+		HTTPPort:     opts.HTTPPort,
+		HTTPSPort:    opts.HTTPSPort,
+		EnableTLS:    enableTLS,
+		ConfiguredAt: time.Now().UTC(),
+		DNSStatus:    "checking",
+		TLSMode:      tlsMode,
+		CertPath:     opts.CertPath,
+		KeyPath:      opts.KeyPath,
+		State:        BootstrapStateConfigured,
+		EnvFile:      envPath,
+	}
+
+	if existing, loadErr := LoadRuntimeConfig(); loadErr == nil && sameBootstrapInput(existing, cfg) {
+		cfg.ConfiguredAt = existing.ConfiguredAt
+	}
 
 	var resolvedIPs []string
 	dnsStatus := "skipped"
 	if !opts.SkipDNS {
-		ips, err := CheckDNSReadiness(ctx, domain)
+		ips, err := checkDNS(ctx, domain)
 		if err != nil {
+			cfg.DNSStatus = "not_ready"
+			cfg.State = BootstrapStateDNSNotReady
+			cfg.Error = err.Error()
+			if saveErr := SaveRuntimeConfig(cfg); saveErr != nil {
+				return nil, errors.Join(fmt.Errorf("DNS readiness check failed: %w", err), fmt.Errorf("failed to persist bootstrap failure: %w", saveErr))
+			}
 			return nil, fmt.Errorf("DNS readiness check failed: %w", err)
 		}
 		resolvedIPs = ips
@@ -168,13 +227,13 @@ func ExecuteBootstrap(ctx context.Context, opts BootstrapOptions) (*RuntimeConfi
 
 	if tlsMode == TLSModeCustom {
 		if opts.CertPath == "" || opts.KeyPath == "" {
-			return nil, errors.New("custom TLS mode requires both --cert-path and --key-path")
+			return nil, persistBootstrapError(cfg, errors.New("custom TLS mode requires both --cert-path and --key-path"))
 		}
 		if _, err := os.Stat(opts.CertPath); err != nil {
-			return nil, fmt.Errorf("certificate file not found (%s): %w", opts.CertPath, err)
+			return nil, persistBootstrapError(cfg, fmt.Errorf("certificate file not found (%s): %w", opts.CertPath, err))
 		}
 		if _, err := os.Stat(opts.KeyPath); err != nil {
-			return nil, fmt.Errorf("private key file not found (%s): %w", opts.KeyPath, err)
+			return nil, persistBootstrapError(cfg, fmt.Errorf("private key file not found (%s): %w", opts.KeyPath, err))
 		}
 	}
 
@@ -193,44 +252,61 @@ func ExecuteBootstrap(ctx context.Context, opts BootstrapOptions) (*RuntimeConfi
 	}
 	mcpEndpoint = fmt.Sprintf("%s/mcp", strings.TrimRight(serverURL, "/"))
 
-	cfg := &RuntimeConfig{
-		Domain:            domain,
-		HTTPPort:          opts.HTTPPort,
-		HTTPSPort:         opts.HTTPSPort,
-		EnableTLS:         enableTLS,
-		MCPEndpoint:       mcpEndpoint,
-		ServerURL:         serverURL,
-		ConfiguredAt:      time.Now().UTC(),
-		DNSStatus:         dnsStatus,
-		ResolvedIPs:       resolvedIPs,
-		TLSMode:           tlsMode,
-		CertPath:          opts.CertPath,
-		KeyPath:           opts.KeyPath,
-		BootstrapComplete: true,
+	cfg.MCPEndpoint = mcpEndpoint
+	cfg.ServerURL = serverURL
+	cfg.DNSStatus = dnsStatus
+	cfg.ResolvedIPs = resolvedIPs
+	cfg.ConfigComplete = true
+	// Domain configuration alone cannot prove that the app, HTTPS, owner setup,
+	// and designated Composite Hub are ready.
+	cfg.BootstrapComplete = false
+	if enableTLS {
+		cfg.State = BootstrapStateTLSPending
 	}
 
+	if err := WriteRuntimeEnvFile(envPath, cfg); err != nil {
+		return nil, persistBootstrapError(cfg, fmt.Errorf("failed to write runtime environment file %s: %w", envPath, err))
+	}
 	if err := SaveRuntimeConfig(cfg); err != nil {
 		return nil, fmt.Errorf("failed to save runtime config: %w", err)
-	}
-
-	envPath := opts.EnvFile
-	if envPath == "" {
-		envPath = os.Getenv("GEN_HUB_ENV_FILE")
-	}
-	if envPath == "" {
-		envPath = DefaultRuntimeEnvFile
-	}
-	if err := WriteRuntimeEnvFile(envPath, cfg); err != nil {
-		fallbackEnv := filepath.Join(xdg.ConfigHome, "gen-hub", "gen-hub.env")
-		_ = WriteRuntimeEnvFile(fallbackEnv, cfg)
 	}
 
 	return cfg, nil
 }
 
+func validatePort(name string, port int) error {
+	if port < 0 || port > 65535 {
+		return fmt.Errorf("invalid %s %d: must be between 0 and 65535", name, port)
+	}
+	return nil
+}
+
+func sameBootstrapInput(left, right *RuntimeConfig) bool {
+	return left != nil && right != nil &&
+		left.Domain == right.Domain &&
+		left.HTTPPort == right.HTTPPort &&
+		left.HTTPSPort == right.HTTPSPort &&
+		left.EnableTLS == right.EnableTLS &&
+		left.TLSMode == right.TLSMode &&
+		left.CertPath == right.CertPath &&
+		left.KeyPath == right.KeyPath &&
+		left.EnvFile == right.EnvFile
+}
+
+func persistBootstrapError(cfg *RuntimeConfig, bootstrapErr error) error {
+	cfg.State = BootstrapStateError
+	cfg.Error = bootstrapErr.Error()
+	cfg.ConfigComplete = false
+	cfg.BootstrapComplete = false
+	if err := SaveRuntimeConfig(cfg); err != nil {
+		return errors.Join(bootstrapErr, fmt.Errorf("failed to persist bootstrap failure: %w", err))
+	}
+	return bootstrapErr
+}
+
 // SaveRuntimeConfig saves configuration to XDG config storage.
 func SaveRuntimeConfig(cfg *RuntimeConfig) error {
-	path, err := xdg.ConfigFile(DefaultRuntimeConfigRelPath)
+	path, err := runtimeConfigPath()
 	if err != nil {
 		return err
 	}
@@ -241,15 +317,15 @@ func SaveRuntimeConfig(cfg *RuntimeConfig) error {
 	}
 	data = append(data, '\n')
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("creating directory %s: %w", filepath.Dir(path), err)
-	}
-	return os.WriteFile(path, data, 0o600)
+	return writeFileAtomic(path, data, 0o600)
 }
 
 // LoadRuntimeConfig loads persisted runtime configuration.
 func LoadRuntimeConfig() (*RuntimeConfig, error) {
-	path := filepath.Join(xdg.ConfigHome, DefaultRuntimeConfigRelPath)
+	path, err := runtimeConfigPath()
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -270,10 +346,10 @@ func WriteRuntimeEnvFile(path string, cfg *RuntimeConfig) error {
 	var sb strings.Builder
 	sb.WriteString("# Gen Hub Persisted Runtime Configuration (E1)\n")
 	sb.WriteString(fmt.Sprintf("# Generated at %s\n\n", cfg.ConfiguredAt.Format(time.RFC3339)))
-	sb.WriteString(fmt.Sprintf("GEN_HUB_DOMAIN=%s\n", cfg.Domain))
-	sb.WriteString(fmt.Sprintf("OBOT_SERVER_HOSTNAME=%s\n", cfg.ServerURL))
-	sb.WriteString(fmt.Sprintf("OBOT_SERVER_UI_HOSTNAME=%s\n", cfg.ServerURL))
-	sb.WriteString(fmt.Sprintf("GEN_HUB_MCP_ENDPOINT=%s\n", cfg.MCPEndpoint))
+	sb.WriteString(fmt.Sprintf("GEN_HUB_DOMAIN=%s\n", strconv.Quote(cfg.Domain)))
+	sb.WriteString(fmt.Sprintf("OBOT_SERVER_HOSTNAME=%s\n", strconv.Quote(cfg.ServerURL)))
+	sb.WriteString(fmt.Sprintf("OBOT_SERVER_UI_HOSTNAME=%s\n", strconv.Quote(cfg.ServerURL)))
+	sb.WriteString(fmt.Sprintf("GEN_HUB_MCP_ENDPOINT=%s\n", strconv.Quote(cfg.MCPEndpoint)))
 	sb.WriteString(fmt.Sprintf("GEN_HUB_ENABLE_TLS=%t\n", cfg.EnableTLS))
 	sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_MODE=%s\n", cfg.TLSMode))
 	if cfg.HTTPPort > 0 {
@@ -283,17 +359,54 @@ func WriteRuntimeEnvFile(path string, cfg *RuntimeConfig) error {
 		sb.WriteString(fmt.Sprintf("GEN_HUB_HTTPS_PORT=%d\n", cfg.HTTPSPort))
 	}
 	if cfg.CertPath != "" {
-		sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_CERT_PATH=%s\n", cfg.CertPath))
+		sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_CERT_PATH=%s\n", strconv.Quote(cfg.CertPath)))
 	}
 	if cfg.KeyPath != "" {
-		sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_KEY_PATH=%s\n", cfg.KeyPath))
+		sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_KEY_PATH=%s\n", strconv.Quote(cfg.KeyPath)))
 	}
 
+	return writeFileAtomic(path, []byte(sb.String()), 0o600)
+}
+
+func runtimeConfigPath() (string, error) {
+	if path := strings.TrimSpace(os.Getenv(RuntimeConfigFileEnv)); path != "" {
+		return filepath.Abs(path)
+	}
+	return xdg.ConfigFile(DefaultRuntimeConfigRelPath)
+}
+
+func writeFileAtomic(path string, data []byte, mode os.FileMode) (err error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+		return fmt.Errorf("creating directory %s: %w", dir, err)
 	}
-	return os.WriteFile(path, []byte(sb.String()), 0o600)
+
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("creating temporary file for %s: %w", path, err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	if err = tmp.Chmod(mode); err != nil {
+		return fmt.Errorf("setting permissions on temporary file for %s: %w", path, err)
+	}
+	if _, err = tmp.Write(data); err != nil {
+		return fmt.Errorf("writing temporary file for %s: %w", path, err)
+	}
+	if err = tmp.Sync(); err != nil {
+		return fmt.Errorf("syncing temporary file for %s: %w", path, err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("closing temporary file for %s: %w", path, err)
+	}
+	if err = os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("replacing %s: %w", path, err)
+	}
+	return nil
 }
 
 // ParseURLHost extracts host and normalized URL.

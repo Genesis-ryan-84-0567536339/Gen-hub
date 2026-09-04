@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/obot-platform/obot/apiclient/types"
 	"github.com/obot-platform/obot/pkg/api"
+	"github.com/obot-platform/obot/pkg/mcp"
 	"github.com/obot-platform/obot/pkg/storage"
 	v1 "github.com/obot-platform/obot/pkg/storage/apis/obot.obot.ai/v1"
 	storagescheme "github.com/obot-platform/obot/pkg/storage/scheme"
@@ -16,17 +16,6 @@ import (
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
-
-type frontDoorMockHandler struct {
-	Handler
-	invokedProxyWithMCPID string
-}
-
-func (m *frontDoorMockHandler) Proxy(req api.Context) error {
-	m.invokedProxyWithMCPID = req.PathValue("mcp_id")
-	req.ResponseWriter.WriteHeader(http.StatusOK)
-	return nil
-}
 
 func newFrontDoorTestStorage(objects ...kclient.Object) storage.Client {
 	return storage.Client(fake.NewClientBuilder().
@@ -66,13 +55,11 @@ func TestFrontDoorProxyNoCompositeReturns503(t *testing.T) {
 	}
 }
 
-func TestFrontDoorProxyResolvesDeterministicCompositeServer(t *testing.T) {
-	// Create two composite servers with different timestamps
+func TestFrontDoorProxyResolvesMarkedCompositeServer(t *testing.T) {
 	server1 := &v1.MCPServer{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:              "composite-2",
-			Namespace:         "default",
-			CreationTimestamp: metav1.NewTime(time.Now().Add(-1 * time.Hour)),
+			Name:      "composite-unmarked",
+			Namespace: "default",
 		},
 		Spec: v1.MCPServerSpec{
 			UserID:   "user-1",
@@ -84,9 +71,11 @@ func TestFrontDoorProxyResolvesDeterministicCompositeServer(t *testing.T) {
 	}
 	server2 := &v1.MCPServer{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:              "composite-1",
-			Namespace:         "default",
-			CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Hour)),
+			Name:      "composite-marked",
+			Namespace: "default",
+			Labels: map[string]string{
+				mcp.GenHubFrontDoorLabel: mcp.GenHubFrontDoorLabelValue,
+			},
 		},
 		Spec: v1.MCPServerSpec{
 			UserID:   "user-1",
@@ -114,7 +103,71 @@ func TestFrontDoorProxyResolvesDeterministicCompositeServer(t *testing.T) {
 		t.Fatalf("unexpected error resolving front door composite target: %v", err)
 	}
 
-	if targetMCPServerID != "composite-1" {
-		t.Fatalf("expected deterministic selection of older composite server 'composite-1', got: %s", targetMCPServerID)
+	if targetMCPServerID != "composite-marked" {
+		t.Fatalf("expected marked composite server, got: %s", targetMCPServerID)
+	}
+}
+
+func TestFrontDoorProxyAuthenticatedRoutesToMarkedComposite(t *testing.T) {
+	server := &v1.MCPServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "composite-marked",
+			Namespace: "default",
+			Labels: map[string]string{
+				mcp.GenHubFrontDoorLabel: mcp.GenHubFrontDoorLabelValue,
+			},
+		},
+		Spec: v1.MCPServerSpec{
+			UserID: "user-1",
+			Manifest: types.MCPServerManifest{
+				Runtime:         types.RuntimeComposite,
+				CompositeConfig: &types.CompositeRuntimeConfig{},
+			},
+		},
+	}
+
+	var proxiedID string
+	handler := &Handler{frontDoorProxy: func(req api.Context) error {
+		proxiedID = req.PathValue("mcp_id")
+		req.ResponseWriter.WriteHeader(http.StatusNoContent)
+		return nil
+	}}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "https://hub.example/mcp", nil)
+	apiReq := api.Context{
+		Request:        request,
+		ResponseWriter: recorder,
+		Storage:        newFrontDoorTestStorage(server),
+		User:           &kuser.DefaultInfo{Name: "test-user", UID: "user-1", Groups: []string{types.GroupAuthenticated}},
+	}
+
+	if err := handler.FrontDoorProxy(apiReq); err != nil {
+		t.Fatal(err)
+	}
+	if proxiedID != server.Name || recorder.Code != http.StatusNoContent {
+		t.Fatalf("proxy target/status = %q/%d", proxiedID, recorder.Code)
+	}
+}
+
+func TestFrontDoorProxyAnonymousUsesFrontDoorMetadata(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "https://hub.example/mcp", nil)
+	handler := &Handler{}
+
+	if err := handler.FrontDoorProxy(api.Context{
+		Request:        request,
+		ResponseWriter: recorder,
+		APIBaseURL:     "https://hub.example/api",
+		User:           &kuser.DefaultInfo{Name: "anonymous"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	want := `Bearer realm="Obot MCP Gateway", resource_metadata="https://hub.example/.well-known/oauth-protected-resource/mcp"`
+	if got := recorder.Header().Get("WWW-Authenticate"); got != want {
+		t.Fatalf("WWW-Authenticate = %q, want %q", got, want)
 	}
 }

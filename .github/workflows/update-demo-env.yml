@@ -5,6 +5,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE_REPOSITORY: ghcr.io/genesis-ryan-84-0567536339/gen-hub
+
 on:
   schedule:
     - cron: "0 03 * * *"
@@ -13,7 +16,7 @@ on:
 jobs:
   copy-tag:
     if: github.event_name != 'schedule' || vars.DISABLE_DEMO_AUTO_UPDATE != 'true'
-    runs-on: depot-ubuntu-22.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Log in to GitHub Container Registry
@@ -28,4 +31,4 @@ jobs:
 
       - name: Copy to demo tag
         run: |
-          crane tag ghcr.io/${{ github.repository }}:main demo
+          crane tag "${IMAGE_REPOSITORY}:main" demo

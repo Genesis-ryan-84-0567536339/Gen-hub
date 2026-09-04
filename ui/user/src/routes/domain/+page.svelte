@@ -1,20 +1,70 @@
 <script lang="ts">
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import Layout from '$lib/components/Layout.svelte';
+	import {
+		checkDomainDNS,
+		getDomainStatus,
+		type DomainDNSCheck,
+		type DomainStatus
+	} from '$lib/services';
 	import { onMount } from 'svelte';
 	import { fade } from 'svelte/transition';
 
-	let mounted = $state(false);
-	let currentHost = $state('');
-	let currentOrigin = $state('');
+	let status = $state<DomainStatus | null>(null);
+	let dnsCheck = $state<DomainDNSCheck | null>(null);
+	let loading = $state(true);
+	let checkingDNS = $state(false);
+	let loadError = $state('');
 
 	onMount(() => {
-		mounted = true;
-		currentHost = window.location.host;
-		currentOrigin = window.location.origin;
+		void loadStatus();
 	});
 
-	let mcpEndpoint = $derived(mounted && currentOrigin ? `${currentOrigin}/mcp` : '');
+	async function loadStatus() {
+		loading = true;
+		loadError = '';
+		try {
+			status = await getDomainStatus();
+		} catch (error) {
+			loadError = error instanceof Error ? error.message : 'Không tải được trạng thái domain.';
+		} finally {
+			loading = false;
+		}
+	}
+
+	async function runDNSCheck() {
+		if (!status?.domain) return;
+		checkingDNS = true;
+		dnsCheck = null;
+		try {
+			dnsCheck = await checkDomainDNS(status.domain);
+		} catch (error) {
+			dnsCheck = {
+				domain: status.domain,
+				valid: false,
+				error: error instanceof Error ? error.message : 'Không kiểm tra được DNS.'
+			};
+		} finally {
+			checkingDNS = false;
+		}
+	}
+
+	let stateLabel = $derived.by(() => {
+		switch (status?.state) {
+			case 'dns_not_ready':
+				return 'DNS chưa sẵn sàng';
+			case 'tls_pending':
+				return status.tlsActive ? 'HTTPS đang hoạt động' : 'Đang chờ HTTPS';
+			case 'configured':
+				return 'Cấu hình nền đã lưu';
+			case 'ready':
+				return 'Sẵn sàng';
+			case 'error':
+				return 'Lỗi cấu hình';
+			default:
+				return 'Chưa cấu hình';
+		}
+	});
 </script>
 
 <svelte:head>
@@ -30,12 +80,23 @@
 				Production cần domain công khai để các agent trên máy khác kết nối vào Hub.
 			</p>
 
+			<div class="mt-4 flex items-center justify-between rounded-[10px] border border-[#e6e9ef] bg-[#f8fafc] px-3 py-2.5 text-xs dark:border-slate-800 dark:bg-slate-800/40">
+				<span class="font-semibold text-[#64748b] dark:text-slate-400">Trạng thái</span>
+				<span class="font-bold text-[#172033] dark:text-white">{loading ? 'Đang tải...' : stateLabel}</span>
+			</div>
+
+			{#if loadError || status?.error}
+				<div role="alert" class="mt-3 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+					{loadError || status?.error}
+				</div>
+			{/if}
+
 			<div class="mt-4 flex flex-col gap-1.5">
 				<label for="domainInput" class="text-xs font-bold text-[#172033] dark:text-slate-200">Domain</label>
 				<input
 					id="domainInput"
 					class="w-full border border-[#e6e9ef] dark:border-slate-800 rounded-[10px] p-2.5 px-3 outline-none text-sm bg-white dark:bg-slate-800 text-[#172033] dark:text-white"
-					value={mounted && currentHost ? currentHost : 'Đang tải host runtime...'}
+					value={loading ? 'Đang tải...' : status?.domain || 'Chưa cấu hình'}
 					readonly
 				/>
 			</div>
@@ -46,26 +107,40 @@
 					<input
 						id="endpointInput"
 						class="w-full border border-[#e6e9ef] dark:border-slate-800 rounded-[10px] p-2.5 px-3 outline-none text-sm bg-[#fafafa] dark:bg-slate-800/80 text-[#172033] dark:text-white font-mono"
-						value={mcpEndpoint || 'Đang tải endpoint...'}
+						value={loading ? 'Đang tải...' : status?.mcpEndpoint || 'Chưa có endpoint'}
 						readonly
 					/>
-					{#if mcpEndpoint}
-						<CopyButton text={mcpEndpoint} classes={{ button: 'btn btn-primary btn-sm text-xs' }} />
+					{#if status?.mcpEndpoint}
+						<CopyButton text={status.mcpEndpoint} classes={{ button: 'btn btn-primary btn-sm text-xs' }} />
 					{/if}
 				</div>
 			</div>
 
 			<div class="flex items-center gap-2 mt-4">
-				<button class="bg-[#4f46e5] border border-[#4f46e5] text-white px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed" disabled>
-					Áp dụng domain (E1)
+				<button
+					class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-300 px-3 py-2 rounded-[10px] font-bold text-[13px] disabled:opacity-60 disabled:cursor-not-allowed"
+					disabled={!status?.domain || checkingDNS}
+					onclick={runDNSCheck}
+				>
+					{checkingDNS ? 'Đang kiểm tra DNS...' : 'Kiểm tra DNS'}
 				</button>
-				<button class="border border-[#e6e9ef] dark:border-slate-800 bg-white dark:bg-slate-900 text-[#374151] dark:text-slate-300 px-3 py-2 rounded-[10px] font-bold text-[13px] opacity-60 cursor-not-allowed" disabled>
-					Kiểm tra DNS
+				<button class="border border-transparent text-[#4f46e5] dark:text-indigo-300 px-3 py-2 rounded-[10px] font-bold text-[13px]" onclick={loadStatus}>
+					Tải lại trạng thái
 				</button>
 			</div>
 
+			{#if dnsCheck}
+				<div role="status" class="mt-3 rounded-[10px] border border-[#d8dee9] bg-[#f8fafc] px-3 py-2.5 text-xs text-[#64748b] dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300">
+					{#if dnsCheck.valid}
+						DNS đã sẵn sàng{dnsCheck.resolvedIPs?.length ? `: ${dnsCheck.resolvedIPs.join(', ')}` : '.'}
+					{:else}
+						DNS chưa sẵn sàng: {dnsCheck.error || 'Không tìm thấy bản ghi A/AAAA.'}
+					{/if}
+				</div>
+			{/if}
+
 			<div class="mt-4 p-3 px-3.5 bg-[#f8fafc] dark:bg-slate-800/40 border border-dashed border-[#d8dee9] dark:border-slate-800 rounded-[10px] text-[#64748b] dark:text-slate-400 text-xs leading-relaxed">
-				First-run Setup (E1): khi làm thật, quy trình bootstrap sẽ tự kiểm tra DNS → cấu hình HTTPS → cập nhật OAuth callback → sinh endpoint MCP. Màn hình này chỉ hiển thị trạng thái runtime.
+				Domain được cấu hình có chủ ý bằng lệnh bootstrap trên server. Trang này chỉ đọc trạng thái thực tế và kiểm tra DNS, không tự thay đổi cấu hình production.
 			</div>
 		</div>
 

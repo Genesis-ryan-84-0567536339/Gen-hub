@@ -1,52 +1,22 @@
 package mcpgateway
 
 import (
+	"errors"
 	"net/http"
-	"sort"
 
-	"github.com/obot-platform/obot/apiclient/types"
 	"github.com/obot-platform/obot/pkg/api"
+	"github.com/obot-platform/obot/pkg/mcp"
 	"github.com/obot-platform/obot/pkg/principal"
-	v1 "github.com/obot-platform/obot/pkg/storage/apis/obot.obot.ai/v1"
-	kclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"github.com/obot-platform/obot/pkg/system"
 )
 
-// ResolveFrontDoorTargetMCPServer deterministically finds the user's active composite MCPServer.
-// Returns targetMCPServerID, or error (e.g. types.NewErrNotFound / errNoCompositeFound).
+// ResolveFrontDoorTargetMCPServer finds the one marked Composite Hub owned by the caller.
 func ResolveFrontDoorTargetMCPServer(req api.Context) (string, error) {
-	ownerID := principal.ResourceOwnerID(req.User)
-
-	var serverList v1.MCPServerList
-	err := req.List(&serverList, kclient.MatchingFields{
-		"spec.userID": ownerID,
-	})
+	server, err := mcp.ResolveFrontDoorComposite(req.Context(), req.Storage, system.DefaultNamespace, principal.ResourceOwnerID(req.User))
 	if err != nil {
 		return "", err
 	}
-
-	var compositeServers []v1.MCPServer
-	for _, s := range serverList.Items {
-		if s.Spec.Template || s.Spec.CompositeName != "" {
-			continue
-		}
-		if s.Spec.Manifest.Runtime == types.RuntimeComposite {
-			compositeServers = append(compositeServers, s)
-		}
-	}
-
-	if len(compositeServers) == 0 {
-		return "", nil
-	}
-
-	// Deterministic selection: sort by CreationTimestamp ascending (or Name) so selection is stable
-	sort.Slice(compositeServers, func(i, j int) bool {
-		if !compositeServers[i].CreationTimestamp.Equal(&compositeServers[j].CreationTimestamp) {
-			return compositeServers[i].CreationTimestamp.Before(&compositeServers[j].CreationTimestamp)
-		}
-		return compositeServers[i].Name < compositeServers[j].Name
-	})
-
-	return compositeServers[0].Name, nil
+	return server.Name, nil
 }
 
 // FrontDoorProxy handles direct agent requests to https://<domain>/mcp and https://<domain>/mcp/{rest...}
@@ -61,12 +31,13 @@ func (h *Handler) FrontDoorProxy(req api.Context) error {
 
 	targetMCPServerID, err := ResolveFrontDoorTargetMCPServer(req)
 	if err != nil {
-		http.Error(req.ResponseWriter, "Failed to list MCP servers: "+err.Error(), http.StatusInternalServerError)
-		return nil
-	}
-
-	if targetMCPServerID == "" {
-		http.Error(req.ResponseWriter, "No active Composite MCP server instance found in Gen Hub. Please create or launch a composite MCP server in Gen Hub first.", http.StatusServiceUnavailable)
+		if errors.Is(err, mcp.ErrFrontDoorCompositeNotFound) ||
+			errors.Is(err, mcp.ErrFrontDoorCompositeConflict) ||
+			errors.Is(err, mcp.ErrFrontDoorCompositeInvalid) {
+			http.Error(req.ResponseWriter, err.Error(), http.StatusServiceUnavailable)
+			return nil
+		}
+		http.Error(req.ResponseWriter, "Failed to resolve Composite Hub: "+err.Error(), http.StatusInternalServerError)
 		return nil
 	}
 
@@ -79,5 +50,8 @@ func (h *Handler) FrontDoorProxy(req api.Context) error {
 		req.SetPathValue("rest", rest)
 	}
 
+	if h.frontDoorProxy != nil {
+		return h.frontDoorProxy(req)
+	}
 	return h.Proxy(req)
 }

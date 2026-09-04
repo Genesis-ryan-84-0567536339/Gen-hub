@@ -5,6 +5,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE_REPOSITORY: ghcr.io/genesis-ryan-84-0567536339/gen-hub
+
 on:
   workflow_dispatch:
   schedule:
@@ -12,7 +15,7 @@ on:
 
 jobs:
   copy-tag:
-    runs-on: depot-ubuntu-22.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Log in to GitHub Container Registry
@@ -27,8 +30,4 @@ jobs:
 
       - name: Copy to oss snapshot tag
         run: |
-          crane tag ghcr.io/${{ github.repository }}:main main-$(date +%Y%m%d)
-
-      - name: Copy to enterprise snapshot tag
-        run: |
-          crane tag ghcr.io/${{ github.repository }}-enterprise:main main-$(date +%Y%m%d)
+          crane tag "${IMAGE_REPOSITORY}:main" "main-$(date +%Y%m%d)"
