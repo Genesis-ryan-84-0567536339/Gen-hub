@@ -248,6 +248,44 @@
 					</p>
 				</div>
 			</div>
+
+			<!-- Chi tiết Hướng dẫn Cấu hình Tunnel & Caddy -->
+			<div class="mt-4 pt-4 border-t border-[#e6e9ef] dark:border-slate-800 flex flex-col gap-3">
+				<h3 class="text-[14px] font-bold text-[#172033] dark:text-white m-0">🛠️ Hướng dẫn Cấu hình & Tunnel</h3>
+
+				<!-- Section: DNS A Record -->
+				<div class="p-3 bg-[#f8fafc] dark:bg-slate-800/40 rounded-xl border border-[#e6e9ef] dark:border-slate-800 text-xs">
+					<span class="font-bold text-[#4338ca] dark:text-indigo-400">1. Trỏ DNS A Record (Public Domain)</span>
+					<p class="text-[#6b7280] dark:text-slate-400 mt-1 mb-2">Tạo 2 bản ghi A trỏ về IP Public máy chủ của bạn:</p>
+					<code class="block p-2 bg-[#1e293b] text-emerald-400 rounded-md font-mono text-[11px]">
+						A &nbsp; {status?.domain || 'domain.com'} &nbsp;&rarr;&nbsp; &lt;PUBLIC_IP&gt;<br />
+						A &nbsp; *.{status?.domain || 'domain.com'} &nbsp;&rarr;&nbsp; &lt;PUBLIC_IP&gt;
+					</code>
+				</div>
+
+				<!-- Section: Tunnel khi sau NAT -->
+				<div class="p-3 bg-[#f8fafc] dark:bg-slate-800/40 rounded-xl border border-[#e6e9ef] dark:border-slate-800 text-xs">
+					<span class="font-bold text-[#4338ca] dark:text-indigo-400">2. Kết nối Tunnel (Khi nằm sau Router/NAT)</span>
+					<p class="text-[#6b7280] dark:text-slate-400 mt-1 mb-2">Mở cổng ra ngoài Internet không cần trỏ Port Forwarding:</p>
+					<div class="flex items-center gap-2">
+						<code class="w-full p-2 bg-[#1e293b] text-emerald-400 rounded-md font-mono text-[11px] overflow-x-auto">
+							./bin/gen-hub tunnel --url http://localhost:8080
+						</code>
+						<CopyButton text="./bin/gen-hub tunnel --url http://localhost:8080" classes={{ button: 'btn btn-primary btn-sm text-xs shrink-0' }} />
+					</div>
+				</div>
+
+				<!-- Section: Caddy Reverse Proxy -->
+				<div class="p-3 bg-[#f8fafc] dark:bg-slate-800/40 rounded-xl border border-[#e6e9ef] dark:border-slate-800 text-xs">
+					<span class="font-bold text-[#4338ca] dark:text-indigo-400">3. Cấu hình Caddy (HTTPS SSL Tự động)</span>
+					<p class="text-[#6b7280] dark:text-slate-400 mt-1 mb-2">Nội dung mẫu file <code class="font-mono bg-slate-200 dark:bg-slate-700 px-1 rounded">Caddyfile</code>:</p>
+					<div class="flex items-center gap-2">
+						<pre class="w-full p-2 bg-[#1e293b] text-emerald-400 rounded-md font-mono text-[11px] m-0 overflow-x-auto">{status?.domain || 'genos.top'} &#123;&#10;  reverse_proxy localhost:8080&#10;&#125;</pre>
+						<CopyButton text={`${status?.domain || 'genos.top'} {\n  reverse_proxy localhost:8080\n}`} classes={{ button: 'btn btn-primary btn-sm text-xs shrink-0' }} />
+					</div>
+				</div>
+			</div>
 		</div>
 	</div>
 </Layout>
+
