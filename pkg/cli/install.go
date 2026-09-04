@@ -5,10 +5,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"syscall"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/spf13/cobra"
 )
+
 
 
 // getLocalIP attempts to detect the local primary IPv4 address of the server.
@@ -110,17 +112,28 @@ func NewInstallTUICommand() *cobra.Command {
 				if err != nil {
 					executable = "./bin/gen-hub"
 				}
+				logFile, logErr := os.OpenFile("gen-hub-server.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+				devNull, _ := os.Open(os.DevNull)
+
 				cmd := exec.Command(executable, "server")
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
+				cmd.Stdin = devNull
+				if logErr == nil {
+					cmd.Stdout = logFile
+					cmd.Stderr = logFile
+				}
+				cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
 				if err := cmd.Start(); err != nil {
 					fmt.Printf("  ⚠️ Không thể tự khởi động server: %v\n", err)
 					fmt.Println("  👉 Hãy chạy thủ công: ./bin/gen-hub server")
 				} else {
 					fmt.Printf("  ✅ Server đã được khởi động thành công (PID: %d)!\n", cmd.Process.Pid)
+					fmt.Println("  📄 Log server được ghi tại: gen-hub-server.log")
 					fmt.Printf("  🌐 Bạn có thể mở ngay trình duyệt tại: %s://%s:8080\n", scheme, domain)
 				}
 			} else {
+
+
 				fmt.Println(" 🚀 LỆNH KHỞI ĐỘNG HỆ THỐNG THỦ CÔNG:")
 				fmt.Println("  👉 Chạy Server Gen Hub:")
 				fmt.Println("     ./bin/gen-hub server")
