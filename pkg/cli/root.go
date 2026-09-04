@@ -43,7 +43,7 @@ func New() *cobra.Command {
 	root := &Obot{
 		Client: newClient(),
 	}
-	return cmd.Command(root,
+	c := cmd.Command(root,
 		&Server{},
 		&Login{root: root},
 		&Logout{root: root},
@@ -55,6 +55,11 @@ func New() *cobra.Command {
 		&Daemon{},
 		&DomainBootstrap{},
 	)
+	c.AddCommand(NewInstallTUICommand())
+	c.AddCommand(NewBackupCommand())
+	c.AddCommand(NewRestoreCommand())
+	c.AddCommand(NewUpdateCommand())
+	return c
 }
 
 func (a *Obot) Run(cmd *cobra.Command, _ []string) error {
