@@ -28,7 +28,7 @@
 	<ResponsiveDialog
 		bind:this={dialog}
 		onClose={handleClose}
-		title="API Key Created"
+		title="Đã khởi tạo API Key thành công"
 		class="w-full max-w-lg"
 		disableClickOutside
 	>
@@ -37,17 +37,17 @@
 				<div class="flex items-start gap-3">
 					<TriangleAlert class="size-5 shrink-0" />
 					<div class="flex flex-col gap-1">
-						<p class="text-sm font-medium">Save this key now</p>
+						<p class="text-sm font-medium">Lưu ngay API Key này</p>
 						<p class="text-xs">
-							This is the only time you will be able to see this API key. Make sure to copy and
-							store it securely. You will not be able to retrieve it later.
+							Đây là lần duy nhất bạn có thể nhìn thấy API key này. Vui lòng sao chép và
+							lưu trữ ở nơi an toàn. Bạn sẽ không thể xem lại khóa này về sau.
 						</p>
 					</div>
 				</div>
 			</div>
 
 			<div class="flex flex-col gap-2">
-				<p class="text-sm font-medium">Your API Key</p>
+				<p class="text-sm font-medium">Khóa API Key của bạn</p>
 				<CopyField value={keyValue} id="agent-auth-scope-key">
 					{#snippet preContent()}
 						<KeyRound class="text-muted-content size-4 shrink-0" />
@@ -56,21 +56,19 @@
 			</div>
 
 			<p class="text-muted text-sm">
-				Learn how to use this API key in the
+				Xem hướng dẫn tích hợp API Key trong
 				<a
-					href="https://docs.obot.ai/functionality/api-keys/#using-an-api-key"
-					target="_blank"
-					rel="noopener noreferrer"
+					href="/domain"
 					class="text-link inline-flex items-center gap-1"
 				>
-					documentation
+					tài liệu Gen Hub
 					<ExternalLink class="size-3" />
 				</a>
 			</p>
 		</div>
 
 		<div class="mt-6 flex justify-end">
-			<button class="btn btn-primary" onclick={handleClose}> I've saved my key </button>
+			<button class="btn btn-primary" onclick={handleClose}> Tôi đã sao chép và lưu Key </button>
 		</div>
 	</ResponsiveDialog>
 {/if}

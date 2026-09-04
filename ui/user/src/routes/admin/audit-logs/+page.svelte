@@ -15,8 +15,8 @@
 		component: VirtualPageRoot as unknown as Component,
 		props: { class: '', as: 'main', itemHeight: 56, overscan: 5 }
 	}}
-	title="Audit Logs"
-	subtitle="MCP Management"
+	title="Lịch sử hoạt động & Audit Logs"
+	subtitle="Nhật ký truy vết công cụ MCP"
 >
 	<div class="flex-1" in:fade={{ duration }} out:fade={{ duration }}>
 		<div class="flex min-h-full flex-col gap-8 pb-8">
@@ -26,5 +26,5 @@
 </Layout>
 
 <svelte:head>
-	<title>Obot | MCP Audit Logs</title>
+	<title>Gen Hub | Lịch sử hoạt động MCP</title>
 </svelte:head>

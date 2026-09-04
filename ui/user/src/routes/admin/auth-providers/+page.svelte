@@ -479,9 +479,9 @@
 	licenseKey={license.current.licenseKey}
 	endpoint={AdminService.createCommunityLicense}
 	onSubmit={handleCommunitySubmit}
-	signUpMessage="Register to unlock all remaining providers and to subscribe to the free Obot Community Newsletter."
+	signUpMessage="Đăng ký để mở khóa các nhà cung cấp xác thực trong Gen Hub."
 />
 
 <svelte:head>
-	<title>Obot | Auth Providers</title>
+	<title>Gen Hub | Nhà cung cấp Xác thực</title>
 </svelte:head>

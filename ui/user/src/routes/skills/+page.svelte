@@ -101,9 +101,9 @@
 	}
 </script>
 
-<Layout classes={{ navbar: 'bg-base-200', container: 'pt-0' }} title="Skills">
+<Layout classes={{ navbar: 'bg-base-200', container: 'pt-0' }} title="Skills Cá Nhân">
 	{#snippet rightNavActions()}
-		<a class="btn btn-primary" href={resolve('/install-cli')}>Get Obot CLI</a>
+		<a class="btn btn-primary" href={resolve('/install-cli')}>Cài đặt Gen Hub CLI</a>
 	{/snippet}
 	<div class="flex min-h-full flex-col gap-2">
 		<div class="flex min-h-full flex-col">
@@ -113,7 +113,7 @@
 						class="dark:bg-base-200 dark:border-base-400 bg-base-100 border border-transparent shadow-sm"
 						value={query}
 						onChange={updateSearchQuery}
-						placeholder="Search skills..."
+						placeholder="Tìm kiếm skills..."
 					/>
 				</div>
 			</div>
@@ -130,7 +130,7 @@
 		{#if data?.showLicenseError}
 			<div class="my-12 flex w-md flex-col items-center gap-4 self-center text-center">
 				<TriangleAlert class="size-12 text-warning" />
-				<h4 class="text-muted-content text-lg font-semibold">Limited Functionality</h4>
+				<h4 class="text-muted-content text-lg font-semibold">Tính năng bị giới hạn</h4>
 				<p class="text-muted-content text-sm font-light">
 					{MCP_CONNECTION_INVALID_LICENSE_MESSAGE}
 				</p>
@@ -139,7 +139,7 @@
 			<Table
 				data={skillsTableData}
 				fields={['displayName', 'description', 'created']}
-				noDataMessage="No skills found."
+				noDataMessage="Không tìm thấy skill nào."
 				classes={{
 					root: 'rounded-none rounded-b-md shadow-none'
 				}}
@@ -147,7 +147,7 @@
 				sortable={['displayName', 'created']}
 				headers={[
 					{
-						title: 'Name',
+						title: 'Tên Skill',
 						property: 'displayName'
 					}
 				]}
@@ -186,7 +186,7 @@
 								installSkillDialog?.open();
 							}}
 						>
-							Install
+							Cài đặt
 						</button>
 					</div>
 				{/snippet}
@@ -194,10 +194,10 @@
 		{:else}
 			<div class="my-12 flex w-md flex-col items-center gap-4 self-center text-center">
 				<PencilRuler class="text-base-content/80 size-24" />
-				<h4 class="text-muted-content text-lg font-semibold">No current skills.</h4>
+				<h4 class="text-muted-content text-lg font-semibold">Chưa có skill nào.</h4>
 				<p class="text-muted-content text-sm font-light">
-					Once a Git Source URL has been added, the skills <br />
-					discovered will be viewable from here.
+					Khi một Nguồn Git Skill được thêm vào hệ thống, <br />
+					các skill quét được sẽ xuất hiện ở đây.
 				</p>
 			</div>
 		{/if}
@@ -212,19 +212,19 @@
 >
 	<div class="w-full @container md:px-0 px-4">
 		<div id="download-skill-container">
-			<div class="divider md:mt-0">1. Download {selectedSkillToInstall?.displayName}</div>
+			<div class="divider md:mt-0">1. Tải về {selectedSkillToInstall?.displayName}</div>
 			<div class="md:p-0 md:pb-0 p-4">
 				<button
 					class="btn btn-primary btn-sm w-full"
 					onclick={() => handleDownloadSkill(selectedSkillToInstall)}
 				>
-					<Download class="size-4" /> Download
+					<Download class="size-4" /> Tải về (.zip)
 				</button>
 			</div>
 		</div>
-		<div class="divider">2. Unzip via CLI</div>
+		<div class="divider">2. Giải nén qua CLI</div>
 		<div class="relative">
-			<p class="absolute top-1/2 -translate-y-1/2 left-2 text-xs font-semibold">Choose your OS:</p>
+			<p class="absolute top-1/2 -translate-y-1/2 left-2 text-xs font-semibold">Chọn hệ điều hành:</p>
 			<div
 				id="install-skill-os-selector"
 				role="tablist"
@@ -285,5 +285,5 @@
 </ResponsiveDialog>
 
 <svelte:head>
-	<title>Obot | Skills</title>
+	<title>Gen Hub | Skills Cá Nhân</title>
 </svelte:head>

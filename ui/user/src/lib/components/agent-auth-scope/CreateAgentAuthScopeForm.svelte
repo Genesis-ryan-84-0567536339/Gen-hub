@@ -55,8 +55,8 @@
 	const allServersOption = {
 		id: '*',
 		manifest: {
-			name: 'All MCP Servers',
-			description: 'Grant access to all MCP servers, including any added in the future'
+			name: 'Tất cả MCP Server',
+			description: 'Cấp quyền truy cập cho tất cả các MCP server, bao gồm các server thêm trong tương lai'
 		}
 	} as MCPCatalogServer;
 
@@ -67,7 +67,7 @@
 			: mcpServers;
 
 		// Include "All MCP Servers" option if it matches the search or there's no search
-		const allServersMatches = !search || 'all mcp servers'.includes(searchLower);
+		const allServersMatches = !search || 'tất cả mcp server'.includes(searchLower) || 'all mcp servers'.includes(searchLower);
 
 		return allServersMatches ? [allServersOption, ...servers] : servers;
 	});
@@ -122,15 +122,16 @@
 		<div class="flex flex-col gap-6">
 			<div class="flex flex-col gap-2">
 				<label for="agent-auth-scope-name" class="input-label">
-					Name
+					Tên Phân quyền / Brand Agent
 					{#if nameError}
-						<span class="text-xs text-error">Name is required</span>
+						<span class="text-xs text-error">Tên không được để trống</span>
 					{/if}
 				</label>
 				<input
 					id="agent-auth-scope-name"
 					type="text"
 					bind:value={name}
+					placeholder="VD: Production-Claude-Agent"
 					class={twMerge(
 						'text-input-filled',
 						nameError && 'border-error focus:border-error focus:ring-error'
@@ -139,43 +140,42 @@
 			</div>
 
 			<div class="flex flex-col gap-2">
-				<label for="agent-auth-scope-description" class="input-label">Description (Optional)</label>
+				<label for="agent-auth-scope-description" class="input-label">Mô tả (Tùy chọn)</label>
 				<input
 					id="agent-auth-scope-description"
 					type="text"
 					bind:value={description}
-					placeholder="What is this auth scope for?"
+					placeholder="Mục đích sử dụng của Auth Scope này..."
 					class="text-input-filled"
 				/>
 			</div>
 
 			<div class="flex flex-col gap-2">
-				<label for="agent-auth-scope-expires" class="input-label">Expiration Date (Optional)</label>
+				<label for="agent-auth-scope-expires" class="input-label">Ngày hết hạn (Tùy chọn)</label>
 				<DatePicker
 					id="agent-auth-scope-expires"
 					bind:value={expiresAt}
 					onChange={(date) => (expiresAt = date)}
-					placeholder="No expiration"
+					placeholder="Không hết hạn"
 					minDate={new Date()}
 				/>
-				<p class="input-description">Leave empty for no expiration</p>
+				<p class="input-description">Để trống nếu không muốn đặt thời hạn</p>
 			</div>
 		</div>
 	</div>
 
 	<section class="paper flex flex-col gap-2 p-4">
 		<p>
-			<span class="text-lg font-semibold">MCP Servers</span>
+			<span class="text-lg font-semibold">Danh sách MCP Servers</span>
 			{#if serverError}
-				<span class="text-xs text-error"> Select at least one server or enable a capability </span>
+				<span class="text-xs text-error"> Vui lòng chọn ít nhất 1 server hoặc bật 1 quyền truy cập </span>
 			{/if}
 		</p>
 		<p class="input-description">
-			Select which MCP servers this agent auth scope can access. To create a capability-only scope,
-			leave this empty and enable a capability below.
+			Chọn các MCP server mà Agent được phép truy cập. Để tạo scope chỉ dùng quyền API, bạn có thể để trống danh sách này và bật quyền ở dưới.
 			{#if selectedServerIds.size > 0}
 				<span class="italic">
-					({#if selectedServerIds.has('*')}All Selected{:else}{selectedServerIds.size} Selected{/if})
+					({#if selectedServerIds.has('*')}Đã chọn tất cả{:else}Đã chọn {selectedServerIds.size}{/if})
 				</span>
 			{/if}
 		</p>
@@ -184,7 +184,7 @@
 			class="text-input-filled"
 			onChange={(val) => (search = val)}
 			value={search}
-			placeholder="Search servers..."
+			placeholder="Tìm kiếm server..."
 		/>
 
 		<div
@@ -195,7 +195,7 @@
 		>
 			{#if filteredServers.length === 0}
 				<div class="text-muted-content flex items-center justify-center py-8 text-sm">
-					{search ? 'No servers match your search' : 'No MCP servers available'}
+					{search ? 'Không tìm thấy server phù hợp' : 'Chưa có MCP server nào'}
 				</div>
 			{:else}
 				{#each filteredServers as server (server.id)}
@@ -239,7 +239,7 @@
 	</section>
 
 	<section class="paper gap-2 p-4">
-		<p class="text-lg font-semibold" id="agent-auth-scope-scopes">API Scopes</p>
+		<p class="text-lg font-semibold" id="agent-auth-scope-scopes">Scope Quyền API</p>
 		<div class="flex flex-col gap-2" role="group" aria-labelledby="agent-auth-scope-scopes">
 			{#each API_KEY_CREATABLE_CAPABILITIES as capability (capability.key)}
 				<label
@@ -273,12 +273,12 @@
 		in:fly={{ x: -100 }}
 	>
 		<div class="flex w-full justify-end gap-2">
-			<button class="btn btn-secondary text-sm" onclick={onCancel}>Cancel</button>
+			<button class="btn btn-secondary text-sm" onclick={onCancel}>Hủy bỏ</button>
 			<button class="btn btn-primary text-sm" disabled={loading} onclick={handleCreate}>
 				{#if loading}
 					<Loading class="size-4" />
 				{:else}
-					Save
+					Lưu Scope
 				{/if}
 			</button>
 		</div>

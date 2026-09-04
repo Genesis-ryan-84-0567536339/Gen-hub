@@ -312,10 +312,10 @@
 {#snippet displayNoData()}
 	<div class="my-12 flex w-md flex-col items-center gap-4 self-center text-center">
 		<Server class="text-muted-content size-24 opacity-25" />
-		<h4 class="text-muted-content text-lg font-semibold">No created entries</h4>
+		<h4 class="text-muted-content text-lg font-semibold">Chưa có dữ liệu MCP nào</h4>
 		<p class="text-muted-content text-sm font-light">
-			Looks like you don't have any entries created yet. <br />
-			Click the button below to get started.
+			Danh mục MCP của bạn hiện tại chưa có mục nào. <br />
+			Nhấn nút bên dưới để bắt đầu thêm MCP Server.
 		</p>
 
 		{#if canCreateEntry}
@@ -362,7 +362,7 @@
 					id="add-catalog-entry-button"
 					onclick={() => selectServerTypeDialog?.open()}
 				>
-					<Plus class="size-4" /> Add Catalog Entry
+					<Plus class="size-4" /> Thêm MCP Server mới
 				</button>
 			{:else if view === 'urls'}
 				<button
@@ -370,7 +370,7 @@
 					class="btn btn-primary btn-block w-full text-sm md:w-52"
 					onclick={() => sourceDialog?.open()}
 				>
-					<Plus class="size-4" /> Add Catalog Source
+					<Plus class="size-4" /> Thêm Nguồn Registry mới
 				</button>
 			{/if}
 		</div>
@@ -381,5 +381,5 @@
 <SelectServerType bind:this={selectServerTypeDialog} onSelectServerType={selectServerType} />
 
 <svelte:head>
-	<title>Obot | MCP Management | MCP Servers</title>
+	<title>Gen Hub | Kho MCP Server</title>
 </svelte:head>

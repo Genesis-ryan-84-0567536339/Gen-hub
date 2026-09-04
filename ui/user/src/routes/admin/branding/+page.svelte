@@ -913,5 +913,5 @@
 </ResponsiveDialog>
 
 <svelte:head>
-	<title>Obot | Branding</title>
+	<title>Gen Hub | Thương hiệu & Giao diện</title>
 </svelte:head>

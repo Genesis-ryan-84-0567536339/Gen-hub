@@ -58,17 +58,17 @@
 		agentAuthScope ? formatTimeAgo(agentAuthScope.createdAt).relativeTime : ''
 	);
 	let lastUsedDisplay = $derived(
-		agentAuthScope?.lastUsedAt ? formatTimeAgo(agentAuthScope.lastUsedAt).relativeTime : 'Never'
+		agentAuthScope?.lastUsedAt ? formatTimeAgo(agentAuthScope.lastUsedAt).relativeTime : 'Chưa dùng'
 	);
 	let expiresDisplay = $derived(
-		agentAuthScope?.expiresAt ? formatTimeUntil(agentAuthScope.expiresAt).relativeTime : 'Never'
+		agentAuthScope?.expiresAt ? formatTimeUntil(agentAuthScope.expiresAt).relativeTime : 'Không hết hạn'
 	);
 	let mcpServerData = $derived(
 		isAllServers
 			? [
 					{
 						id: 'all-mcp-servers',
-						name: 'All MCP Servers',
+						name: 'Tất cả MCP Servers',
 						description: '',
 						icon: '',
 						exists: true,
@@ -79,7 +79,7 @@
 	);
 
 	const duration = PAGE_TRANSITION_DURATION;
-	const title = $derived(agentAuthScope?.name || 'Agent Auth Scope');
+	const title = $derived(agentAuthScope?.name || 'Phân quyền Agent');
 </script>
 
 {#if agentAuthScope}
@@ -103,10 +103,10 @@
 					<div class="text-sm flex flex-col gap-0.5">
 						<h1 class="text-xl font-semibold">{title}</h1>
 						<p>{agentAuthScope.description}</p>
-						<p><b>Last Used:</b> {lastUsedDisplay}</p>
-						<p><b>Expires:</b> {expiresDisplay}</p>
+						<p><b>Dùng gần nhất:</b> {lastUsedDisplay}</p>
+						<p><b>Hạn dùng:</b> {expiresDisplay}</p>
 						<p class="text-muted-content font-light">
-							Created {createdDisplay}
+							Khởi tạo {createdDisplay}
 						</p>
 					</div>
 				</div>
@@ -115,7 +115,7 @@
 						<IconButton
 							class=""
 							variant="danger2"
-							tooltip={{ text: `Delete ${title}` }}
+							tooltip={{ text: `Xóa ${title}` }}
 							disabled={saving}
 							onclick={() => (deletingAgentAuthScope = true)}
 						>
@@ -127,7 +127,7 @@
 
 			<section class="paper flex flex-col gap-2 p-4">
 				<p>
-					<span class="text-lg font-semibold">MCP Servers</span>
+					<span class="text-lg font-semibold">Danh sách MCP Servers</span>
 				</p>
 
 				<ul
@@ -135,7 +135,7 @@
 				>
 					{#if mcpServerData.length === 0}
 						<li class="text-muted-content flex items-center justify-center py-8 text-sm">
-							No MCP servers
+							Chưa gán MCP server nào
 						</li>
 					{:else}
 						{#each mcpServerData as server (server.id)}
@@ -167,7 +167,7 @@
 			</section>
 
 			<section class="paper gap-2 p-4">
-				<p class="text-lg font-semibold" id="agent-auth-scope-scopes">API Scopes</p>
+				<p class="text-lg font-semibold" id="agent-auth-scope-scopes">Scope Quyền API</p>
 				<div class="flex flex-col gap-2" role="group" aria-labelledby="agent-auth-scope-scopes">
 					{#each API_KEY_CREATABLE_CAPABILITIES as capability (capability.key)}
 						<label
@@ -195,7 +195,7 @@
 			</section>
 
 			<section class="paper gap-2 p-4">
-				<p class="text-lg font-semibold" id="agent-auth-scope-keys">API Keys</p>
+				<p class="text-lg font-semibold" id="agent-auth-scope-keys">Khóa API Key</p>
 				<div class="flex flex-col gap-2" role="group" aria-labelledby="agent-auth-scope-keys">
 					<a
 						href={resolve(
@@ -213,7 +213,7 @@
 {/if}
 
 <Confirm
-	msg={`Are you sure you want to delete "${title}"?`}
+	msg={`Bạn có chắc chắn muốn xóa Phân quyền Agent "${title}"?`}
 	show={deletingAgentAuthScope}
 	onsuccess={onDelete}
 	oncancel={() => (deletingAgentAuthScope = false)}

@@ -88,7 +88,7 @@
 </script>
 
 <Layout
-	title={showCreateNew ? 'Create Agent Identity' : 'Agent Identities'}
+	title={showCreateNew ? 'Tạo Phân quyền Agent mới' : 'Danh tính & Phân quyền Agent'}
 	showBackButton={showCreateNew}
 >
 	{#if showCreateNew}
@@ -109,13 +109,13 @@
 			{#if apiKeys.length === 0}
 				<div class="mt-26 flex w-lg flex-col items-center gap-4 self-center text-center">
 					<KeyRound class="text-base-content/80 size-24 opacity-50" />
-					<h4 class="text-muted-content text-lg font-semibold">No Agent Identities</h4>
+					<h4 class="text-muted-content text-lg font-semibold">Chưa có Phân quyền Agent nào</h4>
 					<p class="text-muted-content text-sm font-light">
 						{isAdminPage
-							? "Looks like there aren't any agent auth scopes in the system yet."
-							: "Looks like you don't have any agent auth scopes yet!"}
+							? "Hệ thống chưa ghi nhận scope phân quyền Agent nào."
+							: "Bạn chưa tạo scope phân quyền Agent nào!"}
 						<br />
-						Click the "Create Agent Auth Scope" button above to get started.
+						Nhấn nút "+ Tạo Phân quyền Agent mới" bên trên để bắt đầu.
 					</p>
 
 					{#if !isAdminPage}
@@ -123,12 +123,12 @@
 							<div class="flex flex-col gap-2">
 								<div class="flex items-center gap-2">
 									<Info class="size-4 shrink-0" />
-									<p class="text-sm font-semibold">What are these for?</p>
+									<p class="text-sm font-semibold">Tính năng này dùng để làm gì?</p>
 								</div>
 								<p class="whitespace-pre-line text-left text-sm font-light">
 									{AUTH_SCOPE_DESCRIPTION}
 									<button class="text-link inline" onclick={showCreateForm}
-										>Create your first auth scope</button
+										>Tạo scope phân quyền đầu tiên của bạn</button
 									>
 								</p>
 							</div>
@@ -142,10 +142,11 @@
 						? ['userDisplay', 'name', 'capabilitiesDisplay', 'lastUsedAt', 'expiresAt']
 						: ['name', 'capabilitiesDisplay', 'lastUsedAt', 'expiresAt']}
 					headers={[
-						...(isAdminPage ? [{ title: 'Created By', property: 'userDisplay' }] : []),
-						{ title: 'Capabilities', property: 'capabilitiesDisplay' },
-						{ title: 'Last Used', property: 'lastUsedAt' },
-						{ title: 'Expires', property: 'expiresAt' }
+						...(isAdminPage ? [{ title: 'Người tạo', property: 'userDisplay' }] : []),
+						{ title: 'Thương hiệu / Tên key', property: 'name' },
+						{ title: 'Chính sách & Quyền', property: 'capabilitiesDisplay' },
+						{ title: 'Dùng gần nhất', property: 'lastUsedAt' },
+						{ title: 'Hạn dùng', property: 'expiresAt' }
 					]}
 					filterable={isAdminPage ? ['userDisplay', 'name'] : undefined}
 					sortable={isAdminPage
@@ -199,7 +200,7 @@
 		{#if !showCreateNew && !isAdminReadonly}
 			<button class="btn btn-primary flex items-center gap-2 text-sm" onclick={showCreateForm}>
 				<Plus class="size-4" />
-				Create Agent Auth Scope
+				Tạo Phân quyền Agent mới
 			</button>
 		{/if}
 	{/snippet}
@@ -216,7 +217,7 @@
 			<div
 				class="bg-base-100 dark:bg-base-300 rounded-t-xl pt-2 pb-1 pl-4 text-[11px] font-semibold uppercase"
 			>
-				View Related Logs
+				Xem Log liên quan
 			</div>
 			<div class="flex flex-col gap-1 p-2 bg-base-200">
 				<a class="menu-button" href={resolve(url)}>
@@ -228,7 +229,7 @@
 			<div class="flex flex-col gap-1 p-2 pt-1">
 				<button class="menu-button text-error" onclick={() => (deletingKey = d)}>
 					<Trash2 class="size-4" />
-					Delete
+					Xóa scope
 				</button>
 			</div>
 		{/if}
@@ -236,7 +237,7 @@
 {/snippet}
 
 <Confirm
-	msg={`Delete "${deletingKey?.name}"?`}
+	msg={`Xóa Phân quyền Agent "${deletingKey?.name}"?`}
 	show={Boolean(deletingKey)}
 	{loading}
 	onsuccess={handleDelete}
@@ -246,5 +247,5 @@
 <ApiKeyRevealDialog keyValue={createdKeyValue} onClose={() => (createdKeyValue = undefined)} />
 
 <svelte:head>
-	<title>Obot | {isAdminPage ? 'Agent Auth Scopes' : 'Agent Auth Keys'}</title>
+	<title>Gen Hub | {isAdminPage ? 'Phân quyền Agent' : 'Auth Scope Agent'}</title>
 </svelte:head>

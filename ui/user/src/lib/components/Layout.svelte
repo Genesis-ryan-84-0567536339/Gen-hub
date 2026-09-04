@@ -106,7 +106,8 @@
 		LayoutGrid,
 		Menu,
 		X,
-		Server
+		Server,
+		Sparkles
 	} from '@lucide/svelte';
 	import { tick, untrack } from 'svelte';
 	import { fade, slide } from 'svelte/transition';
@@ -115,6 +116,7 @@
 	let navCollapsed = $state({ ...navCollapsedCache });
 	let showAdvancedPane = $state(untrack(() => isAdvancedPaneRoute(page.url.pathname)));
 	let animatingNavSectionId = $state<string | null>(null);
+	let setupDialog = $state<ReturnType<typeof SetupSplashDialog>>();
 
 	function isAdvancedPaneRoute(route: string): boolean {
 		return (
@@ -390,40 +392,40 @@
 					{
 						id: 'mcp-server-management',
 						icon: RadioTower,
-						label: 'MCP Management',
+						label: 'Quản lý MCP',
 						collapsible: true,
 						items: [
 							{
 								id: 'mcp-catalog',
 								href: '/admin/mcp-catalog',
-								label: 'MCP Catalog',
+								label: 'Danh mục MCP',
 								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'mcp-access-policies',
 								href: '/admin/mcp-access-policies',
-								label: 'MCP Access Policies',
+								label: 'Chính sách truy cập MCP',
 								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'mcp-deployments',
 								href: '/admin/mcp-deployments',
-								label: 'MCP Deployments',
+								label: 'Triển khai MCP',
 								collapsible: false
 							},
 							{
 								id: 'filters',
 								href: '/admin/filters',
-								label: 'Filters',
+								label: 'Bộ lọc & Rules',
 								disabled: isBootStrapUser
 							},
 							version.current.engine === 'kubernetes' && !version.current.hideK8sDetails
 								? {
 										id: 'server-scheduling',
 										href: '/admin/server-scheduling',
-										label: 'Server Scheduling',
+										label: 'Lập lịch Server',
 										collapsible: false
 									}
 								: undefined,
@@ -431,7 +433,7 @@
 								? {
 										id: 'image-pull-secrets',
 										href: '/admin/image-pull-secrets',
-										label: 'Image Pull Secrets',
+										label: 'Secret kéo Image',
 										disabled: isBootStrapUser,
 										collapsible: false
 									}
@@ -441,7 +443,7 @@
 										{
 											id: 'mcp-tunnels',
 											href: '/admin/mcp-tunnels',
-											label: 'MCP Tunnels',
+											label: 'Tunnel MCP',
 											disabled: isBootStrapUser,
 											collapsible: false
 										}
@@ -452,19 +454,19 @@
 					{
 						id: 'skills-management',
 						icon: Notebook,
-						label: 'Skills Management',
+						label: 'Quản lý Skills',
 						collapsible: true,
 						items: [
 							{
 								id: 'skills',
 								href: '/admin/skills',
-								label: 'Skill Sources',
+								label: 'Nguồn Skills',
 								collapsible: false
 							},
 							{
 								id: 'skill-access-policies',
 								href: '/admin/skill-access-policies',
-								label: 'Skill Access Policies',
+								label: 'Chính sách truy cập Skill',
 								collapsible: false
 							}
 						]
@@ -474,19 +476,19 @@
 								{
 									id: 'hosted-agent-management',
 									icon: Container,
-									label: 'Hosted Agents',
+									label: 'Quản lý Hosted Agent',
 									collapsible: true,
 									items: [
 										{
 											id: 'hosted-agents',
 											href: '/admin/hosted-agents',
-											label: 'Templates',
+											label: 'Mẫu Agent',
 											collapsible: false
 										},
 										{
 											id: 'hosted-agent-access-policies',
 											href: '/admin/hosted-agent-access-policies',
-											label: 'Access Policies',
+											label: 'Chính sách truy cập',
 											collapsible: false
 										}
 									]
@@ -496,13 +498,13 @@
 					{
 						id: 'device-management',
 						icon: Laptop,
-						label: 'Device Management',
+						label: 'Quản lý Thiết bị',
 						collapsible: true,
 						items: [
 							{
 								id: 'devices',
 								href: '/admin/devices',
-								label: 'Devices',
+								label: 'Danh sách Thiết bị',
 								disabled: isBootStrapUser,
 								collapsible: false,
 								beta: true
@@ -510,7 +512,7 @@
 							{
 								id: 'enforcement-decisions',
 								href: '/admin/enforcement-decisions',
-								label: 'Enforcement Decisions',
+								label: 'Quyết định thực thi',
 								disabled: isBootStrapUser,
 								collapsible: false,
 								beta: true
@@ -520,7 +522,7 @@
 					{
 						id: 'user-management',
 						icon: Users,
-						label: 'Auth Management',
+						label: 'Quản lý Người dùng & Auth',
 						disabled: !version.current.authEnabled,
 						collapsible: true,
 						noteIcon: !version.current.authEnabled ? LockOpen : undefined,
@@ -529,28 +531,28 @@
 							{
 								id: 'users',
 								href: '/admin/users',
-								label: 'Users',
+								label: 'Người dùng',
 								collapsible: false,
 								disabled: !version.current.authEnabled
 							},
 							{
 								id: 'groups',
 								href: '/admin/groups',
-								label: 'Groups',
+								label: 'Nhóm',
 								collapsible: false,
 								disabled: !version.current.authEnabled
 							},
 							{
 								id: 'user-roles',
 								href: '/admin/user-roles',
-								label: 'User Roles',
+								label: 'Vai trò người dùng',
 								collapsible: false,
 								disabled: !version.current.authEnabled
 							},
 							{
 								id: 'auth-providers',
 								href: '/admin/auth-providers',
-								label: 'Auth Providers',
+								label: 'Nhà cung cấp xác thực',
 								disabled: !version.current.authEnabled,
 								collapsible: false
 							}
@@ -559,33 +561,33 @@
 					{
 						id: 'llm-gateway',
 						icon: BrainCog,
-						label: 'LLM Gateway',
+						label: 'Cổng kết nối LLM',
 						collapsible: true,
 						items: [
 							{
 								id: 'tokens',
 								href: '/admin/token-usage',
-								label: 'Token Usage',
+								label: 'Lượng Token sử dụng',
 								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'llm-audit-logs',
 								href: '/admin/llm-audit-logs',
-								label: 'Audit Logs',
+								label: 'Nhật ký truy vết LLM',
 								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'model-providers',
 								href: '/admin/model-providers',
-								label: 'Model Providers',
+								label: 'Nhà cung cấp Mô hình',
 								collapsible: false
 							},
 							{
 								id: 'model-access-policies',
 								href: '/admin/model-access-policies',
-								label: 'Model Access Policies',
+								label: 'Chính sách truy cập Mô hình',
 								collapsible: false
 							},
 							...(version.current.messagePoliciesEnabled
@@ -593,13 +595,13 @@
 										{
 											id: 'message-policies',
 											href: '/admin/message-policies',
-											label: 'Message Policies',
+											label: 'Chính sách Tin nhắn',
 											collapsible: false
 										},
 										{
 											id: 'policy-violations',
 											href: '/admin/policy-violations',
-											label: 'Message Policy Violations',
+											label: 'Vi phạm chính sách Tin nhắn',
 											collapsible: false
 										}
 									]
@@ -610,27 +612,27 @@
 					{
 						id: 'app-management',
 						icon: LayoutGrid,
-						label: 'App Management',
+						label: 'Cấu hình Hệ thống',
 						collapsible: true,
 						items: [
 							{
 								id: 'license',
 								href: '/admin/license',
-								label: 'License',
+								label: 'Giấy phép',
 								disabled: false,
 								collapsible: false
 							},
 							{
 								id: 'branding',
 								href: '/admin/branding',
-								label: 'Branding',
+								label: 'Thương hiệu & Giao diện',
 								disabled: false,
 								collapsible: false
 							},
 							{
 								id: 'app-notification',
 								href: '/admin/app-notification',
-								label: 'App Notification',
+								label: 'Thông báo ứng dụng',
 								disabled: false,
 								collapsible: false
 							},
@@ -639,7 +641,7 @@
 										{
 											id: 'app-scheduling',
 											href: '/admin/app-scheduling',
-											label: 'App Scheduling',
+											label: 'Lập lịch ứng dụng',
 											disabled: false,
 											collapsible: false
 										}
@@ -773,10 +775,7 @@
 	});
 
 	const canShowCommunitySignup = $derived.by(() => {
-		if (!(profile.current.hasAdminAccess?.() || profile.current.isBootstrapUser?.())) return false;
-		if (hasCommunityOrEnterpriseLicense) return false;
-		if (!communitySignupBannerDismissed.isReady) return false;
-		return !isCommunitySignupDismissedForCurrentProfile();
+		return false;
 	});
 
 	let showAppNotificationBanner = $derived.by(() => {
@@ -975,7 +974,13 @@
 					</div>
 
 					<div class="flex items-center gap-3">
-						<!-- Prototype Top Actions: Neutral Gateway Chip & Avatar -->
+						<button
+							onclick={() => setupDialog?.open()}
+							class="inline-flex items-center gap-1.5 py-1.5 px-3 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors shadow-2xs cursor-pointer"
+						>
+							<Sparkles class="size-3.5 text-indigo-600 dark:text-indigo-400" />
+							<span>⚡ Hướng dẫn cài đặt</span>
+						</button>
 						<div
 							class="hidden sm:inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
 						>
@@ -1044,9 +1049,7 @@
 	{/if}
 </div>
 
-{#if isAdminRoute}
-	<SetupSplashDialog />
-{/if}
+<SetupSplashDialog bind:this={setupDialog} />
 
 {#snippet renderAuthDisabledNote()}
 	{#if !version.current.authEnabled}

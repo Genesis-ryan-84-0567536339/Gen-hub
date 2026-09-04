@@ -22,7 +22,7 @@
 </script>
 
 <svelte:head>
-	<title>Obot - Build AI agents with MCP</title>
+	<title>Gen Hub - Personal Composite MCP Gateway</title>
 </svelte:head>
 
 {#if !loggedIn}
@@ -33,7 +33,7 @@
 			<div class="animate-bounce">
 				<Logo />
 			</div>
-			<p class="text-base font-semibold">Logging in...</p>
+			<p class="text-base font-semibold">Đang đăng nhập...</p>
 		</div>
 	</div>
 {/if}
@@ -47,9 +47,9 @@
 				class="absolute top-1/2 left-1/2 flex w-md -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-4"
 			>
 				<Logo class="h-16" />
-				<h1 class="text-2xl font-semibold">Welcome to Obot</h1>
+				<h1 class="text-2xl font-semibold">Chào mừng bạn đến với Gen Hub</h1>
 				<p class="text-md text-muted-content mb-1 text-center font-light">
-					Log in or create your account to continue
+					Đăng nhập hoặc chọn nhà cung cấp xác thực để tiếp tục
 				</p>
 
 				<div
