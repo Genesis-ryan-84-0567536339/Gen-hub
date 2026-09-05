@@ -56,7 +56,8 @@
 		id: '*',
 		manifest: {
 			name: 'Tất cả MCP Server',
-			description: 'Cấp quyền truy cập cho tất cả các MCP server, bao gồm các server thêm trong tương lai'
+			description:
+				'Cấp quyền truy cập cho tất cả các MCP server, bao gồm các server thêm trong tương lai'
 		}
 	} as MCPCatalogServer;
 
@@ -67,7 +68,10 @@
 			: mcpServers;
 
 		// Include "All MCP Servers" option if it matches the search or there's no search
-		const allServersMatches = !search || 'tất cả mcp server'.includes(searchLower) || 'all mcp servers'.includes(searchLower);
+		const allServersMatches =
+			!search ||
+			'tất cả mcp server'.includes(searchLower) ||
+			'all mcp servers'.includes(searchLower);
 
 		return allServersMatches ? [allServersOption, ...servers] : servers;
 	});
@@ -168,11 +172,14 @@
 		<p>
 			<span class="text-lg font-semibold">Danh sách MCP Servers</span>
 			{#if serverError}
-				<span class="text-xs text-error"> Vui lòng chọn ít nhất 1 server hoặc bật 1 quyền truy cập </span>
+				<span class="text-xs text-error">
+					Vui lòng chọn ít nhất 1 server hoặc bật 1 quyền truy cập
+				</span>
 			{/if}
 		</p>
 		<p class="input-description">
-			Chọn các MCP server mà Agent được phép truy cập. Để tạo scope chỉ dùng quyền API, bạn có thể để trống danh sách này và bật quyền ở dưới.
+			Chọn các MCP server mà Agent được phép truy cập. Để tạo scope chỉ dùng quyền API, bạn có thể
+			để trống danh sách này và bật quyền ở dưới.
 			{#if selectedServerIds.size > 0}
 				<span class="italic">
 					({#if selectedServerIds.has('*')}Đã chọn tất cả{:else}Đã chọn {selectedServerIds.size}{/if})

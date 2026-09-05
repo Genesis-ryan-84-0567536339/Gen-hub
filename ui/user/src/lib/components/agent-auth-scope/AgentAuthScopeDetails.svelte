@@ -61,7 +61,9 @@
 		agentAuthScope?.lastUsedAt ? formatTimeAgo(agentAuthScope.lastUsedAt).relativeTime : 'Chưa dùng'
 	);
 	let expiresDisplay = $derived(
-		agentAuthScope?.expiresAt ? formatTimeUntil(agentAuthScope.expiresAt).relativeTime : 'Không hết hạn'
+		agentAuthScope?.expiresAt
+			? formatTimeUntil(agentAuthScope.expiresAt).relativeTime
+			: 'Không hết hạn'
 	);
 	let mcpServerData = $derived(
 		isAllServers

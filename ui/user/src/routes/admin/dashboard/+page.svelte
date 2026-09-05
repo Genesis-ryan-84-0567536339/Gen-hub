@@ -6,12 +6,8 @@
 	import TweenedMetric from '$lib/components/TweenedMetric.svelte';
 	import { DEFAULT_MCP_CATALOG_ID } from '$lib/constants';
 	import { AdminService, UserService, type MCPCatalogServer } from '$lib/services';
-	import type { TopServerUsageRow, TopToolCallRow } from '$lib/services/dashboard/types';
-	import {
-		compileServerAndEntries,
-		topServersFromStats,
-		topToolCallsFromStats
-	} from '$lib/services/dashboard/utils';
+	import type { TopToolCallRow } from '$lib/services/dashboard/types';
+	import { topToolCallsFromStats } from '$lib/services/dashboard/utils';
 	import { errors, mcpServersAndEntries } from '$lib/stores';
 	import { startOfDay, endOfDay } from 'date-fns';
 	import { onMount } from 'svelte';
@@ -21,7 +17,6 @@
 	let loadingToolUsage = $state(true);
 
 	let topToolCalls = $state<TopToolCallRow[]>([]);
-	let topServerUsage = $state<TopServerUsageRow[]>([]);
 
 	let mounted = $state(false);
 	let currentOrigin = $state('');
@@ -57,9 +52,6 @@
 	});
 
 	const serverAndEntries = $derived(mcpServersAndEntries.current);
-	const { totalServers: _totalServers } = $derived(
-		compileServerAndEntries(serversData, serverAndEntries.entries, false)
-	);
 
 	let todayToolCalls = $derived.by<number | null>(() => {
 		if (loadingToolUsage) return null;
@@ -71,8 +63,8 @@
 	});
 
 	let activeMcpCount = $derived.by(() => {
-		if (serverAndEntries.loading) return null;
-		return serverAndEntries.entries.length;
+		if (serverAndEntries.loading || loading) return null;
+		return serversData.filter((s) => s.configured !== false).length;
 	});
 
 	onMount(async () => {
@@ -92,7 +84,6 @@
 					items: statsToUse
 				};
 				topToolCalls = topToolCallsFromStats(adjustedStats);
-				topServerUsage = topServersFromStats(adjustedStats);
 			})
 			.catch((error) => {
 				if (error?.name === 'AbortError') return;

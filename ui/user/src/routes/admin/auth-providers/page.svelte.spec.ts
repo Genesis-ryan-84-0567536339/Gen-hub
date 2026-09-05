@@ -161,7 +161,7 @@ describe('Auth Providers Page', () => {
 			await expect
 				.element(
 					page.getByText(
-						/Register to unlock all remaining providers and to subscribe to the free Obot Community Newsletter/,
+						/Register to unlock all remaining providers and to subscribe to the free Obot Community Newsletter|Đăng ký để mở khóa các nhà cung cấp xác thực trong Gen Hub/,
 						{
 							exact: false
 						}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import CopyField from '$lib/components/CopyField.svelte';
 	import ResponsiveDialog from '$lib/components/ResponsiveDialog.svelte';
 	import { TriangleAlert, KeyRound, ExternalLink } from '@lucide/svelte';
@@ -39,8 +40,8 @@
 					<div class="flex flex-col gap-1">
 						<p class="text-sm font-medium">Lưu ngay API Key này</p>
 						<p class="text-xs">
-							Đây là lần duy nhất bạn có thể nhìn thấy API key này. Vui lòng sao chép và
-							lưu trữ ở nơi an toàn. Bạn sẽ không thể xem lại khóa này về sau.
+							Đây là lần duy nhất bạn có thể nhìn thấy API key này. Vui lòng sao chép và lưu trữ ở
+							nơi an toàn. Bạn sẽ không thể xem lại khóa này về sau.
 						</p>
 					</div>
 				</div>
@@ -57,10 +58,7 @@
 
 			<p class="text-muted text-sm">
 				Xem hướng dẫn tích hợp API Key trong
-				<a
-					href="/domain"
-					class="text-link inline-flex items-center gap-1"
-				>
+				<a href={resolve('/domain')} class="text-link inline-flex items-center gap-1">
 					tài liệu Gen Hub
 					<ExternalLink class="size-3" />
 				</a>

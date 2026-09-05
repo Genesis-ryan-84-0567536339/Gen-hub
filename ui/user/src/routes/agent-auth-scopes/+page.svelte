@@ -112,8 +112,8 @@
 					<h4 class="text-muted-content text-lg font-semibold">Chưa có Phân quyền Agent nào</h4>
 					<p class="text-muted-content text-sm font-light">
 						{isAdminPage
-							? "Hệ thống chưa ghi nhận scope phân quyền Agent nào."
-							: "Bạn chưa tạo scope phân quyền Agent nào!"}
+							? 'Hệ thống chưa ghi nhận scope phân quyền Agent nào.'
+							: 'Bạn chưa tạo scope phân quyền Agent nào!'}
 						<br />
 						Nhấn nút "+ Tạo Phân quyền Agent mới" bên trên để bắt đầu.
 					</p>

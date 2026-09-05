@@ -224,7 +224,9 @@
 		</div>
 		<div class="divider">2. Giải nén qua CLI</div>
 		<div class="relative">
-			<p class="absolute top-1/2 -translate-y-1/2 left-2 text-xs font-semibold">Chọn hệ điều hành:</p>
+			<p class="absolute top-1/2 -translate-y-1/2 left-2 text-xs font-semibold">
+				Chọn hệ điều hành:
+			</p>
 			<div
 				id="install-skill-os-selector"
 				role="tablist"

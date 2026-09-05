@@ -69,6 +69,7 @@
 	} from '$lib/context/layout.svelte';
 	import Bots from '$lib/icons/Bots.svelte';
 	import { localState } from '$lib/runes/localState.svelte';
+	import { Group } from '$lib/services';
 	import {
 		accessibleModels,
 		defaultModelAliases,
@@ -115,7 +116,6 @@
 
 	let navCollapsed = $state({ ...navCollapsedCache });
 	let showAdvancedPane = $state(untrack(() => isAdvancedPaneRoute(page.url.pathname)));
-	let animatingNavSectionId = $state<string | null>(null);
 	let setupDialog = $state<ReturnType<typeof SetupSplashDialog>>();
 
 	function isAdvancedPaneRoute(route: string): boolean {
@@ -160,7 +160,6 @@
 	}
 
 	function toggleNavCollapsed(id: string) {
-		animatingNavSectionId = id;
 		navCollapsed = { ...navCollapsed, [id]: !navCollapsed[id] };
 		navCollapsedCache = navCollapsed;
 		localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify(navCollapsed));
@@ -208,7 +207,6 @@
 	const {
 		classes,
 		children,
-		onRenderSubContent: _onRenderSubContent,
 		hideSidebar,
 		whiteBackground,
 		main,
@@ -218,15 +216,12 @@
 		showBackButton,
 		onBackButtonClick,
 		leftSidebar,
-		leftMenu: _overrideLeftMenu,
 		rightSidebar,
-		rightMenu: _overrideRightMenu,
 		mobileDock,
 		banner,
 		layoutContext,
 		disableResize,
 		hideProfileButton,
-		alwaysShowHeaderTitle: _alwaysShowHeaderTitle,
 		titleContent
 	}: Props = $props();
 	let nav = $state<HTMLElement>();
@@ -299,7 +294,17 @@
 			iconSymbol: '⚙',
 			label: 'Domain & Cài đặt',
 			href: '/domain'
-		}
+		},
+		...(hostedAgentsFeatureEnabled
+			? [
+					{
+						id: 'hosted-agents-user',
+						iconSymbol: '⬡',
+						label: 'Hosted Agents',
+						href: '/hosted-agents'
+					}
+				]
+			: [])
 	]);
 
 	// Upstream User & Native Surfaces (Preserved under secondary / advanced pane)
@@ -392,7 +397,7 @@
 					{
 						id: 'mcp-server-management',
 						icon: RadioTower,
-						label: 'Quản lý MCP',
+						label: 'MCP Management',
 						collapsible: true,
 						items: [
 							{
@@ -413,6 +418,19 @@
 								id: 'mcp-deployments',
 								href: '/admin/mcp-deployments',
 								label: 'Triển khai MCP',
+								collapsible: false
+							},
+							{
+								id: 'audit-logs',
+								href: '/admin/audit-logs',
+								label: 'Audit Logs',
+								disabled: isBootStrapUser,
+								collapsible: false
+							},
+							{
+								id: 'usage',
+								href: '/admin/usage',
+								label: 'Usage',
 								collapsible: false
 							},
 							{
@@ -454,7 +472,7 @@
 					{
 						id: 'skills-management',
 						icon: Notebook,
-						label: 'Quản lý Skills',
+						label: 'Skills Management',
 						collapsible: true,
 						items: [
 							{
@@ -476,7 +494,7 @@
 								{
 									id: 'hosted-agent-management',
 									icon: Container,
-									label: 'Quản lý Hosted Agent',
+									label: 'Hosted Agent Management',
 									collapsible: true,
 									items: [
 										{
@@ -498,7 +516,7 @@
 					{
 						id: 'device-management',
 						icon: Laptop,
-						label: 'Quản lý Thiết bị',
+						label: 'Device Management',
 						collapsible: true,
 						items: [
 							{
@@ -522,7 +540,7 @@
 					{
 						id: 'user-management',
 						icon: Users,
-						label: 'Quản lý Người dùng & Auth',
+						label: 'Auth Management',
 						disabled: !version.current.authEnabled,
 						collapsible: true,
 						noteIcon: !version.current.authEnabled ? LockOpen : undefined,
@@ -555,13 +573,20 @@
 								label: 'Nhà cung cấp xác thực',
 								disabled: !version.current.authEnabled,
 								collapsible: false
+							},
+							{
+								id: 'agent-auth-scopes',
+								href: '/admin/agent-auth-scopes',
+								label: 'Agent Auth Scopes',
+								disabled: !version.current.authEnabled,
+								collapsible: false
 							}
 						]
 					},
 					{
 						id: 'llm-gateway',
 						icon: BrainCog,
-						label: 'Cổng kết nối LLM',
+						label: 'LLM Gateway',
 						collapsible: true,
 						items: [
 							{
@@ -612,7 +637,7 @@
 					{
 						id: 'app-management',
 						icon: LayoutGrid,
-						label: 'Cấu hình Hệ thống',
+						label: 'App Management',
 						collapsible: true,
 						items: [
 							{
@@ -650,7 +675,51 @@
 						]
 					}
 				]
-			: userResourceLinks
+			: profile.current.groups?.includes(Group.POWERUSER)
+				? [
+						{
+							id: 'mcp-server-management',
+							icon: RadioTower,
+							label: 'MCP Management',
+							collapsible: true,
+							disabled: false,
+							items: [
+								{
+									id: 'mcp-catalog',
+									href: '/mcp-catalog',
+									label: 'MCP Catalog',
+									disabled: false,
+									collapsible: false
+								},
+								...(profile.current.groups?.includes(Group.POWERUSER_PLUS)
+									? [
+											{
+												id: 'mcp-access-policies',
+												href: '/mcp-access-policies',
+												label: 'MCP Access Policies',
+												disabled: false,
+												collapsible: false
+											}
+										]
+									: []),
+								{
+									id: 'audit-logs',
+									href: '/audit-logs',
+									label: 'Audit Logs',
+									disabled: false,
+									collapsible: false
+								},
+								{
+									id: 'usage',
+									href: '/usage',
+									label: 'Usage',
+									disabled: false,
+									collapsible: false
+								}
+							]
+						}
+					]
+				: []
 	);
 
 	$effect(() => {
@@ -713,7 +782,7 @@
 		} satisfies BannerDismissState;
 	}
 
-	const COMMUNITY_SIGNUP_BANNER_KEY = '@gen-hub/dismiss-community-signup-banner';
+	const COMMUNITY_SIGNUP_BANNER_KEY = '@obot/dismiss-community-signup-banner';
 	let communitySignupBannerDismissed = localState<BannerDismissState | undefined>(
 		COMMUNITY_SIGNUP_BANNER_KEY,
 		undefined,
@@ -775,7 +844,10 @@
 	});
 
 	const canShowCommunitySignup = $derived.by(() => {
-		return false;
+		if (!(profile.current.hasAdminAccess?.() || profile.current.isBootstrapUser?.())) return false;
+		if (hasCommunityOrEnterpriseLicense) return false;
+		if (!communitySignupBannerDismissed.isReady) return false;
+		return !isCommunitySignupDismissedForCurrentProfile();
 	});
 
 	let showAppNotificationBanner = $derived.by(() => {
@@ -868,12 +940,16 @@
 							{#if advancedManagementLinks.length > 0}
 								<div class="border-t border-[#293244] pt-2 mt-2">
 									<button
-										id="advanced-settings-btn"
+										id="advanced-pane-btn"
 										class="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-[#1f2937] rounded-[10px] transition-colors font-semibold"
 										onclick={() => (showAdvancedPane = true)}
 									>
-										<span class="w-[22px] text-center text-sm font-normal">⚙</span>
-										<span class="truncate">Hạ tầng mở rộng (Obot)</span>
+										<span aria-hidden="true" class="w-[22px] text-center text-sm font-normal"
+											>⚙</span
+										>
+										<span class="truncate">
+											{profile.current.hasAdminAccess?.() ? 'Administration' : 'Advanced Settings'}
+										</span>
 									</button>
 								</div>
 							{/if}
@@ -1103,7 +1179,7 @@
 				id={`sidebar-link-${link.id}`}
 				href={resolve(link.href as `/${string}`)}
 				class={twMerge(
-					'flex items-center gap-2.5 px-3 py-[11px] rounded-[10px] text-[13px] font-[650] transition-colors',
+					'sidebar-link flex items-center gap-2.5 px-3 py-[11px] rounded-[10px] text-[13px] font-[650] transition-colors',
 					isActive
 						? 'bg-[#292f43] text-white'
 						: 'text-[#cbd5e1] hover:bg-[#1f2937] hover:text-white'
@@ -1111,7 +1187,9 @@
 				onclick={saveSidebarScroll}
 			>
 				{#if link.iconSymbol}
-					<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0"
+					<span
+						aria-hidden="true"
+						class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0"
 						>{link.iconSymbol}</span
 					>
 				{:else if link.icon}
@@ -1125,7 +1203,9 @@
 			>
 				<div class="flex items-center gap-2.5 min-w-0">
 					{#if link.iconSymbol}
-						<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0"
+						<span
+							aria-hidden="true"
+							class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0"
 							>{link.iconSymbol}</span
 						>
 					{:else if link.icon}
@@ -1163,7 +1243,7 @@
 							id={`sidebar-sublink-${item.id}`}
 							href={resolve(item.href as `/${string}`)}
 							class={twMerge(
-								'px-2.5 py-1.5 rounded-lg text-[11px] font-normal transition-colors truncate',
+								'sidebar-link px-2.5 py-1.5 rounded-lg text-[11px] font-normal transition-colors truncate',
 								isSubActive
 									? 'text-indigo-400 font-semibold bg-slate-800/90'
 									: 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
