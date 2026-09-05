@@ -183,7 +183,11 @@ func executeBootstrap(ctx context.Context, opts BootstrapOptions, checkDNS func(
 		envPath = os.Getenv("GEN_HUB_ENV_FILE")
 	}
 	if envPath == "" {
-		envPath = DefaultRuntimeEnvFile
+		if _, err := os.Stat("/data"); err == nil {
+			envPath = DefaultRuntimeEnvFile
+		} else {
+			envPath = filepath.Join(".", "gen-hub.env")
+		}
 	}
 
 	cfg := &RuntimeConfig{

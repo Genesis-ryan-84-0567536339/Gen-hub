@@ -88,6 +88,7 @@ var (
 			"POST   /api/projects/{project_id}/agents/{nanobot_agent_id}/launch",
 			"GET    /api/domain/status",
 			"POST   /api/domain/check-dns",
+			"POST   /api/domain/configure",
 		},
 		types.GroupPowerUser: {
 			"GET    /api/workspaces/{workspace_id}",

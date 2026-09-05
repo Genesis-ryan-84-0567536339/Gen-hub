@@ -277,6 +277,22 @@ export async function checkDomainDNS(
 	return (await doPost('/domain/check-dns', { domain }, opts)) as DomainDNSCheck;
 }
 
+export async function configureDomain(
+	config: {
+		domain: string;
+		httpPort?: number;
+		httpsPort?: number;
+		enableTLS: boolean;
+		tlsMode?: string;
+		certPath?: string;
+		keyPath?: string;
+		skipDNS?: boolean;
+	},
+	opts?: { fetch?: Fetcher }
+): Promise<DomainStatus> {
+	return (await doPost('/domain/configure', config, opts)) as DomainStatus;
+}
+
 // Default model aliases
 
 export async function listDefaultModelAliases(opts?: {

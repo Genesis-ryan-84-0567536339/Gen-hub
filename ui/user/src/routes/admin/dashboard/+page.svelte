@@ -4,6 +4,7 @@
 	import Layout from '$lib/components/Layout.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
 	import TweenedMetric from '$lib/components/TweenedMetric.svelte';
+	import DomainSetupAssistant from '$lib/components/admin/DomainSetupAssistant.svelte';
 	import { DEFAULT_MCP_CATALOG_ID } from '$lib/constants';
 	import { AdminService, UserService, type MCPCatalogServer } from '$lib/services';
 	import type { TopToolCallRow } from '$lib/services/dashboard/types';
@@ -187,6 +188,9 @@
 				</div>
 			{/each}
 		</div>
+
+		<!-- Trợ lý kết nối tên miền tự động -->
+		<DomainSetupAssistant />
 
 		<!-- Gateway Section: Ổ cắm tổng MCP -->
 		<div

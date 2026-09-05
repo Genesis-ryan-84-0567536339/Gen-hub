@@ -1,6 +1,7 @@
 <script lang="ts">
 	import CopyButton from '$lib/components/CopyButton.svelte';
 	import Layout from '$lib/components/Layout.svelte';
+	import DomainSetupAssistant from '$lib/components/admin/DomainSetupAssistant.svelte';
 	import {
 		checkDomainDNS,
 		getDomainStatus,
@@ -72,7 +73,11 @@
 </svelte:head>
 
 <Layout title="Domain & Cài đặt" subtitle="Cấu hình domain công khai và thông số gateway">
-	<div class="grid grid-cols-1 lg:grid-cols-12 gap-5 w-full" in:fade={{ duration: 150 }}>
+	<div class="flex flex-col gap-5 w-full" in:fade={{ duration: 150 }}>
+		<!-- Trợ lý kết nối tên miền tự động -->
+		<DomainSetupAssistant onDomainUpdated={() => void loadStatus()} />
+
+		<div class="grid grid-cols-1 lg:grid-cols-12 gap-5 w-full">
 		<!-- Left Panel: Domain của Gen Hub -->
 		<div
 			class="lg:col-span-7 bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-2xl p-5 shadow-[0_2px_10px_rgba(31,41,55,0.03)] flex flex-col"
@@ -318,5 +323,6 @@
 				</div>
 			</div>
 		</div>
+	</div>
 	</div>
 </Layout>

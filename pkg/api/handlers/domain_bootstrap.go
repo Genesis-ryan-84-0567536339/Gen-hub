@@ -140,6 +140,80 @@ func (h *DomainBootstrapHandler) CheckDNS(req api.Context) error {
 	})
 }
 
+// ConfigureDomainRequest captures input for automated domain and TLS setup.
+type ConfigureDomainRequest struct {
+	Domain    string `json:"domain"`
+	HTTPPort  int    `json:"httpPort,omitempty"`
+	HTTPSPort int    `json:"httpsPort,omitempty"`
+	EnableTLS bool   `json:"enableTLS"`
+	TLSMode   string `json:"tlsMode,omitempty"`
+	CertPath  string `json:"certPath,omitempty"`
+	KeyPath   string `json:"keyPath,omitempty"`
+	SkipDNS   bool   `json:"skipDNS,omitempty"`
+}
+
+// Configure persists runtime domain configuration via domain.ExecuteBootstrap.
+func (h *DomainBootstrapHandler) Configure(req api.Context) error {
+	var body ConfigureDomainRequest
+	if err := req.Read(&body); err != nil {
+		return err
+	}
+
+	httpPort := body.HTTPPort
+	if httpPort == 0 {
+		httpPort = 8080
+	}
+	httpsPort := body.HTTPSPort
+	if httpsPort == 0 {
+		httpsPort = 8443
+	}
+	tlsMode := body.TLSMode
+	if tlsMode == "" {
+		if body.EnableTLS {
+			tlsMode = domain.TLSModeLetsEncrypt
+		} else {
+			tlsMode = domain.TLSModeNone
+		}
+	}
+
+	opts := domain.BootstrapOptions{
+		Domain:    body.Domain,
+		HTTPPort:  httpPort,
+		HTTPSPort: httpsPort,
+		EnableTLS: body.EnableTLS,
+		TLSMode:   tlsMode,
+		CertPath:  body.CertPath,
+		KeyPath:   body.KeyPath,
+		SkipDNS:   body.SkipDNS,
+	}
+
+	cfg, err := domain.ExecuteBootstrap(req.Context(), opts)
+	if err != nil {
+		return req.Write(DomainStatusResponse{
+			Domain:         body.Domain,
+			TLSActive:      requestUsesHTTPS(req),
+			State:          domain.BootstrapStateError,
+			Error:          err.Error(),
+			ConfigComplete: false,
+		})
+	}
+
+	return req.Write(DomainStatusResponse{
+		Domain:            cfg.Domain,
+		ServerURL:         cfg.ServerURL,
+		MCPEndpoint:       cfg.MCPEndpoint,
+		TLSActive:         requestUsesHTTPS(req),
+		TLSConfigured:     cfg.EnableTLS,
+		TLSMode:           cfg.TLSMode,
+		DNSStatus:         cfg.DNSStatus,
+		ResolvedIPs:       cfg.ResolvedIPs,
+		State:             cfg.State,
+		Error:             cfg.Error,
+		ConfigComplete:    cfg.ConfigComplete,
+		BootstrapComplete: cfg.BootstrapComplete,
+	})
+}
+
 func requestUsesHTTPS(req api.Context) bool {
 	if req.TLS != nil {
 		return true

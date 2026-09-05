@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/obot-platform/obot/pkg/api"
@@ -102,3 +103,35 @@ func TestDomainBootstrapCheckDNS(t *testing.T) {
 		t.Fatalf("unexpected DNS response: %+v", response)
 	}
 }
+
+func TestDomainBootstrapHandlerConfigure(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("GEN_HUB_RUNTIME_CONFIG_FILE", filepath.Join(tempDir, "runtime-config.json"))
+	t.Setenv("GEN_HUB_ENV_FILE", filepath.Join(tempDir, "gen-hub.env"))
+
+	handler := NewDomainBootstrapHandler("http://hub.local:8080")
+	body, err := json.Marshal(ConfigureDomainRequest{
+		Domain:    "hub.local",
+		HTTPPort:  8080,
+		EnableTLS: false,
+		SkipDNS:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/domain/configure", bytes.NewReader(body))
+	if err := handler.Configure(api.Context{ResponseWriter: recorder, Request: request}); err != nil {
+		t.Fatalf("Configure failed: %v", err)
+	}
+
+	var response DomainStatusResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if response.Domain != "hub.local" || !response.ConfigComplete {
+		t.Fatalf("unexpected Configure response: %+v", response)
+	}
+}
+

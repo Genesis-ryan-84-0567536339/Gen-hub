@@ -150,6 +150,7 @@ func NewRouter(ctx context.Context, services *services.Services) (*Router, error
 	// Domain & Setup Bootstrap (E1)
 	mux.HandleFunc("GET /api/domain/status", domainBootstrapHandler.GetStatus)
 	mux.HandleFunc("POST /api/domain/check-dns", domainBootstrapHandler.CheckDNS)
+	mux.HandleFunc("POST /api/domain/configure", domainBootstrapHandler.Configure)
 
 	// Version
 	mux.HandleFunc("GET /api/version", version.GetVersion)
