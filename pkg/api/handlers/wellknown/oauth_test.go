@@ -53,3 +53,30 @@ func TestOAuthAuthorizationAppendsMCPIDToOAuthEndpoints(t *testing.T) {
 		t.Fatalf("jwks_uri = %q", got.JWKSURI)
 	}
 }
+
+func TestFrontDoorProtectedResourceMetadataUsesPublicMCPURL(t *testing.T) {
+	h := &handler{baseURL: "https://hub.example.com"}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/.well-known/oauth-protected-resource/mcp", nil)
+
+	if err := h.oauthProtectedResource(api.Context{
+		ResponseWriter: recorder,
+		Request:        request,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var got struct {
+		Resource             string   `json:"resource"`
+		AuthorizationServers []string `json:"authorization_servers"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Resource != "https://hub.example.com/mcp" {
+		t.Fatalf("resource = %q", got.Resource)
+	}
+	if len(got.AuthorizationServers) != 1 || got.AuthorizationServers[0] != "https://hub.example.com" {
+		t.Fatalf("authorization_servers = %#v", got.AuthorizationServers)
+	}
+}

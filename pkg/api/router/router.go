@@ -753,6 +753,10 @@ func NewRouter(ctx context.Context, services *services.Services) (*Router, error
 	mux.HandleFunc("/agent-connect/{hosted_agent_instance_id}", agentConnect.Proxy)
 	mux.HandleFunc("/agent-connect/{hosted_agent_instance_id}/{rest...}", agentConnect.Proxy)
 
+	// Gen Hub Front-Door Composite MCP Endpoints (E3)
+	mux.HandleFunc("/mcp", mcpGateway.FrontDoorProxy)
+	mux.HandleFunc("/mcp/{rest...}", mcpGateway.FrontDoorProxy)
+
 	mux.HandleFunc("/mcp-connect/{mcp_id}", mcpGateway.Proxy)
 	mux.HandleFunc("/mcp-connect/{mcp_id}/{rest...}", mcpGateway.Proxy)
 	// This is a special path for internal MCP composite requests.

@@ -2,6 +2,8 @@
 
 > **SSOT của sản phẩm:** file `README.md` này là nguồn chuẩn sống cho scope, kiến trúc, quyết định cố định, roadmap và trạng thái triển khai của Gen Hub. Khi scope thay đổi, cập nhật README trước hoặc cùng lúc với code.
 
+Đặc tả chi tiết cho sản phẩm người dùng cài đặt, vận hành và nghiệm thu nằm tại [`docs/implementation/FINAL_PRODUCT_SPEC.md`](docs/implementation/FINAL_PRODUCT_SPEC.md). Đối chiếu code thực tế và thứ tự Pull Request cần triển khai nằm tại [`docs/implementation/FINAL_PRODUCT_IMPLEMENTATION_PLAN.md`](docs/implementation/FINAL_PRODUCT_IMPLEMENTATION_PLAN.md). README quản lý định hướng và trạng thái Epic; spec quản lý hành vi chi tiết. Khi hành vi sản phẩm thay đổi, cập nhật cả hai trong cùng thay đổi.
+
 ## 1. Định vị sản phẩm
 
 **Gen Hub** là personal **Composite MCP Gateway** xây trên fork của [Obot](https://github.com/obot-platform/obot). Mục tiêu là để nhiều AI agent / IDE / CLI kết nối vào **một MCP endpoint duy nhất**, còn Hub chịu trách nhiệm quản lý MCP phía sau, credential, quyền theo agent/tool và audit.
@@ -191,9 +193,9 @@ Dashboard sau đó chỉ hiển thị trạng thái domain/endpoint và thông t
 | Epic | Scope | Dependency | Acceptance | Status |
 |---|---|---|---|---|
 | **E0 — Foundation / README SSOT** | Đổi fork upstream thành Gen Hub SSOT, ghi baseline, architecture, security invariants, roadmap | None | README chứa spec/SSOT, không chứa secret | **Done** |
-| **E1 — First-run domain + HTTPS** | Installer/TUI domain, DNS check, HTTPS, admin bootstrap, runtime config | E0 | Clean VPS setup xong và truy cập được HTTPS | **In Progress** |
-| **E2 — Vietnamese UI shell + Dashboard** | Branding, nav tối giản, Dashboard/MCP/Agents/Vault/Audit/Domain, responsive | E0 | UI build/check pass; desktop/mobile dùng được; tiếng Việt là chính | **Done** |
-| **E3 — Composite MCP + per-tool control** | Một endpoint tổng, catalog và bật/tắt tool | E1 | Agent kết nối một endpoint và chỉ thấy tool được grant | Blocked by E1 |
+| **E1 — First-run domain + HTTPS** | Installer/TUI domain, DNS check, HTTPS, admin bootstrap, runtime config | E0 | Clean VPS setup xong và truy cập được HTTPS | **Partial — foundation đã merge, chưa đạt acceptance** |
+| **E2 — Vietnamese UI shell + Dashboard** | Branding, nav tối giản, Dashboard/MCP/Agents/Vault/Audit/Domain, responsive | E0 | UI build/check pass; desktop/mobile dùng được; tiếng Việt là chính | **Partial — visual shell đã merge, còn fixture/placeholder/live state** |
+| **E3 — Composite MCP + per-tool control** | Một endpoint tổng, catalog và bật/tắt tool | E1 | Agent kết nối một endpoint và chỉ thấy tool được grant | **Paused — PR #6 chưa merge-ready, chờ hoàn tất E1** |
 | **E4 — Agent approval + access profiles** | Pending/approve/revoke, quyền theo MCP/tool, dangerous default-off | E3 | Agent chưa approve không dùng được; approved agent chỉ gọi đúng tool được cấp | Blocked by E3 |
 | **E5 — Vault + connector setup** | Credential/OAuth cho catalog MCP mục tiêu | E1 + E3 | Connector hoạt động mà agent không nhận source token; không có secret trong Git/log UI | Blocked |
 | **E6 — Audit / Activity inspector** | Activity list, filter, inspector, export | E4 + E5 | Tool call test tạo audit record truy được từ UI | Blocked |

@@ -573,5 +573,5 @@
 </Confirm>
 
 <svelte:head>
-	<title>Obot | Users</title>
+	<title>Gen Hub | Quản lý Người dùng</title>
 </svelte:head>

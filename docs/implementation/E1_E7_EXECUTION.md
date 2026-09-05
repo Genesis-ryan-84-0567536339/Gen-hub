@@ -11,6 +11,8 @@ Validation bắt buộc trong từng Epic (compile/check/lint/unit/smoke cục b
 ## Existing SSOT
 
 - Product SSOT: `README.md`
+- Đặc tả hành vi và tiêu chí nghiệm thu sản phẩm cuối: `docs/implementation/FINAL_PRODUCT_SPEC.md`
+- Đối chiếu thực tế và kế hoạch Pull Request: `docs/implementation/FINAL_PRODUCT_IMPLEMENTATION_PLAN.md`
 - Visual/UI SSOT: `docs/design/prototype/gen-hub-ui-prototype.html`
 - Approved visual blob SHA: `4e9d931eabe942c8af5ec2e2bbb145190a0ac164`
 - E2 implementation merge: `72d0d92094c2fe8cc71eac9877d4b800ee8a4761`
@@ -18,24 +20,28 @@ Validation bắt buộc trong từng Epic (compile/check/lint/unit/smoke cục b
 ## Current state
 
 - E0 — Done
-- E2 — Done
-- E1 — Ready
-- E3 — blocked by E1
+- E2 — Partial: visual shell đã merge; live state, Việt hóa đầy đủ và browser acceptance còn thiếu
+- E1 — Partial: bootstrap foundation đã merge; release install, owner, HTTPS và restart acceptance còn thiếu
+- E3 — Paused: PR #6 chưa đạt spec và không được merge trước khi hoàn tất E1
 - E4 — blocked by E3
-- E5 — blocked by E1 + E3
+- E5 — blocked by E3
 - E6 — blocked by E4 + E5
 - E7 — blocked by E1–E6
 
 ## Required execution order
 
 ```text
-E1
+product reset + upstream/CI baseline
 ↓
-E3
+hoàn tất E1
+↓
+làm lại E3
 ↓
 E4 + E5
 ↓
 E6
+↓
+hoàn tất E2 bằng live state
 ↓
 E7 final hardening + integrated E2E
 ```

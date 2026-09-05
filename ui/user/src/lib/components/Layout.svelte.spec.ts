@@ -145,7 +145,7 @@ describe('Layout.svelte', () => {
 	it('gives all users access to non-administrative sidebar navigation', async () => {
 		await renderLayout();
 
-		for (const name of ['MCP Servers', 'Skills', 'Hosted Agents', 'Agent Identities']) {
+		for (const name of ['Tổng quan', 'Kho MCP', 'Agent kết nối', 'Két bảo mật']) {
 			await expect.element(page.getByRole('link', { name, exact: true })).toBeVisible();
 		}
 	});

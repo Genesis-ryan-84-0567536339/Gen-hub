@@ -5,6 +5,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  BASE_IMAGE_REPOSITORY: ghcr.io/genesis-ryan-84-0567536339/gen-hub/base
+
 on:
   workflow_dispatch:
   schedule:
@@ -12,34 +15,37 @@ on:
 
 jobs:
   build:
-    runs-on: depot-ubuntu-22.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Depot
-        uses: depot/setup-action@v1
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Build and push base Docker image
-        uses: depot/build-push-action@v1
+        uses: docker/build-push-action@v6
         id: build-and-push
         with:
-          project: bbqjs4tj1g
           context: .
           push: true
           pull: true
           target: base
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/${{ github.repository }}/base:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ env.BASE_IMAGE_REPOSITORY }}:latest
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.8.1
@@ -51,10 +57,6 @@ jobs:
       - name: Sign Images
         env:
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
-          TAGS: ghcr.io/${{ github.repository }}/base:latest
+          IMAGE: ${{ env.BASE_IMAGE_REPOSITORY }}
         run: |
-          images=""
-          for tag in ${TAGS}; do
-            images+="${tag}@${DIGEST} "
-          done
-          cosign sign --yes ${images}
+          cosign sign --yes "${IMAGE}@${DIGEST}"

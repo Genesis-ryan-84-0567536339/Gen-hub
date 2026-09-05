@@ -48,6 +48,11 @@ func TestMCPGroupAllowsMCPAndAnyGroupRoutes(t *testing.T) {
 			method: http.MethodGet,
 			path:   "/mcp-connect/msi1test",
 		},
+		{
+			name:   "Gen Hub front-door route",
+			method: http.MethodPost,
+			path:   "/mcp",
+		},
 	}
 
 	for _, tt := range tests {
@@ -57,6 +62,18 @@ func TestMCPGroupAllowsMCPAndAnyGroupRoutes(t *testing.T) {
 				t.Fatalf("Authorize() = false, want true")
 			}
 		})
+	}
+}
+
+func TestAnonymousCanReachFrontDoorForOAuthChallenge(t *testing.T) {
+	authorizer := NewAuthorizer(nil, nil, nil, false, nil, nil, nil, false)
+	anonymous := &user.DefaultInfo{Name: "anonymous", Groups: []string{UnauthenticatedGroup}}
+
+	for _, path := range []string{"/mcp", "/mcp/session"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		if allowed := authorizer.Authorize(req, anonymous); !allowed {
+			t.Fatalf("Authorize(%q) = false, want true", path)
+		}
 	}
 }
 

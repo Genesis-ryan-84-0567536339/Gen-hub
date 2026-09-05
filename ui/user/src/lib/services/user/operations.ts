@@ -40,6 +40,8 @@ import {
 	type DeviceScan,
 	type DeviceScanListFilters,
 	type DeviceScanResponse,
+	type DomainDNSCheck,
+	type DomainStatus,
 	type ImageResponse,
 	type MCPResourceRequirements,
 	type MCPCatalogServer,
@@ -262,6 +264,17 @@ export async function listAuthProviders(opts?: { fetch?: Fetcher }): Promise<Aut
 
 export async function getBootstrapStatus(): Promise<BootstrapStatus> {
 	return (await doGet('/bootstrap')) as BootstrapStatus;
+}
+
+export async function getDomainStatus(opts?: { fetch?: Fetcher }): Promise<DomainStatus> {
+	return (await doGet('/domain/status', opts)) as DomainStatus;
+}
+
+export async function checkDomainDNS(
+	domain: string,
+	opts?: { fetch?: Fetcher }
+): Promise<DomainDNSCheck> {
+	return (await doPost('/domain/check-dns', { domain }, opts)) as DomainDNSCheck;
 }
 
 // Default model aliases

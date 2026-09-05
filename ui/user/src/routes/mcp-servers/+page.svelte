@@ -23,12 +23,12 @@
 	};
 
 	const duration = PAGE_TRANSITION_DURATION;
-	let title = 'MCP Servers';
+	let title = 'MCP Server Cá Nhân';
 </script>
 
 <Layout classes={{ navbar: 'bg-base-200', container: 'pt-0' }} {title}>
 	{#snippet rightNavActions()}
-		<a class="btn btn-primary" href={resolve('/install-cli')}>Get Obot CLI</a>
+		<a class="btn btn-primary" href={resolve('/install-cli')}>Cài đặt Gen Hub CLI</a>
 	{/snippet}
 	<div class="flex min-h-full flex-col gap-2" in:fade>
 		{@render mainContent()}
@@ -47,7 +47,7 @@
 					class="dark:bg-base-200 dark:border-base-400 bg-base-100 border border-transparent shadow-sm"
 					value={query}
 					onChange={updateSearchQuery}
-					placeholder="Search servers..."
+					placeholder="Tìm kiếm server..."
 				/>
 			</div>
 		</div>
@@ -55,18 +55,18 @@
 			{#snippet noDataContent()}
 				<div class="my-12 flex w-md flex-col items-center gap-4 self-center text-center">
 					<Server class="text-base-content/80 size-24 opacity-25" />
-					<h4 class="text-muted-content text-lg font-semibold">No created MCP servers</h4>
+					<h4 class="text-muted-content text-lg font-semibold">Chưa có MCP Server cá nhân nào</h4>
 					<p class="text-muted-content text-sm font-light">
 						{#if isAtLeastPowerUser}
-							Looks like you don't have any servers created yet. <br />
-							Go to
+							Bạn chưa khởi tạo MCP Server cá nhân nào. <br />
+							Hãy truy cập
 							<a
 								href={resolve(`${profile.current.hasAdminAccess?.() ? '/admin' : ''}/mcp-catalog`)}
-								class="text-link">MCP Management ▸ MCP Servers</a
-							> to get started.
+								class="text-link">Kho MCP ▸ Danh mục MCP Server</a
+							> để bắt đầu.
 						{:else}
-							There are no servers available to connect to yet. <br />
-							Please check back later or contact your administrator.
+							Hiện tại chưa có MCP Server nào để kết nối. <br />
+							Vui lòng thử lại sau hoặc liên hệ quản trị viên.
 						{/if}
 					</p>
 				</div>
@@ -76,5 +76,5 @@
 {/snippet}
 
 <svelte:head>
-	<title>Obot | MCP Servers</title>
+	<title>Gen Hub | MCP Server Cá Nhân</title>
 </svelte:head>

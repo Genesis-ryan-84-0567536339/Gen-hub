@@ -13,10 +13,11 @@ on:
       - 'feat/*'
     paths:
       - ui/user/**
+      - .github/workflows/user-ui.yml
 
 jobs:
   lint:
-    runs-on: depot-ubuntu-22.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
@@ -32,7 +33,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.0.3
+          version: 11.7.0
 
       - name: Run linter
         run: | 
@@ -45,7 +46,7 @@ jobs:
         run: make no-changes
 
   test:
-    runs-on: depot-ubuntu-22.04
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -60,7 +61,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 11.0.3
+          version: 11.7.0
 
       - name: Run UI Tests
         run: | 

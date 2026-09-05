@@ -86,6 +86,8 @@ var (
 			"PUT    /api/projects/{project_id}/agents/{nanobot_agent_id}",
 			"DELETE /api/projects/{project_id}/agents/{nanobot_agent_id}",
 			"POST   /api/projects/{project_id}/agents/{nanobot_agent_id}/launch",
+			"GET    /api/domain/status",
+			"POST   /api/domain/check-dns",
 		},
 		types.GroupPowerUser: {
 			"GET    /api/workspaces/{workspace_id}",
@@ -139,6 +141,12 @@ var (
 			"/agent-connect/{hosted_agent_instance_id}/{rest...}",
 		},
 		types.GroupMCP: {
+			"GET    /mcp",
+			"POST   /mcp",
+			"DELETE /mcp",
+			"GET    /mcp/{rest...}",
+			"POST   /mcp/{rest...}",
+			"DELETE /mcp/{rest...}",
 			"GET    /mcp-connect/{mcp_id}",
 			"POST   /mcp-connect/{mcp_id}",
 			"DELETE /mcp-connect/{mcp_id}",
@@ -170,6 +178,9 @@ var (
 			// Allow unauthenticated access to MCP connect endpoints.
 			// This allows the authorization to pass, but the handler will issue the 401 with the WWW-Authenticate header.
 			"/mcp-connect/",
+			"/mcp",
+			"/mcp/",
+			"/api/domain/status",
 		},
 	}
 )

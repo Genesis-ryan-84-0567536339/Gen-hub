@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
@@ -15,10 +16,12 @@ import (
 	"github.com/obot-platform/obot/apiclient/types"
 	"github.com/obot-platform/obot/pkg/api"
 	"github.com/obot-platform/obot/pkg/api/handlers"
+	"github.com/obot-platform/obot/pkg/mcp"
 	v1 "github.com/obot-platform/obot/pkg/storage/apis/obot.obot.ai/v1"
 	"github.com/obot-platform/obot/pkg/system"
 	"github.com/obot-platform/obot/pkg/utils"
 	"gorm.io/gorm"
+	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -115,6 +118,33 @@ func sanitizeOAuthErrorDescription(description string) string {
 	return strings.Join(strings.Fields(description), " ")
 }
 
+func isFrontDoorResource(resource, baseURL string) bool {
+	resourceURL, err := url.Parse(resource)
+	if err != nil || resourceURL.RawQuery != "" || resourceURL.Fragment != "" || resourceURL.User != nil {
+		return false
+	}
+	base, err := url.Parse(strings.TrimSuffix(baseURL, "/"))
+	if err != nil {
+		return false
+	}
+	return resourceURL.Scheme == base.Scheme && resourceURL.Host == base.Host && resourceURL.EscapedPath() == "/mcp"
+}
+
+func resolveMCPIDForResource(ctx context.Context, client kclient.Client, baseURL, resource, mcpID string) (string, bool, error) {
+	if !isFrontDoorResource(resource, baseURL) {
+		return mcpID, false, nil
+	}
+
+	server, err := mcp.ResolveFrontDoorComposite(ctx, client, system.DefaultNamespace, "")
+	if err != nil {
+		return "", true, err
+	}
+	if mcpID != "" && mcpID != server.Name {
+		return "", true, fmt.Errorf("front-door resource does not match designated composite")
+	}
+	return server.Name, true, nil
+}
+
 func (h *handler) authorize(req api.Context) error {
 	if err := req.ParseForm(); err != nil {
 		return err
@@ -196,6 +226,13 @@ func (h *handler) authorize(req api.Context) error {
 			return nil
 		}
 
+		var frontDoor bool
+		mcpID, frontDoor, err = resolveMCPIDForResource(req.Context(), req.Storage, h.baseURL, resource, mcpID)
+		if err != nil {
+			redirectWithAuthorizeError(req, redirectURI, newOAuthError(ErrServerError, "Gen Hub front door is not configured", state))
+			return nil
+		}
+
 		if mcpID == "" {
 			mcpID = strings.TrimPrefix(u.Path, "/mcp-connect")
 			mcpID = strings.TrimPrefix(mcpID, "/")
@@ -204,7 +241,7 @@ func (h *handler) authorize(req api.Context) error {
 				redirectWithAuthorizeError(req, redirectURI, newOAuthError(ErrInvalidRequest, "mcp_id parameter required", state))
 				return nil
 			}
-		} else if !strings.HasSuffix(u.Path, "/"+mcpID) {
+		} else if !frontDoor && !strings.HasSuffix(u.Path, "/"+mcpID) {
 			redirectWithAuthorizeError(req, redirectURI, newOAuthError(ErrInvalidRequest, fmt.Sprintf("resource doesn't match mcp_id: %s", mcpID), state))
 			return nil
 		}
@@ -257,25 +294,33 @@ func (h *handler) callback(req api.Context) error {
 
 	mcpID := oauthAppAuthRequest.Spec.MCPID
 	if mcpID != "" {
-		serverOrInstanceID, audience, err := h.oauthChecker.mcpSessionManager.IDAndAudienceFromConnectURL(req.Context(), mcpID, req.User.GetUID())
-		if err != nil {
-			if errHTTP := (*types.ErrHTTP)(nil); errors.As(err, &errHTTP) {
-				redirectWithAuthorizeError(req, oauthAppAuthRequest.Spec.RedirectURI, newOAuthError(ErrInvalidRequest, errHTTP.Message, oauthAppAuthRequest.Spec.State))
-			} else {
-				redirectWithAuthorizeError(req, oauthAppAuthRequest.Spec.RedirectURI, newOAuthError(ErrServerError, fmt.Sprintf("failed to get MCP ID from connect URL: %v", err), oauthAppAuthRequest.Spec.State))
-			}
-			return nil
-		}
-
-		mcpID = serverOrInstanceID
-		audience = "/" + audience
-		if !strings.HasSuffix(oauthAppAuthRequest.Spec.Resource, audience) || oauthAppAuthRequest.Spec.MCPID != mcpID {
-			// Ensure the audience is what the server expects.
-			oauthAppAuthRequest.Spec.Resource = fmt.Sprintf("%s/mcp-connect%s", h.baseURL, audience)
-			oauthAppAuthRequest.Spec.MCPID = mcpID
-			if err = req.Update(&oauthAppAuthRequest); err != nil {
-				redirectWithAuthorizeError(req, oauthAppAuthRequest.Spec.RedirectURI, newOAuthError(ErrServerError, fmt.Sprintf("failed to update OAuth app auth request: %v", err), oauthAppAuthRequest.Spec.State))
+		if isFrontDoorResource(oauthAppAuthRequest.Spec.Resource, h.baseURL) {
+			frontDoor, err := mcp.ResolveFrontDoorComposite(req.Context(), req.Storage, system.DefaultNamespace, req.User.GetUID())
+			if err != nil || frontDoor.Name != mcpID {
+				redirectWithAuthorizeError(req, oauthAppAuthRequest.Spec.RedirectURI, newOAuthError(ErrInvalidRequest, "Gen Hub front door is not available for this user", oauthAppAuthRequest.Spec.State))
 				return nil
+			}
+		} else {
+			serverOrInstanceID, audience, err := h.oauthChecker.mcpSessionManager.IDAndAudienceFromConnectURL(req.Context(), mcpID, req.User.GetUID())
+			if err != nil {
+				if errHTTP := (*types.ErrHTTP)(nil); errors.As(err, &errHTTP) {
+					redirectWithAuthorizeError(req, oauthAppAuthRequest.Spec.RedirectURI, newOAuthError(ErrInvalidRequest, errHTTP.Message, oauthAppAuthRequest.Spec.State))
+				} else {
+					redirectWithAuthorizeError(req, oauthAppAuthRequest.Spec.RedirectURI, newOAuthError(ErrServerError, fmt.Sprintf("failed to get MCP ID from connect URL: %v", err), oauthAppAuthRequest.Spec.State))
+				}
+				return nil
+			}
+
+			mcpID = serverOrInstanceID
+			audience = "/" + audience
+			if !strings.HasSuffix(oauthAppAuthRequest.Spec.Resource, audience) || oauthAppAuthRequest.Spec.MCPID != mcpID {
+				// Ensure the audience is what the server expects.
+				oauthAppAuthRequest.Spec.Resource = fmt.Sprintf("%s/mcp-connect%s", h.baseURL, audience)
+				oauthAppAuthRequest.Spec.MCPID = mcpID
+				if err = req.Update(&oauthAppAuthRequest); err != nil {
+					redirectWithAuthorizeError(req, oauthAppAuthRequest.Spec.RedirectURI, newOAuthError(ErrServerError, fmt.Sprintf("failed to update OAuth app auth request: %v", err), oauthAppAuthRequest.Spec.State))
+					return nil
+				}
 			}
 		}
 	}

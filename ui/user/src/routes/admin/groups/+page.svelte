@@ -372,7 +372,7 @@
 />
 
 <svelte:head>
-	<title>Obot | Groups</title>
+	<title>Gen Hub | Nhóm Người dùng</title>
 </svelte:head>
 
 <style>

@@ -2,9 +2,12 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateDomainSyntax(t *testing.T) {
@@ -111,6 +114,7 @@ func TestNormalizeTLSMode(t *testing.T) {
 func TestExecuteBootstrap(t *testing.T) {
 	tmpDir := t.TempDir()
 	envPath := filepath.Join(tmpDir, "test.env")
+	t.Setenv(RuntimeConfigFileEnv, filepath.Join(tmpDir, "runtime-config.json"))
 
 	opts := BootstrapOptions{
 		Domain:    "mcp.example.com",
@@ -137,8 +141,14 @@ func TestExecuteBootstrap(t *testing.T) {
 	if cfg.ServerURL != "https://mcp.example.com" {
 		t.Errorf("expected ServerURL https://mcp.example.com, got %s", cfg.ServerURL)
 	}
-	if !cfg.BootstrapComplete {
-		t.Errorf("expected BootstrapComplete to be true")
+	if cfg.BootstrapComplete {
+		t.Errorf("expected BootstrapComplete to remain false until all first-run checks pass")
+	}
+	if !cfg.ConfigComplete {
+		t.Errorf("expected ConfigComplete to be true")
+	}
+	if cfg.State != BootstrapStateTLSPending {
+		t.Errorf("expected state %q, got %q", BootstrapStateTLSPending, cfg.State)
 	}
 
 	// Verify file permissions (0600)
@@ -148,6 +158,149 @@ func TestExecuteBootstrap(t *testing.T) {
 	}
 	if fi.Mode().Perm() != 0o600 {
 		t.Errorf("expected env file mode 0600, got %o", fi.Mode().Perm())
+	}
+}
+
+func TestExecuteBootstrapDNSFailurePersistsState(t *testing.T) {
+	tmpDir := t.TempDir()
+	runtimePath := filepath.Join(tmpDir, "runtime-config.json")
+	t.Setenv(RuntimeConfigFileEnv, runtimePath)
+
+	wantErr := errors.New("no matching A or AAAA record")
+	_, err := executeBootstrap(context.Background(), BootstrapOptions{
+		Domain:    "hub.example.com",
+		HTTPPort:  8080,
+		HTTPSPort: 443,
+		TLSMode:   TLSModeLetsEncrypt,
+		EnvFile:   filepath.Join(tmpDir, "runtime.env"),
+	}, func(context.Context, string) ([]string, error) {
+		return nil, wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("expected DNS error %v, got %v", wantErr, err)
+	}
+
+	cfg, err := LoadRuntimeConfig()
+	if err != nil {
+		t.Fatalf("failed to load persisted failure state: %v", err)
+	}
+	if cfg.State != BootstrapStateDNSNotReady {
+		t.Fatalf("expected state %q, got %q", BootstrapStateDNSNotReady, cfg.State)
+	}
+	if cfg.DNSStatus != "not_ready" || cfg.Error != wantErr.Error() {
+		t.Fatalf("unexpected persisted DNS failure: status=%q error=%q", cfg.DNSStatus, cfg.Error)
+	}
+	if cfg.ConfigComplete || cfg.BootstrapComplete {
+		t.Fatal("failed DNS bootstrap must not be marked complete")
+	}
+}
+
+func TestExecuteBootstrapSameInputKeepsConfiguredAt(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv(RuntimeConfigFileEnv, filepath.Join(tmpDir, "runtime-config.json"))
+	opts := BootstrapOptions{
+		Domain:    "hub.example.com",
+		HTTPPort:  8080,
+		HTTPSPort: 443,
+		TLSMode:   TLSModeLetsEncrypt,
+		SkipDNS:   true,
+		EnvFile:   filepath.Join(tmpDir, "runtime.env"),
+	}
+
+	first, err := ExecuteBootstrap(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("first bootstrap failed: %v", err)
+	}
+	time.Sleep(time.Millisecond)
+	second, err := ExecuteBootstrap(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("second bootstrap failed: %v", err)
+	}
+	if !second.ConfiguredAt.Equal(first.ConfiguredAt) {
+		t.Fatalf("same input changed configuredAt from %s to %s", first.ConfiguredAt, second.ConfiguredAt)
+	}
+}
+
+func TestExecuteBootstrapRejectsInvalidPorts(t *testing.T) {
+	t.Setenv(RuntimeConfigFileEnv, filepath.Join(t.TempDir(), "runtime-config.json"))
+	for _, opts := range []BootstrapOptions{
+		{Domain: "hub.example.com", HTTPPort: -1, HTTPSPort: 443, TLSMode: TLSModeNone, SkipDNS: true},
+		{Domain: "hub.example.com", HTTPPort: 80, HTTPSPort: 65536, TLSMode: TLSModeLetsEncrypt, SkipDNS: true},
+	} {
+		if _, err := ExecuteBootstrap(context.Background(), opts); err == nil {
+			t.Fatalf("expected invalid ports to fail: %+v", opts)
+		}
+	}
+}
+
+func TestWriteRuntimeFilesAtomicallyWithStrictPermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+	runtimePath := filepath.Join(tmpDir, "runtime-config.json")
+	envPath := filepath.Join(tmpDir, "runtime.env")
+	t.Setenv(RuntimeConfigFileEnv, runtimePath)
+	cfg := &RuntimeConfig{
+		Domain:       "hub.example.com",
+		ServerURL:    "https://hub.example.com",
+		MCPEndpoint:  "https://hub.example.com/mcp",
+		ConfiguredAt: time.Date(2026, time.September, 4, 1, 2, 3, 0, time.UTC),
+		TLSMode:      TLSModeCustom,
+		CertPath:     "/data/TLS certs/cert #1.pem",
+		KeyPath:      "/data/TLS certs/key #1.pem",
+	}
+
+	if err := SaveRuntimeConfig(cfg); err != nil {
+		t.Fatalf("SaveRuntimeConfig failed: %v", err)
+	}
+	if err := WriteRuntimeEnvFile(envPath, cfg); err != nil {
+		t.Fatalf("WriteRuntimeEnvFile failed: %v", err)
+	}
+	for _, path := range []string{runtimePath, envPath} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("failed to stat %s: %v", path, err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("expected %s mode 0600, got %o", path, info.Mode().Perm())
+		}
+	}
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if strings.Contains(entry.Name(), ".tmp-") {
+			t.Fatalf("temporary file was not cleaned up: %s", entry.Name())
+		}
+	}
+	envData, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(envData), `GEN_HUB_TLS_CERT_PATH="/data/TLS certs/cert #1.pem"`) {
+		t.Fatalf("certificate path was not safely quoted:\n%s", envData)
+	}
+}
+
+func TestExecuteBootstrapReportsEnvironmentWriteFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv(RuntimeConfigFileEnv, filepath.Join(tmpDir, "runtime-config.json"))
+	_, err := ExecuteBootstrap(context.Background(), BootstrapOptions{
+		Domain:    "hub.example.com",
+		HTTPPort:  8080,
+		HTTPSPort: 443,
+		TLSMode:   TLSModeLetsEncrypt,
+		SkipDNS:   true,
+		EnvFile:   tmpDir,
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed to write runtime environment file") {
+		t.Fatalf("expected environment write error, got %v", err)
+	}
+	cfg, loadErr := LoadRuntimeConfig()
+	if loadErr != nil {
+		t.Fatalf("failed to load persisted error state: %v", loadErr)
+	}
+	if cfg.State != BootstrapStateError || cfg.ConfigComplete {
+		t.Fatalf("unexpected state after environment write failure: %+v", cfg)
 	}
 }
 

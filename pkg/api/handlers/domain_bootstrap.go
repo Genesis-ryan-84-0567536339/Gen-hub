@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"os"
 	"strings"
 
 	"github.com/obot-platform/obot/pkg/api"
@@ -8,13 +10,9 @@ import (
 )
 
 type DomainBootstrapHandler struct {
-	serverURL string
-}
-
-func NewDomainBootstrapHandler(serverURL string) *DomainBootstrapHandler {
-	return &DomainBootstrapHandler{
-		serverURL: serverURL,
-	}
+	serverURL         string
+	loadRuntimeConfig func() (*domain.RuntimeConfig, error)
+	checkDNS          func(api.Context, string) ([]string, error)
 }
 
 type DomainStatusResponse struct {
@@ -22,8 +20,13 @@ type DomainStatusResponse struct {
 	ServerURL         string   `json:"serverURL"`
 	MCPEndpoint       string   `json:"mcpEndpoint"`
 	TLSActive         bool     `json:"tlsActive"`
+	TLSConfigured     bool     `json:"tlsConfigured"`
+	TLSMode           string   `json:"tlsMode"`
 	DNSStatus         string   `json:"dnsStatus"`
 	ResolvedIPs       []string `json:"resolvedIPs,omitempty"`
+	State             string   `json:"state"`
+	Error             string   `json:"error,omitempty"`
+	ConfigComplete    bool     `json:"configComplete"`
 	BootstrapComplete bool     `json:"bootstrapComplete"`
 }
 
@@ -38,37 +41,69 @@ type CheckDNSResponse struct {
 	Error       string   `json:"error,omitempty"`
 }
 
+func NewDomainBootstrapHandler(serverURL string) *DomainBootstrapHandler {
+	return &DomainBootstrapHandler{
+		serverURL:         serverURL,
+		loadRuntimeConfig: domain.LoadRuntimeConfig,
+		checkDNS: func(req api.Context, domainName string) ([]string, error) {
+			return domain.CheckDNSReadiness(req.Context(), domainName)
+		},
+	}
+}
+
 // GetStatus returns the current runtime domain configuration neutrally.
 func (h *DomainBootstrapHandler) GetStatus(req api.Context) error {
-	cfg, err := domain.LoadRuntimeConfig()
+	cfg, err := h.loadRuntimeConfig()
 	if err == nil && cfg != nil && cfg.Domain != "" {
+		state := cfg.State
+		if state == "" {
+			if cfg.EnableTLS {
+				state = domain.BootstrapStateTLSPending
+			} else {
+				state = domain.BootstrapStateConfigured
+			}
+		}
 		return req.Write(DomainStatusResponse{
 			Domain:            cfg.Domain,
 			ServerURL:         cfg.ServerURL,
 			MCPEndpoint:       cfg.MCPEndpoint,
-			TLSActive:         cfg.EnableTLS,
+			TLSActive:         requestUsesHTTPS(req),
+			TLSConfigured:     cfg.EnableTLS,
+			TLSMode:           cfg.TLSMode,
 			DNSStatus:         cfg.DNSStatus,
 			ResolvedIPs:       cfg.ResolvedIPs,
+			State:             state,
+			Error:             cfg.Error,
+			ConfigComplete:    cfg.ConfigComplete,
 			BootstrapComplete: cfg.BootstrapComplete,
 		})
 	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return req.Write(DomainStatusResponse{
+			TLSActive:      requestUsesHTTPS(req),
+			State:          domain.BootstrapStateError,
+			DNSStatus:      "unknown",
+			Error:          "Không đọc được cấu hình domain đã lưu: " + err.Error(),
+			ConfigComplete: false,
+		})
+	}
 
-	// Neutral runtime fallback: do not manufacture fake endpoint if serverURL is empty
+	// The configured server URL can help the operator reach the current process,
+	// but it is not persisted first-run state.
 	serverURL := strings.TrimRight(h.serverURL, "/")
 	var mcpEndpoint string
-	var tlsActive bool
 	if serverURL != "" {
-		tlsActive = strings.HasPrefix(serverURL, "https://")
 		mcpEndpoint = serverURL + "/mcp"
 	}
 
-	host := req.Request.Host
 	return req.Write(DomainStatusResponse{
-		Domain:            host,
 		ServerURL:         serverURL,
 		MCPEndpoint:       mcpEndpoint,
-		TLSActive:         tlsActive,
-		DNSStatus:         "runtime_default",
+		TLSActive:         requestUsesHTTPS(req),
+		TLSConfigured:     strings.HasPrefix(serverURL, "https://"),
+		State:             domain.BootstrapStateUnconfigured,
+		DNSStatus:         "unchecked",
+		ConfigComplete:    false,
 		BootstrapComplete: false,
 	})
 }
@@ -89,8 +124,7 @@ func (h *DomainBootstrapHandler) CheckDNS(req api.Context) error {
 		})
 	}
 
-	ctx := req.Context()
-	ips, err := domain.CheckDNSReadiness(ctx, domainName)
+	ips, err := h.checkDNS(req, domainName)
 	if err != nil {
 		return req.Write(CheckDNSResponse{
 			Domain: domainName,
@@ -104,4 +138,12 @@ func (h *DomainBootstrapHandler) CheckDNS(req api.Context) error {
 		Valid:       true,
 		ResolvedIPs: ips,
 	})
+}
+
+func requestUsesHTTPS(req api.Context) bool {
+	if req.TLS != nil {
+		return true
+	}
+	forwardedProto, _, _ := strings.Cut(req.Request.Header.Get("X-Forwarded-Proto"), ",")
+	return strings.EqualFold(strings.TrimSpace(forwardedProto), "https")
 }

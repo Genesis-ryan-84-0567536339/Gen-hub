@@ -14,7 +14,15 @@
 	import IconButton from '../primitives/IconButton.svelte';
 	import McpOauth from './McpOauth.svelte';
 	import ToolNameIssueIcon from './ToolNameIssueIcon.svelte';
-	import { CircleAlert, ChevronDown, ChevronUp, Info, Wrench, ShieldAlert, CheckCircle2, Shield, Eye, Edit3, Terminal, Lock } from '@lucide/svelte';
+	import {
+		CircleAlert,
+		ChevronDown,
+		ChevronUp,
+		Info,
+		Wrench,
+		ShieldAlert,
+		Lock
+	} from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
@@ -96,12 +104,33 @@
 			lower.includes('post') ||
 			lower.includes('write')
 		) {
-			return { label: 'Dangerous', color: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/40', isDangerous: true };
+			return {
+				label: 'Dangerous',
+				color:
+					'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-400 dark:border-rose-800/40',
+				isDangerous: true
+			};
 		}
-		if (lower.includes('update') || lower.includes('create') || lower.includes('insert') || lower.includes('set') || lower.includes('patch')) {
-			return { label: 'Write', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/40', isDangerous: false };
+		if (
+			lower.includes('update') ||
+			lower.includes('create') ||
+			lower.includes('insert') ||
+			lower.includes('set') ||
+			lower.includes('patch')
+		) {
+			return {
+				label: 'Write',
+				color:
+					'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/40',
+				isDangerous: false
+			};
 		}
-		return { label: 'Read', color: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700', isDangerous: false };
+		return {
+			label: 'Read',
+			color:
+				'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+			isDangerous: false
+		};
 	}
 
 	function handleToggleDescription(toolId: string, show: boolean) {
@@ -169,7 +198,8 @@
 					<div class="flex items-center gap-2.5">
 						<Info class="size-4 shrink-0 text-indigo-600" />
 						<div>
-							Xem trước danh mục Tool khai báo trong manifest; chức năng bật/tắt quyền từng tool sẽ được kết nối hoàn chỉnh tại Epic E3.
+							Xem trước danh mục Tool khai báo trong manifest; chức năng bật/tắt quyền từng tool sẽ
+							được kết nối hoàn chỉnh tại Epic E3.
 						</div>
 					</div>
 				</div>
@@ -231,19 +261,27 @@
 					>
 						<div class="flex items-center justify-between gap-3">
 							<div class="flex items-center gap-2.5 min-w-0 flex-1 flex-wrap sm:flex-nowrap">
-								<code class="font-mono text-sm font-bold text-slate-900 dark:text-white truncate" title={tool.name}>
+								<code
+									class="font-mono text-sm font-bold text-slate-900 dark:text-white truncate"
+									title={tool.name}
+								>
 									{tool.name}
 								</code>
 
 								<span
-									class={twMerge('px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0', classification.color)}
+									class={twMerge(
+										'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border shrink-0',
+										classification.color
+									)}
 									title="Phân loại cảnh báo heuristic dựa theo quy ước đặt tên tool"
 								>
 									{classification.label} (Cảnh báo heuristic)
 								</span>
 
 								{#if classification.isDangerous}
-									<span class="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 shrink-0">
+									<span
+										class="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400 shrink-0"
+									>
 										<ShieldAlert class="size-3.5" /> Thao tác rủi ro cao (Heuristic)
 									</span>
 								{/if}
@@ -256,7 +294,10 @@
 
 							<div class="flex shrink-0 items-center gap-3">
 								<!-- E3 Policy Tool Control (Disabled neutral state in E2) -->
-								<div class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700" title="Chính sách phân quyền từng tool sẽ được kết nối tại Epic E3">
+								<div
+									class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700"
+									title="Chính sách phân quyền từng tool sẽ được kết nối tại Epic E3"
+								>
 									<Lock class="size-3 text-slate-400" />
 									<span class="text-[10px] font-medium text-slate-500">Chưa có policy · E3</span>
 								</div>
@@ -280,17 +321,32 @@
 									in:slide={{ axis: 'y' }}
 									class="milkdown-content text-slate-600 dark:text-slate-400 max-w-none text-xs leading-relaxed pt-1"
 								>
-									{@html toHTMLFromMarkdownWithNewTabLinks(tool.description || 'Không có mô tả chi tiết.', true)}
+									{@html toHTMLFromMarkdownWithNewTabLinks(
+										tool.description || 'Không có mô tả chi tiết.',
+										true
+									)}
 								</div>
 							{/if}
 							{#if Object.keys(tool.params ?? {}).length > 0}
-								<div class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-1.5 text-xs" in:slide={{ axis: 'y' }}>
-									<span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tham số đối số (Parameters):</span>
-									<div class="flex flex-col gap-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+								<div
+									class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-1.5 text-xs"
+									in:slide={{ axis: 'y' }}
+								>
+									<span class="text-[10px] font-bold uppercase tracking-wider text-slate-400"
+										>Tham số đối số (Parameters):</span
+									>
+									<div
+										class="flex flex-col gap-1 bg-slate-50 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800"
+									>
 										{#each Object.keys(tool.params ?? {}) as paramKey (paramKey)}
 											<div class="flex items-start gap-2">
-												<code class="text-indigo-600 dark:text-indigo-400 font-mono font-semibold text-xs shrink-0">{paramKey}:</code>
-												<span class="text-slate-600 dark:text-slate-400 text-xs">{tool.params?.[paramKey]}</span>
+												<code
+													class="text-indigo-600 dark:text-indigo-400 font-mono font-semibold text-xs shrink-0"
+													>{paramKey}:</code
+												>
+												<span class="text-slate-600 dark:text-slate-400 text-xs"
+													>{tool.params?.[paramKey]}</span
+												>
 											</div>
 										{/each}
 									</div>
@@ -304,7 +360,9 @@
 			{:else}
 				<div class="my-12 flex w-md flex-col items-center gap-3 self-center text-center">
 					<Wrench class="text-slate-300 dark:text-slate-700 size-16 opacity-50" />
-					<h4 class="text-slate-700 dark:text-slate-300 text-base font-semibold">Không có tool khả dụng</h4>
+					<h4 class="text-slate-700 dark:text-slate-300 text-base font-semibold">
+						Không có tool khả dụng
+					</h4>
 					<p class="text-slate-400 text-xs">
 						{#if showRealTools}
 							Server này không trả về danh sách tool nào từ endpoint.

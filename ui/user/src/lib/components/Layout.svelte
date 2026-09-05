@@ -98,35 +98,25 @@
 		ChevronUp,
 		RadioTower,
 		Users,
-		BotMessageSquare,
-		PencilRuler,
 		LockOpen,
 		Bot,
-		LayoutDashboard,
 		Notebook,
 		Laptop,
 		PanelLeftOpen,
-		Settings,
-		PanelLeftClose,
-		Brain,
 		Container,
 		LayoutGrid,
-		KeyRound,
 		Menu,
 		X,
 		Server,
-		Shield,
-		Activity,
-		Globe,
-		ScrollText
+		Sparkles
 	} from '@lucide/svelte';
 	import { tick, untrack } from 'svelte';
-	import { fade, slide, type TransitionConfig } from 'svelte/transition';
+	import { fade, slide } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
 
 	let navCollapsed = $state({ ...navCollapsedCache });
 	let showAdvancedPane = $state(untrack(() => isAdvancedPaneRoute(page.url.pathname)));
-	let animatingNavSectionId = $state<string | null>(null);
+	let setupDialog = $state<ReturnType<typeof SetupSplashDialog>>();
 
 	function isAdvancedPaneRoute(route: string): boolean {
 		return (
@@ -170,7 +160,6 @@
 	}
 
 	function toggleNavCollapsed(id: string) {
-		animatingNavSectionId = id;
 		navCollapsed = { ...navCollapsed, [id]: !navCollapsed[id] };
 		navCollapsedCache = navCollapsed;
 		localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify(navCollapsed));
@@ -218,7 +207,6 @@
 	const {
 		classes,
 		children,
-		onRenderSubContent,
 		hideSidebar,
 		whiteBackground,
 		main,
@@ -228,18 +216,15 @@
 		showBackButton,
 		onBackButtonClick,
 		leftSidebar,
-		leftMenu: overrideLeftMenu,
 		rightSidebar,
-		rightMenu: overrideRightMenu,
 		mobileDock,
 		banner,
 		layoutContext,
 		disableResize,
 		hideProfileButton,
-		alwaysShowHeaderTitle,
 		titleContent
 	}: Props = $props();
-	let nav = $state<HTMLDivElement>();
+	let nav = $state<HTMLElement>();
 	let sidebarScroll = $state<HTMLDivElement>();
 	let pathname = $derived(page.url.pathname);
 
@@ -309,7 +294,17 @@
 			iconSymbol: '⚙',
 			label: 'Domain & Cài đặt',
 			href: '/domain'
-		}
+		},
+		...(hostedAgentsFeatureEnabled
+			? [
+					{
+						id: 'hosted-agents-user',
+						iconSymbol: '⬡',
+						label: 'Hosted Agents',
+						href: '/hosted-agents'
+					}
+				]
+			: [])
 	]);
 
 	// Upstream User & Native Surfaces (Preserved under secondary / advanced pane)
@@ -408,34 +403,47 @@
 							{
 								id: 'mcp-catalog',
 								href: '/admin/mcp-catalog',
-								label: 'MCP Catalog',
+								label: 'Danh mục MCP',
 								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'mcp-access-policies',
 								href: '/admin/mcp-access-policies',
-								label: 'MCP Access Policies',
+								label: 'Chính sách truy cập MCP',
 								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'mcp-deployments',
 								href: '/admin/mcp-deployments',
-								label: 'MCP Deployments',
+								label: 'Triển khai MCP',
+								collapsible: false
+							},
+							{
+								id: 'audit-logs',
+								href: '/admin/audit-logs',
+								label: 'Audit Logs',
+								disabled: isBootStrapUser,
+								collapsible: false
+							},
+							{
+								id: 'usage',
+								href: '/admin/usage',
+								label: 'Usage',
 								collapsible: false
 							},
 							{
 								id: 'filters',
 								href: '/admin/filters',
-								label: 'Filters',
+								label: 'Bộ lọc & Rules',
 								disabled: isBootStrapUser
 							},
 							version.current.engine === 'kubernetes' && !version.current.hideK8sDetails
 								? {
 										id: 'server-scheduling',
 										href: '/admin/server-scheduling',
-										label: 'Server Scheduling',
+										label: 'Lập lịch Server',
 										collapsible: false
 									}
 								: undefined,
@@ -443,7 +451,7 @@
 								? {
 										id: 'image-pull-secrets',
 										href: '/admin/image-pull-secrets',
-										label: 'Image Pull Secrets',
+										label: 'Secret kéo Image',
 										disabled: isBootStrapUser,
 										collapsible: false
 									}
@@ -453,7 +461,7 @@
 										{
 											id: 'mcp-tunnels',
 											href: '/admin/mcp-tunnels',
-											label: 'MCP Tunnels',
+											label: 'Tunnel MCP',
 											disabled: isBootStrapUser,
 											collapsible: false
 										}
@@ -470,13 +478,13 @@
 							{
 								id: 'skills',
 								href: '/admin/skills',
-								label: 'Skill Sources',
+								label: 'Nguồn Skills',
 								collapsible: false
 							},
 							{
 								id: 'skill-access-policies',
 								href: '/admin/skill-access-policies',
-								label: 'Skill Access Policies',
+								label: 'Chính sách truy cập Skill',
 								collapsible: false
 							}
 						]
@@ -486,19 +494,19 @@
 								{
 									id: 'hosted-agent-management',
 									icon: Container,
-									label: 'Hosted Agents',
+									label: 'Hosted Agent Management',
 									collapsible: true,
 									items: [
 										{
 											id: 'hosted-agents',
 											href: '/admin/hosted-agents',
-											label: 'Templates',
+											label: 'Mẫu Agent',
 											collapsible: false
 										},
 										{
 											id: 'hosted-agent-access-policies',
 											href: '/admin/hosted-agent-access-policies',
-											label: 'Access Policies',
+											label: 'Chính sách truy cập',
 											collapsible: false
 										}
 									]
@@ -514,7 +522,7 @@
 							{
 								id: 'devices',
 								href: '/admin/devices',
-								label: 'Devices',
+								label: 'Danh sách Thiết bị',
 								disabled: isBootStrapUser,
 								collapsible: false,
 								beta: true
@@ -522,7 +530,7 @@
 							{
 								id: 'enforcement-decisions',
 								href: '/admin/enforcement-decisions',
-								label: 'Enforcement Decisions',
+								label: 'Quyết định thực thi',
 								disabled: isBootStrapUser,
 								collapsible: false,
 								beta: true
@@ -541,28 +549,35 @@
 							{
 								id: 'users',
 								href: '/admin/users',
-								label: 'Users',
+								label: 'Người dùng',
 								collapsible: false,
 								disabled: !version.current.authEnabled
 							},
 							{
 								id: 'groups',
 								href: '/admin/groups',
-								label: 'Groups',
+								label: 'Nhóm',
 								collapsible: false,
 								disabled: !version.current.authEnabled
 							},
 							{
 								id: 'user-roles',
 								href: '/admin/user-roles',
-								label: 'User Roles',
+								label: 'Vai trò người dùng',
 								collapsible: false,
 								disabled: !version.current.authEnabled
 							},
 							{
 								id: 'auth-providers',
 								href: '/admin/auth-providers',
-								label: 'Auth Providers',
+								label: 'Nhà cung cấp xác thực',
+								disabled: !version.current.authEnabled,
+								collapsible: false
+							},
+							{
+								id: 'agent-auth-scopes',
+								href: '/admin/agent-auth-scopes',
+								label: 'Agent Auth Scopes',
 								disabled: !version.current.authEnabled,
 								collapsible: false
 							}
@@ -577,27 +592,27 @@
 							{
 								id: 'tokens',
 								href: '/admin/token-usage',
-								label: 'Token Usage',
+								label: 'Lượng Token sử dụng',
 								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'llm-audit-logs',
 								href: '/admin/llm-audit-logs',
-								label: 'Audit Logs',
+								label: 'Nhật ký truy vết LLM',
 								disabled: isBootStrapUser,
 								collapsible: false
 							},
 							{
 								id: 'model-providers',
 								href: '/admin/model-providers',
-								label: 'Model Providers',
+								label: 'Nhà cung cấp Mô hình',
 								collapsible: false
 							},
 							{
 								id: 'model-access-policies',
 								href: '/admin/model-access-policies',
-								label: 'Model Access Policies',
+								label: 'Chính sách truy cập Mô hình',
 								collapsible: false
 							},
 							...(version.current.messagePoliciesEnabled
@@ -605,13 +620,13 @@
 										{
 											id: 'message-policies',
 											href: '/admin/message-policies',
-											label: 'Message Policies',
+											label: 'Chính sách Tin nhắn',
 											collapsible: false
 										},
 										{
 											id: 'policy-violations',
 											href: '/admin/policy-violations',
-											label: 'Message Policy Violations',
+											label: 'Vi phạm chính sách Tin nhắn',
 											collapsible: false
 										}
 									]
@@ -628,21 +643,21 @@
 							{
 								id: 'license',
 								href: '/admin/license',
-								label: 'License',
+								label: 'Giấy phép',
 								disabled: false,
 								collapsible: false
 							},
 							{
 								id: 'branding',
 								href: '/admin/branding',
-								label: 'Branding',
+								label: 'Thương hiệu & Giao diện',
 								disabled: false,
 								collapsible: false
 							},
 							{
 								id: 'app-notification',
 								href: '/admin/app-notification',
-								label: 'App Notification',
+								label: 'Thông báo ứng dụng',
 								disabled: false,
 								collapsible: false
 							},
@@ -651,7 +666,7 @@
 										{
 											id: 'app-scheduling',
 											href: '/admin/app-scheduling',
-											label: 'App Scheduling',
+											label: 'Lập lịch ứng dụng',
 											disabled: false,
 											collapsible: false
 										}
@@ -660,7 +675,51 @@
 						]
 					}
 				]
-			: userResourceLinks
+			: profile.current.groups?.includes(Group.POWERUSER)
+				? [
+						{
+							id: 'mcp-server-management',
+							icon: RadioTower,
+							label: 'MCP Management',
+							collapsible: true,
+							disabled: false,
+							items: [
+								{
+									id: 'mcp-catalog',
+									href: '/mcp-catalog',
+									label: 'MCP Catalog',
+									disabled: false,
+									collapsible: false
+								},
+								...(profile.current.groups?.includes(Group.POWERUSER_PLUS)
+									? [
+											{
+												id: 'mcp-access-policies',
+												href: '/mcp-access-policies',
+												label: 'MCP Access Policies',
+												disabled: false,
+												collapsible: false
+											}
+										]
+									: []),
+								{
+									id: 'audit-logs',
+									href: '/audit-logs',
+									label: 'Audit Logs',
+									disabled: false,
+									collapsible: false
+								},
+								{
+									id: 'usage',
+									href: '/usage',
+									label: 'Usage',
+									disabled: false,
+									collapsible: false
+								}
+							]
+						}
+					]
+				: []
 	);
 
 	$effect(() => {
@@ -723,7 +782,7 @@
 		} satisfies BannerDismissState;
 	}
 
-	const COMMUNITY_SIGNUP_BANNER_KEY = '@gen-hub/dismiss-community-signup-banner';
+	const COMMUNITY_SIGNUP_BANNER_KEY = '@obot/dismiss-community-signup-banner';
 	let communitySignupBannerDismissed = localState<BannerDismissState | undefined>(
 		COMMUNITY_SIGNUP_BANNER_KEY,
 		undefined,
@@ -860,7 +919,9 @@
 								<span>Quay lại Gen Hub</span>
 							</button>
 
-							<div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 pt-3 pb-1">
+							<div
+								class="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 pt-3 pb-1"
+							>
 								Hạ tầng Obot
 							</div>
 
@@ -879,12 +940,16 @@
 							{#if advancedManagementLinks.length > 0}
 								<div class="border-t border-[#293244] pt-2 mt-2">
 									<button
-										id="advanced-settings-btn"
+										id="advanced-pane-btn"
 										class="flex w-full items-center gap-2.5 px-3 py-2.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-[#1f2937] rounded-[10px] transition-colors font-semibold"
 										onclick={() => (showAdvancedPane = true)}
 									>
-										<span class="w-[22px] text-center text-sm font-normal">⚙</span>
-										<span class="truncate">Hạ tầng mở rộng (Obot)</span>
+										<span aria-hidden="true" class="w-[22px] text-center text-sm font-normal"
+											>⚙</span
+										>
+										<span class="truncate">
+											{profile.current.hasAdminAccess?.() ? 'Administration' : 'Advanced Settings'}
+										</span>
 									</button>
 								</div>
 							{/if}
@@ -893,12 +958,14 @@
 				</div>
 
 				<!-- Aside Foot -->
-				<div class="mt-auto pt-3 px-2.5 border-t border-[#293244] text-[#9ca3af] text-[12px] leading-relaxed">
+				<div
+					class="mt-auto pt-3 px-2.5 border-t border-[#293244] text-[#9ca3af] text-[12px] leading-relaxed"
+				>
 					Gen Hub · Personal MCP Gateway<br />
 					Nền tảng Obot Open Source
 				</div>
 			</aside>
-			{#if !responsive.isMobile && !disableResize}
+			{#if !responsive.isMobile && !disableResize && nav}
 				<div
 					role="none"
 					class="h-inherit border-r-slate-800 relative -ml-1 w-2 cursor-col-resize border-r hover:border-indigo-500 transition-colors"
@@ -938,7 +1005,9 @@
 				{:else if canShowCommunitySignup}
 					<CommunitySignupBanner onDismiss={handleDismissCommunitySignupBanner} />
 				{/if}
-				<header class="h-[72px] bg-white/88 backdrop-blur-md dark:bg-slate-900/90 border-b border-[#e6e9ef] dark:border-slate-800 px-7 flex items-center justify-between shadow-xs">
+				<header
+					class="h-[72px] bg-white/88 backdrop-blur-md dark:bg-slate-900/90 border-b border-[#e6e9ef] dark:border-slate-800 px-7 flex items-center justify-between shadow-xs"
+				>
 					<div class="flex items-center gap-2.5">
 						{#if !layout.sidebarOpen || hideSidebar}
 							<IconButton
@@ -965,7 +1034,9 @@
 							</IconButton>
 						{/if}
 						<div class="flex flex-col">
-							<h1 class="text-[19px] font-bold text-[#172033] dark:text-white leading-tight flex items-center gap-2">
+							<h1
+								class="text-[19px] font-bold text-[#172033] dark:text-white leading-tight flex items-center gap-2"
+							>
 								{#if titleContent}
 									{@render titleContent()}
 								{:else}
@@ -979,8 +1050,16 @@
 					</div>
 
 					<div class="flex items-center gap-3">
-						<!-- Prototype Top Actions: Neutral Gateway Chip & Avatar -->
-						<div class="hidden sm:inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+						<button
+							onclick={() => setupDialog?.open()}
+							class="inline-flex items-center gap-1.5 py-1.5 px-3 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors shadow-2xs cursor-pointer"
+						>
+							<Sparkles class="size-3.5 text-indigo-600 dark:text-indigo-400" />
+							<span>⚡ Hướng dẫn cài đặt</span>
+						</button>
+						<div
+							class="hidden sm:inline-flex items-center gap-1.5 py-1.5 px-2.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+						>
 							<span class="size-2 rounded-full bg-slate-400 dark:bg-slate-500"></span>
 							<span>MCP Gateway</span>
 						</div>
@@ -992,7 +1071,9 @@
 						{#if !hideProfileButton}
 							<Profile />
 						{:else}
-							<div class="size-9 rounded-full bg-[#e5e7eb] dark:bg-slate-800 flex items-center justify-center font-extrabold text-[#374151] dark:text-slate-200 text-sm">
+							<div
+								class="size-9 rounded-full bg-[#e5e7eb] dark:bg-slate-800 flex items-center justify-center font-extrabold text-[#374151] dark:text-slate-200 text-sm"
+							>
 								R
 							</div>
 						{/if}
@@ -1044,9 +1125,7 @@
 	{/if}
 </div>
 
-{#if isAdminRoute}
-	<SetupSplashDialog />
-{/if}
+<SetupSplashDialog bind:this={setupDialog} />
 
 {#snippet renderAuthDisabledNote()}
 	{#if !version.current.authEnabled}
@@ -1070,7 +1149,10 @@
 {/snippet}
 
 {#snippet navLink(link: NavLink)}
-	{@const isActive = link.href && (pathname === link.href || (link.href !== '/admin/dashboard' && pathname.startsWith(`${link.href}/`)))}
+	{@const isActive =
+		link.href &&
+		(pathname === link.href ||
+			(link.href !== '/admin/dashboard' && pathname.startsWith(`${link.href}/`)))}
 	<div class="flex flex-col">
 		{#if link.collapsible && !link.href}
 			<button
@@ -1097,7 +1179,7 @@
 				id={`sidebar-link-${link.id}`}
 				href={resolve(link.href as `/${string}`)}
 				class={twMerge(
-					'flex items-center gap-2.5 px-3 py-[11px] rounded-[10px] text-[13px] font-[650] transition-colors',
+					'sidebar-link flex items-center gap-2.5 px-3 py-[11px] rounded-[10px] text-[13px] font-[650] transition-colors',
 					isActive
 						? 'bg-[#292f43] text-white'
 						: 'text-[#cbd5e1] hover:bg-[#1f2937] hover:text-white'
@@ -1105,17 +1187,27 @@
 				onclick={saveSidebarScroll}
 			>
 				{#if link.iconSymbol}
-					<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0">{link.iconSymbol}</span>
+					<span
+						aria-hidden="true"
+						class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0"
+						>{link.iconSymbol}</span
+					>
 				{:else if link.icon}
 					<link.icon class={twMerge('size-4', isActive ? 'text-white' : 'text-slate-400')} />
 				{/if}
 				<span class="truncate">{link.label}</span>
 			</a>
 		{:else}
-			<div class="flex items-center justify-between px-3 py-2.5 text-xs text-slate-500 cursor-not-allowed">
+			<div
+				class="flex items-center justify-between px-3 py-2.5 text-xs text-slate-500 cursor-not-allowed"
+			>
 				<div class="flex items-center gap-2.5 min-w-0">
 					{#if link.iconSymbol}
-						<span class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0">{link.iconSymbol}</span>
+						<span
+							aria-hidden="true"
+							class="w-[22px] text-center text-[17px] font-normal leading-none shrink-0"
+							>{link.iconSymbol}</span
+						>
 					{:else if link.icon}
 						<link.icon class="size-4 text-slate-500" />
 					{/if}
@@ -1132,7 +1224,8 @@
 		{#if link.items && !isNavCollapsed(link.id)}
 			<div class="flex flex-col pl-7 pr-2 py-1 gap-0.5">
 				{#each link.items as item (item.href)}
-					{@const isSubActive = item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))}
+					{@const isSubActive =
+						item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`))}
 					{#if item.disabled}
 						<div
 							id={`sidebar-sublink-${item.id}`}
@@ -1150,7 +1243,7 @@
 							id={`sidebar-sublink-${item.id}`}
 							href={resolve(item.href as `/${string}`)}
 							class={twMerge(
-								'px-2.5 py-1.5 rounded-lg text-[11px] font-normal transition-colors truncate',
+								'sidebar-link px-2.5 py-1.5 rounded-lg text-[11px] font-normal transition-colors truncate',
 								isSubActive
 									? 'text-indigo-400 font-semibold bg-slate-800/90'
 									: 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'

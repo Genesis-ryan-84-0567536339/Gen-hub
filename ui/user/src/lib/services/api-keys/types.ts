@@ -23,27 +23,27 @@ export type APIKeyCreatableCapabilityKey = Exclude<APIKeyCapabilityKey, 'canAcce
 export const API_KEY_CAPABILITIES = [
 	{
 		key: 'canAccessAPI',
-		label: 'API access',
+		label: 'Quyền truy cập API',
 		shortLabel: 'API',
-		description: 'Grants access to the Obot API using your user role permissions.'
+		description: 'Cấp quyền truy cập vào Gen Hub API dựa trên vai trò của bạn.'
 	},
 	{
 		key: 'canAccessLLMProxy',
-		label: 'LLM proxy access',
+		label: 'Quyền truy cập LLM Proxy',
 		shortLabel: 'LLM',
-		description: 'Grants access to LLM proxy endpoints.'
+		description: 'Cấp quyền truy cập trực tiếp vào các cổng mô hình LLM.'
 	},
 	{
 		key: 'canAccessSkills',
-		label: 'Skill access',
+		label: 'Quyền truy cập Skill',
 		shortLabel: 'Skills',
-		description: 'Grants read-only access for skill discovery and downloads.'
+		description: 'Cấp quyền chỉ đọc để tìm kiếm và tải xuống các Skill.'
 	},
 	{
 		key: 'canAccessDeviceScans',
-		label: 'Device scan access',
+		label: 'Quyền truy cập Quét thiết bị',
 		shortLabel: 'Scans',
-		description: 'Grants access to submit and read device scans.'
+		description: 'Cấp quyền gửi và đọc kết quả quét thiết bị.'
 	}
 ] as const satisfies ReadonlyArray<{
 	key: APIKeyCapabilityKey;

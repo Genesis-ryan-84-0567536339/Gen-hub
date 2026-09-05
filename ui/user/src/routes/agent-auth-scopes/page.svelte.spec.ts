@@ -110,18 +110,22 @@ describe('Agent Auth Scopes page variants', () => {
 		await renderAgentAuthScopesPage({ isAdmin: false });
 
 		await expect.element(page.getByText(apiKey.name, { exact: true })).toBeVisible();
-		await expect.element(page.getByText('Created By', { exact: true })).not.toBeInTheDocument();
+		await expect.element(page.getByText(/Created By|Người tạo/)).not.toBeInTheDocument();
 		await expect
-			.element(page.getByRole('button', { name: 'Create Agent Auth Scope', exact: true }))
+			.element(
+				page.getByRole('button', { name: /Create Agent Auth Scope|Tạo Phân quyền Agent mới/ })
+			)
 			.toBeVisible();
 	});
 
 	it('shows admin creator column and admin create action', async () => {
 		await renderAgentAuthScopesPage({ isAdmin: true });
 
-		await expect.element(page.getByText('Created By', { exact: true }).first()).toBeVisible();
+		await expect.element(page.getByText(/Created By|Người tạo/).first()).toBeVisible();
 		await expect
-			.element(page.getByRole('button', { name: 'Create Agent Auth Scope', exact: true }))
+			.element(
+				page.getByRole('button', { name: /Create Agent Auth Scope|Tạo Phân quyền Agent mới/ })
+			)
 			.toBeVisible();
 	});
 
@@ -129,28 +133,28 @@ describe('Agent Auth Scopes page variants', () => {
 		await renderAgentAuthScopesPage({ isAdmin: true, readonly: true, profileId: 'auditor-1' });
 
 		await expect
-			.element(page.getByRole('button', { name: 'Create Agent Auth Scope', exact: true }))
+			.element(
+				page.getByRole('button', { name: /Create Agent Auth Scope|Tạo Phân quyền Agent mới/ })
+			)
 			.not.toBeInTheDocument();
 
 		await openRowActions();
-		await expect.element(page.getByText('View Related Logs', { exact: true })).toBeVisible();
+		await expect.element(page.getByText(/View Related Logs|Xem Log liên quan/)).toBeVisible();
 		await expect
 			.element(page.getByRole('link', { name: apiKeyPrefix, exact: true }))
 			.toHaveAttribute('href', `/admin/agent-auth-scopes/${apiKey.id}/${apiKeyPrefix}`);
-		await expect
-			.element(page.getByRole('button', { name: 'Delete', exact: true }))
-			.not.toBeInTheDocument();
+		await expect.element(page.getByRole('button', { name: /Delete|Xóa/ })).not.toBeInTheDocument();
 	});
 
 	it('shows related log link and delete in the row menu for admins', async () => {
 		await renderAgentAuthScopesPage({ isAdmin: true });
 
 		await openRowActions();
-		await expect.element(page.getByText('View Related Logs', { exact: true })).toBeVisible();
+		await expect.element(page.getByText(/View Related Logs|Xem Log liên quan/)).toBeVisible();
 		await expect
 			.element(page.getByRole('link', { name: apiKeyPrefix, exact: true }))
 			.toHaveAttribute('href', `/admin/agent-auth-scopes/${apiKey.id}/${apiKeyPrefix}`);
-		await expect.element(page.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
+		await expect.element(page.getByRole('button', { name: /Delete|Xóa/ })).toBeVisible();
 	});
 
 	it('shows delete but not related logs in the row menu for non-admin owners', async () => {
@@ -158,11 +162,11 @@ describe('Agent Auth Scopes page variants', () => {
 
 		await openRowActions();
 		await expect
-			.element(page.getByText('View Related Logs', { exact: true }))
+			.element(page.getByText(/View Related Logs|Xem Log liên quan/))
 			.not.toBeInTheDocument();
 		await expect
 			.element(page.getByRole('link', { name: apiKeyPrefix, exact: true }))
 			.not.toBeInTheDocument();
-		await expect.element(page.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
+		await expect.element(page.getByRole('button', { name: /Delete|Xóa/ })).toBeVisible();
 	});
 });

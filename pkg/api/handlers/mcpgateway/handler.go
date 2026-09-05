@@ -52,6 +52,8 @@ type Handler struct {
 	tunnelManager             *tunnel.Manager
 	secretBindingAllowedLabel string
 	serverURL                 string
+	// frontDoorProxy is an internal test seam; production always calls Proxy directly.
+	frontDoorProxy func(api.Context) error
 }
 
 func auditLogMetadataForPrincipal(metadata map[string]string, user user.Info) map[string]string {
@@ -412,6 +414,15 @@ func (h *Handler) ensureServerIsDeployed(req api.Context) (mcp.ServerConfig, err
 
 func writeMCPAuthRequired(req api.Context, requiresConfig bool) {
 	baseURL := strings.TrimSuffix(req.APIBaseURL, "/api")
+	if req.URL.Path == "/mcp" || strings.HasPrefix(req.URL.Path, "/mcp/") {
+		req.ResponseWriter.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="Obot MCP Gateway", resource_metadata="%s/.well-known/oauth-protected-resource/mcp"`, baseURL))
+		if requiresConfig {
+			http.Error(req.ResponseWriter, "MCP server requires configuration", http.StatusUnauthorized)
+		} else {
+			http.Error(req.ResponseWriter, "MCP server requires authentication", http.StatusUnauthorized)
+		}
+		return
+	}
 	connectPath := "mcp-connect"
 	if strings.HasPrefix(req.URL.Path, "/mcp-connect-composite/") {
 		connectPath = "mcp-connect-composite"

@@ -34,6 +34,15 @@ func appendPathSegment(rawURL, segment string) string {
 }
 
 func (h *handler) oauthProtectedResource(req api.Context) error {
+	if req.URL.Path == "/.well-known/oauth-protected-resource/mcp" {
+		return req.Write(map[string]any{
+			"resource_name":            "Gen Hub Composite MCP Gateway",
+			"resource":                 fmt.Sprintf("%s/mcp", h.baseURL),
+			"authorization_servers":    []string{h.baseURL},
+			"bearer_methods_supported": []string{"header"},
+		})
+	}
+
 	mcpID := req.PathValue("mcp_id")
 	if mcpID != "" {
 		return req.Write(map[string]any{

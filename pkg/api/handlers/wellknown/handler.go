@@ -19,6 +19,7 @@ func SetupHandlers(baseURL string, config handlers.OAuthAuthorizationServerConfi
 	}
 
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp-connect/{mcp_id}", h.oauthProtectedResource)
+	mux.HandleFunc("GET /.well-known/oauth-protected-resource/mcp", h.oauthProtectedResource)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server/{mcp_id}", h.oauthAuthorization)
 
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource/v0.1/servers", h.registryOAuthProtectedResource)
