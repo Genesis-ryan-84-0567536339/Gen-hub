@@ -141,7 +141,7 @@ func (h *DomainBootstrapHandler) CheckDNS(req api.Context) error {
 }
 
 func requestUsesHTTPS(req api.Context) bool {
-	if req.Request.TLS != nil {
+	if req.TLS != nil {
 		return true
 	}
 	forwardedProto, _, _ := strings.Cut(req.Request.Header.Get("X-Forwarded-Proto"), ",")

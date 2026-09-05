@@ -9,7 +9,6 @@ import (
 	v1 "github.com/obot-platform/obot/pkg/storage/apis/obot.obot.ai/v1"
 	"github.com/obot-platform/obot/pkg/system"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -81,14 +80,6 @@ func EnsureFrontDoorComposite(ctx context.Context, client kclient.Client, namesp
 	}
 
 	server = v1.MCPServer{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      GenHubFrontDoorMCPServerName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				GenHubFrontDoorLabel: GenHubFrontDoorLabelValue,
-			},
-			Finalizers: []string{v1.MCPServerFinalizer},
-		},
 		Spec: v1.MCPServerSpec{
 			Alias:  "Composite Hub",
 			UserID: ownerID,
@@ -98,6 +89,13 @@ func EnsureFrontDoorComposite(ctx context.Context, client kclient.Client, namesp
 				CompositeConfig: &types.CompositeRuntimeConfig{},
 			},
 		},
+
+		Name:      GenHubFrontDoorMCPServerName,
+		Namespace: namespace,
+		Labels: map[string]string{
+			GenHubFrontDoorLabel: GenHubFrontDoorLabelValue,
+		},
+		Finalizers: []string{v1.MCPServerFinalizer},
 	}
 
 	if err := client.Create(ctx, &server); err != nil && !apierrors.IsAlreadyExists(err) {

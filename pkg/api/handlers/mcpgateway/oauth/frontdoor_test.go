@@ -8,19 +8,11 @@ import (
 	v1 "github.com/obot-platform/obot/pkg/storage/apis/obot.obot.ai/v1"
 	storagescheme "github.com/obot-platform/obot/pkg/storage/scheme"
 	"github.com/obot-platform/obot/pkg/system"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestResolveMCPIDForFrontDoorResource(t *testing.T) {
 	server := &v1.MCPServer{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      mcp.GenHubFrontDoorMCPServerName,
-			Namespace: system.DefaultNamespace,
-			Labels: map[string]string{
-				mcp.GenHubFrontDoorLabel: mcp.GenHubFrontDoorLabelValue,
-			},
-		},
 		Spec: v1.MCPServerSpec{
 			UserID: "owner-1",
 			Manifest: types.MCPServerManifest{
@@ -28,6 +20,11 @@ func TestResolveMCPIDForFrontDoorResource(t *testing.T) {
 				CompositeConfig: &types.CompositeRuntimeConfig{},
 			},
 		},
+	}
+	server.Name = mcp.GenHubFrontDoorMCPServerName
+	server.Namespace = system.DefaultNamespace
+	server.Labels = map[string]string{
+		mcp.GenHubFrontDoorLabel: mcp.GenHubFrontDoorLabelValue,
 	}
 	client := fake.NewClientBuilder().WithScheme(storagescheme.Scheme).WithObjects(server).Build()
 

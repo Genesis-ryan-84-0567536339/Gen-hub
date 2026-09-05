@@ -86,6 +86,8 @@ var (
 			"PUT    /api/projects/{project_id}/agents/{nanobot_agent_id}",
 			"DELETE /api/projects/{project_id}/agents/{nanobot_agent_id}",
 			"POST   /api/projects/{project_id}/agents/{nanobot_agent_id}/launch",
+			"GET    /api/domain/status",
+			"POST   /api/domain/check-dns",
 		},
 		types.GroupPowerUser: {
 			"GET    /api/workspaces/{workspace_id}",
@@ -178,6 +180,7 @@ var (
 			"/mcp-connect/",
 			"/mcp",
 			"/mcp/",
+			"/api/domain/status",
 		},
 	}
 )

@@ -355,10 +355,10 @@ func WriteRuntimeEnvFile(path string, cfg *RuntimeConfig) error {
 		fmt.Fprintf(&sb, "GEN_HUB_HTTPS_PORT=%d\n", cfg.HTTPSPort)
 	}
 	if cfg.CertPath != "" {
-		sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_CERT_PATH=%s\n", strconv.Quote(cfg.CertPath)))
+		fmt.Fprintf(&sb, "GEN_HUB_TLS_CERT_PATH=%s\n", strconv.Quote(cfg.CertPath))
 	}
 	if cfg.KeyPath != "" {
-		sb.WriteString(fmt.Sprintf("GEN_HUB_TLS_KEY_PATH=%s\n", strconv.Quote(cfg.KeyPath)))
+		fmt.Fprintf(&sb, "GEN_HUB_TLS_KEY_PATH=%s\n", strconv.Quote(cfg.KeyPath))
 	}
 
 	return writeFileAtomic(path, []byte(sb.String()), 0o600)

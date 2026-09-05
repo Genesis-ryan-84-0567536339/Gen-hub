@@ -4,9 +4,6 @@ import (
 	"slices"
 )
 
-// AgentStatus represents the lifecycle state of an agent connection.
-type AgentStatus string
-
 // Reason codes for policy enforcement as specified in FINAL_PRODUCT_SPEC.md Section 13.3
 const (
 	ReasonNotAuthenticated    = "not_authenticated"
@@ -23,6 +20,9 @@ const (
 	AgentStatusRejected AgentStatus = "rejected"
 	AgentStatusRevoked  AgentStatus = "revoked"
 )
+
+// AgentStatus represents the lifecycle state of an agent connection.
+type AgentStatus string
 
 // AuthorizeAgentToolAccess checks all four enforcement criteria required by Gen Hub:
 // 1. Agent status must be Approved

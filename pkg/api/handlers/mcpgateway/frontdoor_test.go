@@ -11,7 +11,6 @@ import (
 	"github.com/obot-platform/obot/pkg/storage"
 	v1 "github.com/obot-platform/obot/pkg/storage/apis/obot.obot.ai/v1"
 	storagescheme "github.com/obot-platform/obot/pkg/storage/scheme"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kuser "k8s.io/apiserver/pkg/authentication/user"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -57,10 +56,6 @@ func TestFrontDoorProxyNoCompositeReturns503(t *testing.T) {
 
 func TestFrontDoorProxyResolvesMarkedCompositeServer(t *testing.T) {
 	server1 := &v1.MCPServer{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "composite-unmarked",
-			Namespace: "default",
-		},
 		Spec: v1.MCPServerSpec{
 			UserID:   "user-1",
 			Template: false,
@@ -69,14 +64,10 @@ func TestFrontDoorProxyResolvesMarkedCompositeServer(t *testing.T) {
 			},
 		},
 	}
+	server1.Name = "composite-unmarked"
+	server1.Namespace = "default"
+
 	server2 := &v1.MCPServer{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "composite-marked",
-			Namespace: "default",
-			Labels: map[string]string{
-				mcp.GenHubFrontDoorLabel: mcp.GenHubFrontDoorLabelValue,
-			},
-		},
 		Spec: v1.MCPServerSpec{
 			UserID:   "user-1",
 			Template: false,
@@ -85,6 +76,11 @@ func TestFrontDoorProxyResolvesMarkedCompositeServer(t *testing.T) {
 				CompositeConfig: &types.CompositeRuntimeConfig{},
 			},
 		},
+	}
+	server2.Name = "composite-marked"
+	server2.Namespace = "default"
+	server2.Labels = map[string]string{
+		mcp.GenHubFrontDoorLabel: mcp.GenHubFrontDoorLabelValue,
 	}
 
 	storageClient := newFrontDoorTestStorage(server1, server2)
@@ -111,13 +107,6 @@ func TestFrontDoorProxyResolvesMarkedCompositeServer(t *testing.T) {
 
 func TestFrontDoorProxyAuthenticatedRoutesToMarkedComposite(t *testing.T) {
 	server := &v1.MCPServer{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "composite-marked",
-			Namespace: "default",
-			Labels: map[string]string{
-				mcp.GenHubFrontDoorLabel: mcp.GenHubFrontDoorLabelValue,
-			},
-		},
 		Spec: v1.MCPServerSpec{
 			UserID: "user-1",
 			Manifest: types.MCPServerManifest{
@@ -125,6 +114,11 @@ func TestFrontDoorProxyAuthenticatedRoutesToMarkedComposite(t *testing.T) {
 				CompositeConfig: &types.CompositeRuntimeConfig{},
 			},
 		},
+	}
+	server.Name = "composite-marked"
+	server.Namespace = "default"
+	server.Labels = map[string]string{
+		mcp.GenHubFrontDoorLabel: mcp.GenHubFrontDoorLabelValue,
 	}
 
 	var proxiedID string

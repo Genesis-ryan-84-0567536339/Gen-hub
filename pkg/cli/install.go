@@ -11,8 +11,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-
-
 // getLocalIP attempts to detect the local primary IPv4 address of the server.
 func getLocalIP() string {
 	addrs, err := net.InterfaceAddrs()
@@ -93,7 +91,6 @@ func NewInstallTUICommand() *cobra.Command {
 				scheme = "https"
 			}
 
-
 			fmt.Println("==================================================================")
 			fmt.Printf(" 🎉 Gen Hub v1 Cài đặt hoàn tất thành công!\n")
 			fmt.Println("==================================================================")
@@ -133,8 +130,6 @@ func NewInstallTUICommand() *cobra.Command {
 					fmt.Printf("  🌐 Bạn có thể mở ngay trình duyệt tại: %s://%s:8080\n", scheme, domain)
 				}
 			} else {
-
-
 				fmt.Println(" 🚀 LỆNH KHỞI ĐỘNG HỆ THỐNG THỦ CÔNG:")
 				fmt.Println("  👉 Chạy Server Gen Hub:")
 				fmt.Println("     ./bin/gen-hub server")
@@ -145,6 +140,3 @@ func NewInstallTUICommand() *cobra.Command {
 		},
 	}
 }
-
-
-

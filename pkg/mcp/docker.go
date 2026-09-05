@@ -89,7 +89,6 @@ func newDockerBackend(ctx context.Context, authEnabled bool, exposedPort int, op
 	return d, nil
 }
 
-
 func detectDockerBackendNetwork(ctx context.Context, cli *client.Client) (bool, string, string, error) {
 	return dockerBackendNetworkConfig(
 		func() (string, string, error) {

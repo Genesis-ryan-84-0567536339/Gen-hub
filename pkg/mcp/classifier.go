@@ -6,14 +6,14 @@ import (
 	otypes "github.com/obot-platform/obot/apiclient/types"
 )
 
-// ToolSafetyCategory represents the risk level of an MCP tool.
-type ToolSafetyCategory string
-
 const (
 	CategoryReadOnly    ToolSafetyCategory = "read_only"
 	CategoryDestructive ToolSafetyCategory = "destructive"
 	CategoryUnknown     ToolSafetyCategory = "unknown"
 )
+
+// ToolSafetyCategory represents the risk level of an MCP tool.
+type ToolSafetyCategory string
 
 // ClassifyToolSafety inspects a tool's name and description to determine if it should be enabled by default.
 // Read-only/search tools are enabled by default.

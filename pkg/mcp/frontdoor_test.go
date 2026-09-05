@@ -7,7 +7,6 @@ import (
 	"github.com/obot-platform/obot/apiclient/types"
 	v1 "github.com/obot-platform/obot/pkg/storage/apis/obot.obot.ai/v1"
 	storagescheme "github.com/obot-platform/obot/pkg/storage/scheme"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -25,8 +24,7 @@ func frontDoorTestServer(name, owner string, marked bool) *v1.MCPServer {
 	if marked {
 		labels[GenHubFrontDoorLabel] = GenHubFrontDoorLabelValue
 	}
-	return &v1.MCPServer{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: frontDoorTestNamespace, Labels: labels},
+	server := &v1.MCPServer{
 		Spec: v1.MCPServerSpec{
 			UserID: owner,
 			Manifest: types.MCPServerManifest{
@@ -35,6 +33,10 @@ func frontDoorTestServer(name, owner string, marked bool) *v1.MCPServer {
 			},
 		},
 	}
+	server.Name = name
+	server.Namespace = frontDoorTestNamespace
+	server.Labels = labels
+	return server
 }
 
 func TestResolveFrontDoorCompositeRequiresExactlyOneMarker(t *testing.T) {
