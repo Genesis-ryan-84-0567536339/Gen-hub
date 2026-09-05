@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/obot-platform/obot/apiclient/types"
@@ -17,6 +18,7 @@ import (
 	"github.com/obot-platform/obot/pkg/controller/handlers/providerconfigurationchange"
 	"github.com/obot-platform/obot/pkg/controller/handlers/secret"
 	"github.com/obot-platform/obot/pkg/controller/handlers/tunnelpeer"
+	gtypes "github.com/obot-platform/obot/pkg/gateway/types"
 	"github.com/obot-platform/obot/pkg/localauth"
 	"github.com/obot-platform/obot/pkg/mcp"
 	"github.com/obot-platform/obot/pkg/serviceaccounts"
@@ -116,6 +118,10 @@ func (c *Controller) PreStart(ctx context.Context) error {
 		return fmt.Errorf("failed to ensure obot MCP server: %w", err)
 	}
 
+	if err := c.ensureFrontDoorComposite(ctx); err != nil {
+		return fmt.Errorf("failed to ensure front-door composite: %w", err)
+	}
+
 	if err := c.reconcileServiceAccountKeys(ctx); err != nil {
 		return fmt.Errorf("failed to reconcile service account keys: %w", err)
 	}
@@ -135,6 +141,24 @@ func (c *Controller) ensureObotMCPServer(ctx context.Context) error {
 
 	internalURL := c.services.MCPSessionManager.TransformObotHostname(c.services.ServerURL)
 	return reconcileObotMCPServer(ctx, c.services.StorageClient, agentsEnabled, internalURL, c.services.MCPServerSearchImage)
+}
+
+func (c *Controller) ensureFrontDoorComposite(ctx context.Context) error {
+	ownerID := "1"
+	if c.services != nil && c.services.GatewayClient != nil {
+		owners, err := c.services.GatewayClient.Users(ctx, gtypes.UserQuery{
+			Role: types.RoleOwner,
+		})
+		if err == nil && len(owners) > 0 {
+			ownerID = strconv.Itoa(int(owners[0].ID))
+		}
+	}
+	return reconcileFrontDoorComposite(ctx, c.services.StorageClient, ownerID)
+}
+
+func reconcileFrontDoorComposite(ctx context.Context, storageClient kclient.Client, ownerID string) error {
+	_, err := mcp.EnsureFrontDoorComposite(ctx, storageClient, system.DefaultNamespace, ownerID)
+	return err
 }
 
 func reconcileObotMCPServer(ctx context.Context, storageClient kclient.Client, agentsEnabled bool, internalURL, image string) error {
