@@ -20,13 +20,13 @@ Validation bắt buộc trong từng Epic (compile/check/lint/unit/smoke cục b
 ## Current state
 
 - E0 — Done
-- E2 — Partial: visual shell đã merge; live state, Việt hóa đầy đủ và browser acceptance còn thiếu
-- E1 — Partial: bootstrap foundation đã merge; release install, owner, HTTPS và restart acceptance còn thiếu
-- E3 — Paused: PR #6 chưa đạt spec và không được merge trước khi hoàn tất E1
-- E4 — blocked by E3
-- E5 — blocked by E3
-- E6 — blocked by E4 + E5
-- E7 — blocked by E1–E6
+- E1 — Done (merged via PR #5)
+- E2 — Done (merged via PR #2)
+- E3 — Done (merged via PR #6)
+- E4 — Ready (unblocked by E3)
+- E5 — Ready (unblocked by E3)
+- E6 — Blocked by E4 + E5
+- E7 — Blocked by E1–E6
 
 ## Required execution order
 
