@@ -70,3 +70,7 @@ thoughts
 
 # Riptide artifacts (cloud-synced)
 .humanlayer/tasks/
+
+# Runtime environment files
+*.env
+
