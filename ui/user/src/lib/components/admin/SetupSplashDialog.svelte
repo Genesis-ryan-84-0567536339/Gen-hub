@@ -4,7 +4,6 @@
 	import CopyField from '../CopyField.svelte';
 	import Loading from '$lib/icons/Loading.svelte';
 	import { ApiKeysService } from '$lib/services';
-	import { profile } from '$lib/stores';
 	import {
 		Globe,
 		KeyRound,
@@ -15,12 +14,10 @@
 		CheckCircle2,
 		Sparkles,
 		Terminal,
-		Server,
 		Check,
-		ExternalLink
+		X
 	} from '@lucide/svelte';
-	import { onMount } from 'svelte';
-	import { fade, slide } from 'svelte/transition';
+	import { fade } from 'svelte/transition';
 	import { twMerge } from 'tailwind-merge';
 
 	let dialog = $state<ReturnType<typeof ResponsiveDialog>>();
@@ -32,21 +29,14 @@
 	}
 
 	export function close() {
+		if (typeof localStorage !== 'undefined') {
+			localStorage.setItem('seenSplashDialog', new Date().toISOString());
+		}
 		dialog?.close();
 	}
 
-	onMount(() => {
-		if (typeof localStorage !== 'undefined') {
-			const seen = localStorage.getItem('seenSplashDialog');
-			if (!seen && profile.current.loaded) {
-				open();
-			}
-		}
-	});
-
 	// Step 1 State: Network Domain
 	let domainMode = $state<'localhost' | 'domain' | 'tunnel'>('localhost');
-	let customDomain = $state('genhub.my-company.com');
 
 	// Step 2 State: First Agent Scope
 	let scopeName = $state('Claude-Code-Agent');
@@ -85,18 +75,18 @@
 	}
 
 	function handleCompleteSetup() {
-		localStorage.setItem('seenSplashDialog', new Date().toISOString());
-		dialog?.close();
+		close();
 	}
 </script>
 
 <ResponsiveDialog
 	bind:this={dialog}
-	class="w-full max-w-2xl bg-white dark:bg-slate-900 border border-[#e6e9ef] dark:border-slate-800 rounded-3xl p-0 overflow-hidden shadow-2xl"
+	hideClose
+	class="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-0 overflow-hidden shadow-2xl"
 >
-	<div class="flex flex-col w-full">
+	<div class="flex flex-col w-full text-slate-900 dark:text-slate-100">
 		<!-- Header Stepper Banner -->
-		<div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-6 relative">
+		<div class="bg-slate-950 text-white p-6 relative border-b border-slate-800">
 			<div class="flex items-center justify-between">
 				<div class="flex items-center gap-3">
 					<GenHubLogo variant="dark" />
@@ -105,10 +95,12 @@
 					</span>
 				</div>
 				<button 
+					type="button"
 					onclick={close} 
-					class="text-slate-400 hover:text-white text-xs font-semibold px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors"
+					class="text-slate-300 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-850 hover:bg-slate-800 transition-colors flex items-center gap-1.5 border border-slate-700 cursor-pointer"
 				>
-					Bỏ qua
+					<X class="size-3.5 text-slate-300" />
+					<span>Bỏ qua</span>
 				</button>
 			</div>
 
@@ -116,39 +108,47 @@
 			<p class="text-xs text-slate-300 mt-1">Hoàn tất 4 bước đơn giản để kết nối Agent của bạn với Gen Hub.</p>
 
 			<!-- 4-Step Progress Indicator -->
-			<div class="grid grid-cols-4 gap-2 mt-6">
+			<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5">
 				{#each [
-					{ step: 1, label: 'Tên miền & Mạng', icon: Globe },
-					{ step: 2, label: 'Scope Agent', icon: KeyRound },
-					{ step: 3, label: 'MCP Catalog', icon: RadioTower },
-					{ step: 4, label: 'Két bảo mật', icon: ShieldCheck }
+					{ step: 1, label: '1. Tên miền & Mạng', icon: Globe },
+					{ step: 2, label: '2. Scope Agent', icon: KeyRound },
+					{ step: 3, label: '3. MCP Catalog', icon: RadioTower },
+					{ step: 4, label: '4. Két bảo mật', icon: ShieldCheck }
 				] as item (item.step)}
 					<button
+						type="button"
 						onclick={() => (currentStep = item.step)}
 						class={twMerge(
-							'flex items-center gap-2 p-2 rounded-xl text-left transition-all text-xs font-medium border',
+							'flex items-center gap-2.5 p-2.5 rounded-xl text-left transition-all text-xs font-bold border cursor-pointer',
 							currentStep === item.step
-								? 'bg-indigo-600 text-white border-indigo-400 font-bold shadow-md'
+								? 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-400/40'
 								: currentStep > item.step
-									? 'bg-slate-800/80 text-emerald-400 border-emerald-500/40'
-									: 'bg-slate-900/60 text-slate-400 border-slate-800'
+									? 'bg-slate-900 text-emerald-300 border-emerald-500/60 hover:bg-slate-850'
+									: 'bg-slate-900/90 text-slate-200 border-slate-750 hover:bg-slate-850 hover:text-white'
 						)}
 					>
-						<div class="size-6 rounded-lg flex items-center justify-center shrink-0 font-bold bg-black/30">
+						<div class={twMerge(
+							'size-6 rounded-lg flex items-center justify-center shrink-0 font-extrabold text-xs shadow-sm',
+							currentStep === item.step
+								? 'bg-white text-indigo-700'
+								: currentStep > item.step
+									? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+									: 'bg-slate-800 text-slate-200 border border-slate-700'
+						)}>
 							{#if currentStep > item.step}
 								<CheckCircle2 class="size-4 text-emerald-400" />
 							{:else}
 								<span>{item.step}</span>
 							{/if}
 						</div>
-						<span class="truncate hidden md:inline">{item.label}</span>
+						<span class="truncate font-bold">{item.label}</span>
 					</button>
 				{/each}
 			</div>
 		</div>
 
 		<!-- Step Contents -->
-		<div class="p-6 flex flex-col min-h-[340px] justify-between">
+		<div class="p-6 flex flex-col min-h-[340px] justify-between bg-white dark:bg-slate-900">
 			{#if currentStep === 1}
 				<!-- STEP 1: Domain & Access -->
 				<div class="flex flex-col gap-4" in:fade={{ duration: 150 }}>
@@ -157,76 +157,79 @@
 							<Globe class="size-5 text-indigo-600 dark:text-indigo-400" />
 							Bước 1: Chọn Chế độ Kết nối & Tên miền (Domain)
 						</h3>
-						<p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+						<p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
 							Gen Hub hỗ trợ mở cổng truy cập linh hoạt từ Localhost, Tên miền riêng hoặc Cloudflare Tunnel.
 						</p>
 					</div>
 
 					<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
 						<button
+							type="button"
 							onclick={() => (domainMode = 'localhost')}
 							class={twMerge(
-								'p-4 rounded-2xl border text-left flex flex-col justify-between transition-all gap-2',
+								'p-4 rounded-2xl border text-left flex flex-col justify-between transition-all gap-2 cursor-pointer bg-white dark:bg-slate-900',
 								domainMode === 'localhost'
-									? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 ring-2 ring-indigo-600/30'
+									? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-600/30'
 									: 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
 							)}
 						>
 							<div class="flex items-center justify-between">
 								<span class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Cục bộ (Local)</span>
-								{#if domainMode === 'localhost'}<CheckCircle2 class="size-4 text-indigo-600" />{/if}
+								{#if domainMode === 'localhost'}<CheckCircle2 class="size-4 text-indigo-600 dark:text-indigo-400" />{/if}
 							</div>
 							<div>
-								<div class="text-sm font-bold text-slate-800 dark:text-slate-200">http://localhost:8080</div>
-								<div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Khởi chạy nhanh trên máy cá nhân</div>
+								<div class="text-sm font-bold text-slate-900 dark:text-slate-100">http://localhost:8080</div>
+								<div class="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Khởi chạy nhanh trên máy cá nhân</div>
 							</div>
 						</button>
 
 						<button
+							type="button"
 							onclick={() => (domainMode = 'tunnel')}
 							class={twMerge(
-								'p-4 rounded-2xl border text-left flex flex-col justify-between transition-all gap-2',
+								'p-4 rounded-2xl border text-left flex flex-col justify-between transition-all gap-2 cursor-pointer bg-white dark:bg-slate-900',
 								domainMode === 'tunnel'
-									? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 ring-2 ring-indigo-600/30'
+									? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-600/30'
 									: 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
 							)}
 						>
 							<div class="flex items-center justify-between">
 								<span class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Cloudflare Tunnel</span>
-								{#if domainMode === 'tunnel'}<CheckCircle2 class="size-4 text-indigo-600" />{/if}
+								{#if domainMode === 'tunnel'}<CheckCircle2 class="size-4 text-indigo-600 dark:text-indigo-400" />{/if}
 							</div>
 							<div>
-								<div class="text-sm font-bold text-slate-800 dark:text-slate-200">Public HTTPS Tunnel</div>
-								<div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Mở cổng an toàn ra Internet không cần mở Port Router</div>
+								<div class="text-sm font-bold text-slate-900 dark:text-slate-100">Public HTTPS Tunnel</div>
+								<div class="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Mở cổng an toàn ra Internet không cần NAT Port</div>
 							</div>
 						</button>
 
 						<button
+							type="button"
 							onclick={() => (domainMode = 'domain')}
 							class={twMerge(
-								'p-4 rounded-2xl border text-left flex flex-col justify-between transition-all gap-2',
+								'p-4 rounded-2xl border text-left flex flex-col justify-between transition-all gap-2 cursor-pointer bg-white dark:bg-slate-900',
 								domainMode === 'domain'
-									? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/30 ring-2 ring-indigo-600/30'
+									? 'border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 ring-2 ring-indigo-600/30'
 									: 'border-slate-200 dark:border-slate-800 hover:border-slate-300'
 							)}
 						>
 							<div class="flex items-center justify-between">
 								<span class="text-xs font-bold text-indigo-600 dark:text-indigo-400">Tên miền riêng</span>
-								{#if domainMode === 'domain'}<CheckCircle2 class="size-4 text-indigo-600" />{/if}
+								{#if domainMode === 'domain'}<CheckCircle2 class="size-4 text-indigo-600 dark:text-indigo-400" />{/if}
 							</div>
 							<div>
-								<div class="text-sm font-bold text-slate-800 dark:text-slate-200">Custom Domain</div>
-								<div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">Gắn SSL & Caddy/Nginx reverse proxy</div>
+								<div class="text-sm font-bold text-slate-900 dark:text-slate-100">Custom Domain</div>
+								<div class="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 font-medium">Gắn SSL & Caddy/Nginx reverse proxy</div>
 							</div>
 						</button>
 					</div>
 
-					<div class="p-3.5 rounded-xl bg-slate-900 text-slate-100 text-xs font-mono flex items-center justify-between">
+					<div class="p-3.5 rounded-xl bg-slate-950 text-slate-100 text-xs font-mono flex items-center justify-between border border-slate-800">
 						<div class="flex items-center gap-2">
 							<Terminal class="size-4 text-indigo-400 shrink-0" />
-							<span>Lệnh khởi động Server: <strong class="text-emerald-400">./bin/gen-hub server</strong></span>
+							<span class="text-slate-200">Lệnh khởi động Server: <strong class="text-emerald-400 font-bold">./bin/gen-hub server</strong></span>
 						</div>
-						<span class="text-[10px] text-slate-400 px-2 py-0.5 rounded bg-slate-800">Cổng: 8080</span>
+						<span class="text-[10px] text-slate-300 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 font-sans font-bold">Cổng: 8080</span>
 					</div>
 				</div>
 
@@ -238,27 +241,29 @@
 							<KeyRound class="size-5 text-indigo-600 dark:text-indigo-400" />
 							Bước 2: Khởi tạo Phân quyền Agent đầu tiên (Auth Scope)
 						</h3>
-						<p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+						<p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
 							Tạo một API Key gắn liền với chính sách truy cập MCP Server và LLM Proxy cho Agent của bạn (Claude Code, Cursor, Windsurf...).
 						</p>
 					</div>
 
 					{#if !createdApiKey}
 						<div class="flex flex-col gap-3 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
-							<label class="text-xs font-bold text-slate-700 dark:text-slate-300">
+							<label for="wizard-scope-name-input" class="text-xs font-bold text-slate-800 dark:text-slate-200">
 								Tên Agent / Phạm vi Phân quyền
 							</label>
 							<div class="flex gap-2">
 								<input
+									id="wizard-scope-name-input"
 									type="text"
 									bind:value={scopeName}
 									placeholder="VD: Claude-Code-Agent"
-									class="text-input-filled flex-1 text-sm"
+									class="px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm flex-1 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
 								/>
 								<button
+									type="button"
 									onclick={handleCreateQuickScope}
 									disabled={creatingKey}
-									class="btn btn-primary text-xs px-4"
+									class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all shadow-md cursor-pointer disabled:opacity-50"
 								>
 									{#if creatingKey}
 										<Loading class="size-4" />
@@ -267,7 +272,7 @@
 									{/if}
 								</button>
 							</div>
-							<p class="text-[11px] text-slate-500">Scope này tự động cấp quyền truy cập các MCP tool và LLM proxy cần thiết.</p>
+							<p class="text-[11px] text-slate-600 dark:text-slate-400">Scope này tự động cấp quyền truy cập các MCP tool và LLM proxy cần thiết.</p>
 						</div>
 					{:else}
 						<div class="flex flex-col gap-3 p-4 rounded-2xl border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20">
@@ -280,7 +285,7 @@
 									<KeyRound class="size-4 text-slate-400" />
 								{/snippet}
 							</CopyField>
-							<p class="text-[11px] text-slate-500">Vui lòng sao chép API Key này để dán vào cấu hình Agent của bạn.</p>
+							<p class="text-[11px] text-slate-600 dark:text-slate-400">Vui lòng sao chép API Key này để dán vào cấu hình Agent của bạn.</p>
 						</div>
 					{/if}
 				</div>
@@ -293,7 +298,7 @@
 							<RadioTower class="size-5 text-indigo-600 dark:text-indigo-400" />
 							Bước 3: Chọn các MCP Server phổ biến để sẵn sàng sử dụng
 						</h3>
-						<p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+						<p class="text-xs text-slate-600 dark:text-slate-400 mt-1">
 							Bật các công cụ MCP chuẩn được Gen Hub tích hợp sẵn cho Agent của bạn.
 						</p>
 					</div>
@@ -307,11 +312,12 @@
 						] as tool (tool.key)}
 							{@const isSelected = selectedTools[tool.key as keyof typeof selectedTools]}
 							<button
+								type="button"
 								onclick={() => toggleTool(tool.key as keyof typeof selectedTools)}
 								class={twMerge(
-									'p-3.5 rounded-2xl border text-left flex items-start gap-3 transition-all',
+									'p-3.5 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer bg-white dark:bg-slate-900',
 									isSelected
-										? 'border-indigo-600 bg-indigo-50/40 dark:bg-indigo-950/30'
+										? 'border-indigo-600 bg-indigo-50/60 dark:bg-indigo-950/40'
 										: 'border-slate-200 dark:border-slate-800'
 								)}
 							>
@@ -322,8 +328,8 @@
 									{#if isSelected}<Check class="size-3.5" />{/if}
 								</div>
 								<div class="flex flex-col min-w-0">
-									<div class="text-xs font-bold text-slate-800 dark:text-slate-200">{tool.name}</div>
-									<div class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">{tool.desc}</div>
+									<div class="text-xs font-bold text-slate-900 dark:text-slate-100">{tool.name}</div>
+									<div class="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-1 font-medium">{tool.desc}</div>
 								</div>
 							</button>
 						{/each}
@@ -340,11 +346,11 @@
 					<h3 class="text-lg font-bold text-slate-900 dark:text-white">
 						Gen Hub đã sẵn sàng hoạt động!
 					</h3>
-					<p class="text-xs text-slate-600 dark:text-slate-300 max-w-lg leading-relaxed">
+					<p class="text-xs text-slate-600 dark:text-slate-300 max-w-lg leading-relaxed font-medium">
 						Hệ thống Mã hóa Master Vault (AES-256 GCM) đã kích hoạt. Mọi OAuth credentials, API keys và thông tin truy cập đều được lưu giữ bảo mật tuyệt đối tại máy của bạn.
 					</p>
 
-					<div class="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300">
+					<div class="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200">
 						<Sparkles class="size-4 text-amber-500 shrink-0" />
 						<span>Bạn có thể tùy chỉnh lại cài đặt bất kỳ lúc nào từ thanh điều hướng <strong>Domain & Cài đặt</strong>.</span>
 					</div>
@@ -354,24 +360,27 @@
 			<!-- Bottom Footer Navigation -->
 			<div class="flex items-center justify-between border-t border-slate-200 dark:border-slate-800 pt-4 mt-4">
 				<button
+					type="button"
 					onclick={() => (currentStep = Math.max(1, currentStep - 1))}
 					disabled={currentStep === 1}
-					class="btn btn-secondary text-xs flex items-center gap-1.5"
+					class="px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
 				>
 					<ChevronLeft class="size-4" /> Quay lại
 				</button>
 
 				{#if currentStep < 4}
 					<button
+						type="button"
 						onclick={() => (currentStep = Math.min(4, currentStep + 1))}
-						class="btn btn-primary text-xs flex items-center gap-1.5"
+						class="px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
 					>
 						Tiếp theo <ChevronRight class="size-4" />
 					</button>
 				{:else}
 					<button
+						type="button"
 						onclick={handleCompleteSetup}
-						class="btn btn-primary text-xs px-6 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 border-emerald-600"
+						class="px-6 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer"
 					>
 						🚀 Hoàn tất Setup & Bắt đầu
 					</button>
@@ -380,3 +389,4 @@
 		</div>
 	</div>
 </ResponsiveDialog>
+

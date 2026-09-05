@@ -256,16 +256,16 @@
 						menu?.toggle(false);
 					}}
 				>
-					<Terminal class="size-4" /> Client Preference
+					<Terminal class="size-4" /> Tùy chọn Client
 				</button>
 
 				{#if profile.current.isBootstrapUser?.()}
 					<button class="dropdown-link" onclick={handleBootstrapLogout}>
-						<LogOut class="size-4" /> Log out
+						<LogOut class="size-4" /> Đăng xuất
 					</button>
 				{:else}
 					<button class="dropdown-link" onclick={handleLogout}>
-						<LogOut class="size-4" /> Log out
+						<LogOut class="size-4" /> Đăng xuất
 					</button>
 				{/if}
 			{/if}
