@@ -135,7 +135,21 @@ def main():
                 lifecycle.purge(state)
             assert not data.exists() and not conf.exists() and not install_root.exists()
             assert (neighbor / 'keep').read_text() == 'untouched'
-            print('PASS: doctor repair, scoped purge, real containers, Caddy TLS, owner login, MCP auth, recreation persistence, backup, private personal route and cloudflared binary.')
+            # Verify that the real systemd timer enables and invokes its configured command.
+            # Substitute /usr/bin/true so this test cannot update the runner from main.
+            try:
+                with patch.object(lifecycle, 'WRAPPER', pathlib.Path('/usr/bin/true')):
+                    lifecycle.configure_updates({'auto_update': True})
+                rt.run(['systemctl', 'is-enabled', '--quiet', 'gen-hub-update.timer'])
+                rt.run(['systemctl', 'start', 'gen-hub-update.service'])
+                result = rt.run(['systemctl', 'show', 'gen-hub-update.service', '--property=Result', '--value'], capture_output=True).stdout.strip()
+                assert result == 'success'
+            finally:
+                lifecycle.stop_updates()
+                for name in ['gen-hub-update.service', 'gen-hub-update.timer']:
+                    (lifecycle.UNIT_DIR / name).unlink(missing_ok=True)
+                rt.run(['systemctl', 'daemon-reload'])
+            print('PASS: update timer, doctor repair, scoped purge, real containers, Caddy TLS, owner login, MCP auth, recreation persistence, backup, private personal route and cloudflared binary.')
         finally:
             if path.exists():
                 rt.compose(path, 'logs', '--tail', '30')

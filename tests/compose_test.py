@@ -63,7 +63,7 @@ class ComposeTest(unittest.TestCase):
                 owner.assert_not_called()
                 self.assertEqual(json.loads((conf / 'compose.json').read_text()), previous)
                 self.assertEqual((conf / 'Caddyfile').read_text(), 'old config')
-                self.assertEqual(state, old)
+                self.assertEqual(state, {**old, 'failed_update_revision': release.name})
                 self.assertEqual(compose.call_count, 2)
 
     def test_tunnel_resume_uses_internal_route_and_secret_file(self):

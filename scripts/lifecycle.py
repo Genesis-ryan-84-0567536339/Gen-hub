@@ -52,19 +52,21 @@ def update(state, automatic=False):
             run(['bash', str(script), '--revision', sha, *(['--auto'] if automatic else [])])
     except Exception:
         current = json.loads((CONF / 'install.json').read_text())
-        current['failed_update_revision'] = sha
+        # The installer marks a revision only after runtime activation fails.
+        # Download/DNS/lock failures are transient and must remain retryable.
+        current['update_error'] = 'Cập nhật chưa hoàn tất; xem journalctl -u gen-hub-update.'
         atomic(CONF / 'install.json', json.dumps(current, indent=2))
         raise
 
 
 def configure_updates(state):
-    atomic(UNIT_DIR / 'gen-hub-update.service', '''[Unit]
+    atomic(UNIT_DIR / 'gen-hub-update.service', f'''[Unit]
 Description=Gen-hub verified repository update
 After=network-online.target docker.service
 Wants=network-online.target
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/gen-hub update --auto
+ExecStart={WRAPPER} update --auto
 TimeoutStartSec=20min
 UMask=0077
 ''', 0o644)

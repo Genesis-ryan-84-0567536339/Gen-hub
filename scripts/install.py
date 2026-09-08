@@ -249,6 +249,8 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, 
         if not status.get('initialized') or status.get('installationId') != state['installation_id']:
             raise RuntimeError('Owner chưa sẵn sàng qua domain.')
     except BaseException:
+        state['failed_update_revision'] = release.name
+        save()
         if restore_tunnel:
             try:
                 restore_tunnel()
@@ -266,7 +268,9 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, 
                 atomic(CONF / 'Caddyfile', previous_caddy, 0o644)
             run(['systemctl', 'start', *legacy])
         if previous or legacy:
-            state.clear(); state.update(old); save()
+            state.clear(); state.update(old)
+            state['failed_update_revision'] = release.name
+            save()
             if wrapper_text:
                 atomic(old_wrapper, wrapper_text, 0o755)
             print('Đã khôi phục runtime trước. Backup: ' + str(target))
@@ -384,6 +388,7 @@ def main():
         activate(state, old, release, candidate, save, legacy, restore_tunnel, args.auto)
         state.setdefault('auto_update', True)
         state['failed_update_revision'] = None
+        state['update_error'] = None
         from lifecycle import configure_updates
         configure_updates(state)
         save()

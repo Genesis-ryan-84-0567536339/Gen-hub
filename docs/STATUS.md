@@ -16,7 +16,7 @@ Frontend tiếng Việt nối API thật; backend SQLite; owner/session/CSRF; cr
 
 - CI Docker trong PR #2 đã chạy thành công trên Ubuntu 22.04/24.04: build images, Caddy TLS với CA kiểm thử, owner/login/MCP, gỡ và tạo lại container vẫn giữ session/token/data/key, backup 0600, tuyến Caddy personal không publish cổng và binary cloudflared. Xem kết quả ở commit cuối của PR trước khi phát hành.
 
-- Tự update có gate đúng main SHA + push CI success, bỏ qua bản đã lỗi; doctor từ chối tạo khóa thay thế khi mất master.key; gỡ sạch kiểm tra ownership và yêu cầu xác nhận domain. Kiểm thử Docker được mở rộng thêm sửa cấu hình hỏng và purge trong thư mục CI riêng; cần đối chiếu kết quả commit cuối PR #2.
+- Tự update có gate đúng main SHA + push CI success, bỏ qua bản đã lỗi; doctor từ chối tạo khóa thay thế khi mất master.key; gỡ sạch kiểm tra ownership và yêu cầu xác nhận domain. CI Docker đã xác minh thêm sửa cấu hình hỏng giữ data/key và purge trong thư mục CI riêng không ảnh hưởng thư mục bên cạnh; kiểm tra timer thực dùng lệnh vô hại thay trình updater. Cần đối chiếu kết quả commit cuối PR #2.
 
 ## Chưa thể xác minh trong môi trường này
 

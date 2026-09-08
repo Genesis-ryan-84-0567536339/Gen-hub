@@ -24,6 +24,16 @@ class LifecycleTest(unittest.TestCase):
             with patch.object(lc, 'github', return_value={'sha': 'b'*40}) as fetch:
                 self.assertIsNone(lc.eligible_revision(state, True)); self.assertEqual(fetch.call_count, 1)
 
+    def test_transient_download_failure_is_not_marked_as_bad_revision(self):
+        with tempfile.TemporaryDirectory() as temp:
+            conf = pathlib.Path(temp)
+            state = {'completed': True, 'auto_update': True, 'revision': 'a'*40}
+            (conf/'install.json').write_text(json.dumps(state))
+            with patch.object(lc, 'CONF', conf), patch.object(lc, 'eligible_revision', return_value='b'*40), patch.object(lc.urllib.request, 'urlopen', side_effect=OSError('temporary network failure')):
+                with self.assertRaises(OSError):
+                    lc.update(state, True)
+            self.assertNotIn('failed_update_revision', json.loads((conf/'install.json').read_text()))
+
     def test_auto_update_disabled_never_fetches_or_executes(self):
         with patch.object(lc, 'github') as fetch, patch.object(lc, 'run') as run:
             lc.update({'completed': True, 'auto_update': False}, True)
