@@ -172,7 +172,7 @@ def prepare_images(path):
     compose(path, 'config', '--quiet')
     compose(path, 'build', '--pull', 'hub')
     mount = config['services']['caddy']['volumes'][0]
-    run([*DOCKER, 'run', '--rm', '--network', 'none', '-v', mount, config['services']['caddy']['image'], 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
+    run([*DOCKER, 'run', '--rm', '--network', 'none', '-v', mount, config['services']['caddy']['image'], 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
 
 
 def ensure_owner(path):
@@ -220,7 +220,11 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None):
     target = ROOT / 'backups' / target.name
     target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if previous and (DATA / 'hub.db').exists():
-        backup(path, target)
+        running = compose(path, 'ps', '--status', 'running', '-q', 'hub', capture_output=True).stdout.strip()
+        if running:
+            backup(path, target)
+        else:
+            legacy_backup(target)
     if legacy:
         run(['systemctl', 'stop', *legacy])
     try:
@@ -350,6 +354,10 @@ def main():
             # Reuse runtime token/config on subsequent Compose installs; no repeated admin-token prompt.
             if old.get('engine') != 'compose' or not (CONF / 'tunnel.token').stat().st_size or not state.get('tunnel_id'):
                 restore_tunnel = checkpoint(state, save, 'Thiết lập Cloudflare Tunnel và DNS', lambda: setup_tunnel(state, save))
+        if state['mode'] == 'personal':
+            os.chown(CONF / 'tunnel.token', state['uid'], state['gid'])
+            if shutil.which('selinuxenabled') and subprocess.run(['selinuxenabled']).returncode == 0:
+                run(['chcon', '-t', 'container_file_t', str(CONF / 'tunnel.token')])
         activate(state, old, release, candidate, save, legacy, restore_tunnel)
         print('\n✓ Gen-hub đã sẵn sàng.\nĐăng nhập: https://' + state['domain'] + '\nMCP tổng: https://' + state['domain'] + '/mcp\nKiểm tra lại: sudo gen-hub doctor')
     except Exception as error:

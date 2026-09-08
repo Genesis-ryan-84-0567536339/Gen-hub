@@ -6,16 +6,18 @@ Trung tâm MCP tự lưu trữ trên Linux. Một giao diện tiếng Việt đ�
 
 ## Cài bằng một lệnh
 
-Yêu cầu Linux **systemd, glibc**, x86_64 hoặc aarch64; Ubuntu 22.04/24.04, Debian 12/13, Fedora tương thích. Python >=3.10; quyền sudo; ít nhất 1 GiB trống. Bộ cài tải Node.js 24 LTS, Caddy và cloudflared khi cần; không yêu cầu Docker hoặc npm install.
+Yêu cầu Linux **systemd**, x86_64 hoặc aarch64; Python >=3.10, quyền sudo và ít nhất 2 GiB trống tại nơi Docker lưu images. Tự cài Docker Engine + Compose trên Ubuntu/Debian/Fedora nếu thiếu, rồi chạy Gen-hub, Caddy và cloudflared bằng container. Máy chủ không cần cài Node.js hoặc npm. Các images được khóa digest trong repo.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Genesis-ryan-84-0567536339/Gen-hub/main/install.sh)
 ```
 
+Đã clone repo thì chỉ cần `./install.sh`. Cập nhật sau khi cài: `sudo gen-hub update`. Không cần tự gõ lệnh Docker.
+
 1. Xác nhận **VPS/server** hoặc **máy cá nhân**. Nhận diện chỉ là gợi ý.
 2. VPS: nhập domain, xác nhận IP, tạo DNS theo hướng dẫn rồi kiểm tra. Mở TCP 80/443; Caddy tự cấp/gia hạn HTTPS.
-3. Máy cá nhân: nhập hostname, domain gốc và Cloudflare API token; bộ cài tạo tunnel, DNS và dịch vụ cloudflared/Caddy. Domain gốc cần ở trạng thái Active trên Cloudflare.
-4. Chờ kiểm tra HTTPS tới **đúng installation ID**. Chưa đạt không cho tạo owner.
+3. Máy cá nhân: nhập hostname, domain gốc và Cloudflare API token; bộ cài tạo tunnel, DNS và container cloudflared/Caddy. Không publish cổng trên máy cá nhân. Domain gốc cần ở trạng thái Active trên Cloudflare.
+4. Bộ cài kiểm Docker, cổng, image/build, Caddy, container health và SQLite. Chờ kiểm tra HTTPS tới **đúng installation ID**. Chưa đạt không cho tạo owner.
 5. Tạo owner/mật khẩu ngay trên TUI; mật khẩu nhập ẩn, không đi qua tham số lệnh.
 6. Nhận URL đăng nhập và MCP tổng `/mcp`; đăng nhập để xem hướng dẫn thiết lập đầu tiên.
 
@@ -49,6 +51,7 @@ Bộ cài không ghi đè DNS đang trỏ nơi khác, không chiếm dịch vụ
 
 ```bash
 sudo gen-hub status
+sudo gen-hub doctor
 sudo gen-hub logs
 sudo gen-hub restart
 sudo gen-hub backup /root/gen-hub-backup.tar.gz
@@ -58,7 +61,7 @@ sudo gen-hub rollback
 sudo gen-hub uninstall
 ```
 
-Dữ liệu: `/var/lib/gen-hub`. Cấu hình và trạng thái cài: `/etc/gen-hub`. Mã nguồn theo revision: `/opt/gen-hub/releases`. Gỡ mặc định giữ dữ liệu/cấu hình; tunnel và DNS Cloudflare được giữ để khôi phục hoặc xóa thủ công. Chi tiết: [OPERATIONS.md](docs/OPERATIONS.md).
+Dữ liệu: `/var/lib/gen-hub`. Cấu hình và trạng thái cài: `/etc/gen-hub`. Mã nguồn theo revision: `/opt/gen-hub/releases`. Dữ liệu nằm trong bind volume, giữ nguyên khi tạo lại container. Tự backup trước cập nhật. Gỡ container mặc định giữ dữ liệu/cấu hình/source/backup; tunnel và DNS Cloudflare được giữ để khôi phục hoặc xóa thủ công. Chi tiết: [OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Phát triển và kiểm thử
 
@@ -75,6 +78,8 @@ Khởi tạo owner local qua CLI, rồi chạy server trên loopback (chỉ dùn
 python3 scripts/dev.py
 npm start
 ```
+
+CI còn build/chạy Docker thật trên Ubuntu 22.04/24.04, thử Caddy TLS với CA kiểm thử được tin cậy, đăng nhập/MCP, tạo lại container, giữ dữ liệu và backup; kiểm tra tuyến nội bộ personal và binary cloudflared. Không dùng token giả để kết nối Cloudflare.
 
 Các test sử dụng HTTP thật trên loopback cho MCP/đăng nhập/OAuth và server MCP kiểm soát trong test. Test installer dùng API/DNS giả lập để không thay đổi hạ tầng thật.
 

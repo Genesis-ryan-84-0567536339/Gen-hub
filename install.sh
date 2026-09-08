@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+if [[ ${1:-} == --help ]]; then
+  echo 'Gen-hub: chạy ./install.sh để cài hoặc cập nhật qua TUI Docker Compose.'
+  exit 0
+fi
 # Download one coherent source revision; interactive input is always /dev/tty.
 if [[ "$(uname -s)" != Linux ]]; then echo 'Gen-hub hỗ trợ Linux.' >&2; exit 1; fi
-if [[ ! -r /dev/tty ]]; then echo 'Cần terminal tương tác để cài Gen-hub.' >&2; exit 1; fi
-if [[ ${EUID} -eq 0 ]]; then SUDO=(); else SUDO=(sudo); fi
+if ! ( : </dev/tty ) 2>/dev/null; then echo 'Cần terminal tương tác để cài Gen-hub.' >&2; exit 1; fi
+if [[ ${EUID} -eq 0 ]]; then SUDO=(); else
+  if ! command -v sudo >/dev/null; then echo "Cần sudo hoặc chạy bằng root." >&2; exit 1; fi
+  SUDO=(sudo)
+fi
 if ! command -v curl >/dev/null || ! command -v python3 >/dev/null || ! command -v tar >/dev/null; then
   if command -v apt-get >/dev/null; then
     "${SUDO[@]}" apt-get update
@@ -12,6 +19,7 @@ if ! command -v curl >/dev/null || ! command -v python3 >/dev/null || ! command 
     "${SUDO[@]}" dnf install -y curl ca-certificates python3 tar xz
   else echo 'Cài curl, python3, tar, xz và chạy lại.' >&2; exit 1; fi
 fi
+umask 077
 TMPDIR_GENHUB=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_GENHUB"' EXIT
 curl --proto '=https' --tlsv1.2 --fail --silent --show-error --retry 3 https://api.github.com/repos/Genesis-ryan-84-0567536339/Gen-hub/commits/main -o "$TMPDIR_GENHUB/commit.json"

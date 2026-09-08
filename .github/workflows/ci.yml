@@ -32,4 +32,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Actual Docker, Caddy TLS and persistent data acceptance
-        run: python3 tests/docker_smoke.py
+        run: sudo python3 tests/docker_smoke.py

@@ -2,7 +2,7 @@
 
 ## Đã có mã nguồn hoạt động
 
-Frontend tiếng Việt nối API thật; backend SQLite; owner/session/CSRF; credential mã hóa; OAuth cho agent; Composite MCP và policy từng tool; audit; 6 connector tích hợp; remote MCP HTTP; bộ cài Linux VPS/tunnel, tạo owner, systemd và công cụ quản trị.
+Frontend tiếng Việt nối API thật; backend SQLite; owner/session/CSRF; credential mã hóa; OAuth cho agent; Composite MCP và policy từng tool; audit; 6 connector tích hợp; remote MCP HTTP; bộ cài Linux VPS/tunnel, tạo owner, Docker Compose và công cụ quản trị.
 
 ## Đã kiểm tra trong môi trường phát triển
 
@@ -19,6 +19,8 @@ Frontend tiếng Việt nối API thật; backend SQLite; owner/session/CSRF; cr
 - Không có systemd VM/VPS Linux chuyên dụng và domain/token Cloudflare của người dùng: chưa chạy bộ cài xuyên suốt trên hạ tầng thật, chưa xác minh cấp chứng chỉ/tunnel thật.
 - Không có OAuth app và credential dịch vụ của người dùng: chưa đăng nhập tài khoản thật của Google/GitHub/Slack/Telegram/Discord/Figma. Mã gọi API đã có; cần acceptance bằng tài khoản thực.
 - Chưa kiểm tra trình duyệt trực quan cho frontend đã nối backend.
+- Luồng Docker có bài CI chạy container/Caddy TLS thật, persistence và backup; xem kết quả PR #2 trước khi kết luận đạt.
+- Cài Docker mới bằng package manager, SELinux Fedora và chuyển đổi từ bản systemd cũ chưa được nghiệm thu trên VM riêng.
 - CI GitHub: xem workflow Gen-hub Linux checks trên commit/PR hiện tại; không suy ra đã xanh từ trạng thái local.
 
 Bản này là implementation đầu tiên để kiểm thử cài đặt thực tế, chưa gọi là bản production đã nghiệm thu. Những thiếu hụt chức năng có chủ ý được liệt kê trong SPEC.md; không dùng dữ liệu mẫu để che API chưa có.

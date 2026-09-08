@@ -27,7 +27,8 @@ def main():
         conf = root / 'config'; conf.mkdir()
         data = root / 'gen-hub'; data.mkdir(mode=0o700)
         state = {'mode': 'vps', 'domain': 'localhost:18443', 'revision': 'ci',
-                 'uid': os.getuid(), 'gid': os.getgid(), 'installation_id': secrets.token_hex(24)}
+                 'uid': 1001, 'gid': 1001, 'installation_id': secrets.token_hex(24)}
+        os.chown(data, state['uid'], state['gid'])
         config = rt.manifest(state, SOURCE, conf, data)
         config['services']['caddy']['ports'] = ['127.0.0.1:18443:443']
         # Only the issuer/listen address differ from public VPS config; never disable TLS verification.
