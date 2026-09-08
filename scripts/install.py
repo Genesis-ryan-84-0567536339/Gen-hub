@@ -145,7 +145,7 @@ def check_ports(state, legacy):
             info = json.loads(run([*DOCKER, 'inspect', cid], capture_output=True).stdout)[0]
             for bindings in (info.get('NetworkSettings', {}).get('Ports') or {}).values():
                 own.update(int(b['HostPort']) for b in bindings or [])
-    if 'gen-hub-caddy' in legacy:
+    if 'gen-hub-caddy' in legacy and subprocess.run(['systemctl', 'is-active', '--quiet', 'gen-hub-caddy']).returncode == 0:
         own.update([80, 443])
     for port in [80, 443]:
         if port in own:
@@ -252,7 +252,10 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None):
             raise RuntimeError('Owner chưa sẵn sàng qua domain.')
     except BaseException:
         if restore_tunnel:
-            restore_tunnel()
+            try:
+                restore_tunnel()
+            except Exception:
+                print('Không khôi phục được route Cloudflare; cần kiểm tra token/kết nối. Tiếp tục khôi phục runtime local.', file=sys.stderr)
         if previous:
             atomic(path, previous)
             if previous_caddy:
@@ -270,7 +273,7 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None):
                 atomic(old_wrapper, wrapper_text, 0o755)
             print('Đã khôi phục runtime trước. Backup: ' + str(target))
         raise
-    if previous and old.get('revision') != release.name:
+    if previous and old.get('completed') and old.get('revision') and old['revision'] != release.name:
         atomic(CONF / 'previous-compose.json', previous)
         atomic(CONF / 'previous-Caddyfile', previous_caddy or '', 0o644)
         atomic(CONF / 'previous-install.json', json.dumps(old, indent=2))
