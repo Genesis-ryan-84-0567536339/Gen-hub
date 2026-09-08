@@ -2,7 +2,7 @@
 
 ## Runtime
 
-`install.sh` và Python TUI chạy trên host. Docker Engine là service systemd duy nhất cần cho bản cài mới. Compose project `gen-hub` quản lý `hub`, `caddy` và (máy cá nhân) `tunnel`; tự chạy lại khi Docker/máy khởi động. CLI chỉ dùng Docker socket local `/var/run/docker.sock`, không dùng remote context của người quản trị.
+`install.sh` và Python TUI chạy trên host. Systemd quản lý Docker Engine và timer cập nhật `gen-hub-update.timer`; các dịch vụ ứng dụng chạy trong Compose. Compose project `gen-hub` quản lý `hub`, `caddy` và (máy cá nhân) `tunnel`; tự chạy lại khi Docker/máy khởi động. CLI chỉ dùng Docker socket local `/var/run/docker.sock`, không dùng remote context của người quản trị.
 
 - VPS: Internet → Caddy 80/443 HTTPS → `hub:3080`. Backend không publish port. Cần mở firewall OS/nhà cung cấp; không tự sửa firewall. Docker published ports có quy tắc riêng, phải kiểm tra cả firewall nhà cung cấp.
 - Máy cá nhân: Cloudflare HTTPS → cloudflared → `caddy:8080` HTTP nội bộ → `hub:3080`. Không publish bất kỳ host port nào. Cần outbound DNS/HTTPS và Cloudflare Tunnel 7844 TCP/UDP.
@@ -31,11 +31,13 @@ sudo gen-hub doctor
 sudo gen-hub restart
 ```
 
-`doctor`: SQLite đọc/ghi + mã hóa, Caddy nội bộ và Cloudflare readiness khi có tunnel, HTTPS hợp lệ trả đúng installation ID, trạng thái owner. Không tự tạo owner hoặc đổi quyền. Healthcheck container kiểm tra HTTP/installation ID; Docker restart policy khởi động lại process đã thoát, không tự restart một process còn chạy nhưng unhealthy.
+`doctor`: SQLite đọc/ghi + mã hóa, Caddy nội bộ và Cloudflare readiness khi có tunnel, HTTPS hợp lệ trả đúng installation ID, trạng thái owner. Không tự tạo owner hoặc đổi quyền tool. `doctor --fix` sửa quyền file/cấu hình chuẩn, dựng lại container và kiểm tra; `--fix --cloudflare` yêu cầu API token nhập ẩn để cấp lại token/route đúng installation. Thiếu khóa hoặc database lỗi thì dừng, yêu cầu khôi phục backup. Healthcheck container kiểm tra HTTP/installation ID; Docker restart policy khởi động lại process đã thoát, không tự restart một process còn chạy nhưng unhealthy.
 
 Cài lỗi: chạy lại cùng lệnh cài. State giữ bước/lỗi gần nhất. Nếu DNS có AAAA cũ trỏ sai, sửa cả A/AAAA; VPS cần DNS-only khi kiểm tra. Không gửi master.key, database, token hoặc backup lên issue/chat. Đổi domain/mode chưa có wizard; cần thao tác của quản trị viên với backup và callback OAuth tương ứng.
 
 ## Cập nhật / rollback
+
+Mặc định bật timer mỗi giờ (+0–10 phút ngẫu nhiên, chạy bù sau khi bật máy). `sudo gen-hub auto-update on|off` điều khiển timer. Chỉ cập nhật đúng SHA trên main có push CI hoàn tất/thành công. Bản đã update lỗi bị bỏ qua tự động cho đến khi có commit mới hoặc update thủ công. Log: `sudo journalctl -u gen-hub-update -n 100 --no-pager`. Rollback thủ công tạm tắt auto-update để tránh lập tức nâng lại.
 
 ```bash
 sudo gen-hub update
@@ -60,7 +62,7 @@ Khôi phục trên cùng revision: dừng container Hub bằng `sudo docker comp
 
 ## Gỡ
 
-`sudo gen-hub uninstall` hỏi xác nhận, chạy Compose down để gỡ container/network của Gen-hub. Giữ data, key, config, source, images, backup, Docker và Cloudflare tunnel/DNS. Không dùng `down -v` hoặc `system prune`; không gỡ container ứng dụng khác. Dữ liệu/tài nguyên Cloudflare chỉ xóa thủ công sau khi kiểm tra đúng installation.
+`sudo gen-hub uninstall` hỏi xác nhận, chạy Compose down để gỡ container/network của Gen-hub. Giữ data, key, config, source, images, backup, Docker và Cloudflare tunnel/DNS. Không dùng `down -v` hoặc `system prune`; không gỡ container ứng dụng khác. `sudo gen-hub uninstall --purge` xóa luôn data/key/cert/config/source/backup nội bộ, yêu cầu nhập DELETE kèm domain. Thêm `--cloudflare` để xóa tài nguyên Cloudflare đúng installation sau khi nhập API token; kiểm tra tên tunnel và các hostname/DNS trước khi xóa. Giữ Docker và image nền dùng chung. Backup cần giữ phải nằm ngoài thư mục Gen-hub. Lệnh gỡ tắt timer tự cập nhật.
 
 ## Nguồn thiết kế
 

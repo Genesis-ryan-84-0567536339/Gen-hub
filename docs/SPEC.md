@@ -12,7 +12,8 @@ Chốt với Ryan ngày 2026-09-08. Đích: Hub tự sở hữu; repo Gen-hub l�
 6. Tạo owner và password ngay trên TUI. Không có API bootstrap owner công khai.
 7. In URL giao diện và MCP tổng. Agent phải xác thực riêng với Hub.
 8. Web onboarding: add MCP → xác thực dịch vụ → công bố tool → duyệt/cấp quyền agent → gọi và xem log.
-9. UI tiếng Việt theo hướng thiết kế được duyệt; mọi số liệu từ backend, không seed dữ liệu giả.
+9. Tự cập nhật từ main sau khi CI đạt, backup/health gates/khôi phục runtime khi lỗi; có bật/tắt timer. Doctor có chế độ tự sửa an toàn; gỡ sạch có xác nhận domain, tùy chọn xóa đúng tài nguyên Cloudflare.
+10. UI tiếng Việt theo hướng thiết kế được duyệt; mọi số liệu từ backend, không seed dữ liệu giả.
 
 ## Bất biến
 

@@ -27,23 +27,32 @@ def main():
         compose(path, 'ps', '--all'); return
     if command == 'logs':
         compose(path, 'logs', '--tail', '100'); return
-    if command == 'doctor':
+    if command == 'doctor' and '--fix' not in sys.argv:
         from install import public_test
-        verify_local(path, state); public_test(state)
-        print('Owner: ' + admin(path, 'owner-exists').stdout.strip()); return
-    if command not in ['restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall']:
-        print('Lệnh: status | logs | doctor | restart | reset-password | backup [tệp.tar.gz] | update | rollback | uninstall'); return
-    # update delegates to the installer's lock. Other mutations must not race an install.
+        from lifecycle import check_storage
+        check_storage(state); verify_local(path, state); public_test(state)
+        if admin(path, 'owner-exists').stdout.strip() != 'yes':
+            raise RuntimeError('Thiếu owner; cần hoàn tất TUI.')
+        print('✓ Owner sẵn sàng.'); return
+    if command not in ['restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update']:
+        print('Lệnh: status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | auto-update on/off | rollback | uninstall [--purge] [--cloudflare]'); return
     if command == 'update':
-        with tempfile.TemporaryDirectory() as temp:
-            installer = pathlib.Path(temp) / 'install.sh'
-            with urllib.request.urlopen('https://raw.githubusercontent.com/Genesis-ryan-84-0567536339/Gen-hub/main/install.sh', timeout=30) as response:
-                installer.write_bytes(response.read())
-            run(['bash', str(installer)])
-        return
+        from lifecycle import update
+        update(state, automatic='--auto' in sys.argv); return
     import fcntl
     lock = open(CONF / 'install.lock', 'w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    if command == 'auto-update':
+        from lifecycle import configure_updates
+        choice = sys.argv[2] if len(sys.argv) > 2 else ''
+        if choice not in ['on', 'off']:
+            raise RuntimeError('Dùng sudo gen-hub auto-update on hoặc off.')
+        state['auto_update'] = choice == 'on'
+        configure_updates(state)
+        atomic(CONF / 'install.json', json.dumps(state, indent=2)); return
+    if command == 'doctor':
+        from lifecycle import repair
+        repair(state, cloudflare='--cloudflare' in sys.argv); return
     if command == 'restart':
         compose(path, 'restart')
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
@@ -70,6 +79,7 @@ def main():
         current = path.read_text()
         current_caddy = (CONF / 'Caddyfile').read_text()
         previous_state = json.loads((CONF / 'previous-install.json').read_text())
+        previous_state['auto_update'] = False
         # Only schema v1 is currently supported. Never silently downgrade a future database schema.
         import sqlite3
         with sqlite3.connect(f'file:{DATA}/hub.db?mode=ro', uri=True) as db:
@@ -92,10 +102,23 @@ def main():
         link = ROOT / 'current.new'
         link.unlink(missing_ok=True); link.symlink_to(release); os.replace(link, ROOT / 'current')
         atomic('/usr/local/bin/gen-hub', f'#!/usr/bin/env bash\nexec python3 {release}/scripts/manage.py "$@"\n', 0o755)
-        print('✓ Đã quay lại runtime trước và kiểm tra HTTPS.'); return
+        from lifecycle import configure_updates
+        configure_updates(previous_state)
+        print('✓ Đã quay lại runtime trước và kiểm tra HTTPS. Auto-update tạm tắt để giữ bản này.'); return
     if command == 'uninstall':
+        from lifecycle import purge, stop_updates
+        if '--purge' in sys.argv:
+            print('Sẽ xóa vĩnh viễn Gen-hub, database, credentials, chứng chỉ và backup nội bộ trên máy.')
+            if '--cloudflare' in sys.argv:
+                print('Đồng thời xóa tunnel và DNS Cloudflare cho ' + state['domain'] + '.')
+            if input('Nhập DELETE ' + state['domain'] + ' để xác nhận: ') != 'DELETE ' + state['domain']:
+                print('Đã hủy gỡ sạch.'); return
+            purge(state, remove_cloudflare='--cloudflare' in sys.argv); return
+        if '--cloudflare' in sys.argv:
+            raise RuntimeError('--cloudflare cần đi cùng uninstall --purge.')
         if input('Gỡ container Gen-hub, giữ dữ liệu/cấu hình/backup? Nhập UNINSTALL: ') != 'UNINSTALL':
             return
+        stop_updates()
         compose(path, 'down', '--remove-orphans')  # Never --volumes or system prune.
         state.update(completed=False, step='Đã gỡ container; giữ dữ liệu để cài lại')
         atomic(CONF / 'install.json', json.dumps(state, indent=2))

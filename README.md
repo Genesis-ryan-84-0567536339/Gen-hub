@@ -47,21 +47,50 @@ Bộ cài không ghi đè DNS đang trỏ nơi khác, không chiếm dịch vụ
 - MCP HTTP tùy chỉnh: bearer token hoặc không xác thực; owner chủ động cho phép mạng riêng nếu cần. Không tự chạy lệnh shell của MCP từ nguồn chưa kiểm soát.
 - Giao diện tiếng Việt, dữ liệu thật, onboarding, cấp quyền, kiểm tra policy, log và đổi mật khẩu owner.
 
-## Vận hành
+## Tự cập nhật từ repo Gen-hub
+
+**Mặc định bật sau khi cài thành công.** Máy kiểm tra `Gen-hub/main` mỗi giờ, lệch ngẫu nhiên tối đa 10 phút. Chỉ cập nhật commit có workflow CI trên `main` đã thành công; tải source theo đúng SHA và dùng image digest trong repo. Không tự cập nhật image `latest` riêng lẻ.
+
+Trước cập nhật: backup dữ liệu/khóa/cấu hình → tạo runtime mới → kiểm tra container, SQLite và HTTPS → xác nhận thành công. Nếu kiểm tra lỗi, khôi phục runtime trước. Bản cập nhật đã thất bại không bị tự thử đi thử lại; chờ commit mới hoặc bạn chủ động chạy update.
 
 ```bash
-sudo gen-hub status
-sudo gen-hub doctor
-sudo gen-hub logs
-sudo gen-hub restart
-sudo gen-hub backup /root/gen-hub-backup.tar.gz
-sudo gen-hub reset-password
-sudo gen-hub update
-sudo gen-hub rollback
-sudo gen-hub uninstall
+sudo gen-hub update                 # Kiểm tra và cập nhật ngay
+sudo gen-hub auto-update off        # Tạm dừng cập nhật tự động
+sudo gen-hub auto-update on         # Bật lại
+sudo systemctl list-timers gen-hub-update.timer
+sudo journalctl -u gen-hub-update -n 100 --no-pager
 ```
 
-Dữ liệu: `/var/lib/gen-hub`. Cấu hình và trạng thái cài: `/etc/gen-hub`. Mã nguồn theo revision: `/opt/gen-hub/releases`. Dữ liệu nằm trong bind volume, giữ nguyên khi tạo lại container. Tự backup trước cập nhật. Gỡ container mặc định giữ dữ liệu/cấu hình/source/backup; tunnel và DNS Cloudflare được giữ để khôi phục hoặc xóa thủ công. Chi tiết: [OPERATIONS.md](docs/OPERATIONS.md).
+Cần Internet tới GitHub và registry. Máy cá nhân tắt máy thì không chạy cập nhật; timer kiểm tra bù khi bật lại. Quá trình tạo lại container có gián đoạn ngắn, không cam kết zero-downtime. `sudo gen-hub rollback` quay về runtime trước và tạm tắt auto-update để giữ bản bạn chọn. Rollback không tự hạ database.
+
+## Doctor: kiểm tra và tự sửa
+
+```bash
+sudo gen-hub doctor                 # Chẩn đoán, không sửa cấu hình
+sudo gen-hub doctor --fix           # Sửa quyền file/cấu hình, tạo lại container và kiểm tra
+sudo gen-hub doctor --fix --cloudflare  # Thêm cấp lại token/route tunnel bằng API token nhập ẩn
+sudo gen-hub status
+sudo gen-hub logs
+```
+
+`--fix` giữ database, khóa mã hóa và owner; lưu bản cấu hình cũ trước khi dựng lại cấu hình chuẩn của bản đang cài. Nó kiểm Docker, quyền file, Caddy, container health, SQLite, tunnel và HTTPS đúng installation. Không tự ghi đè DNS thuộc ứng dụng khác, đổi firewall hay đoán credential. Mất `master.key` hoặc database hỏng thì **dừng và yêu cầu khôi phục backup**, không tạo khóa/database thay thế. Nếu source của revision bị mất, chạy lại lệnh cài.
+
+## Sao lưu và gỡ cài đặt
+
+```bash
+sudo gen-hub backup /root/gen-hub-backup.tar.gz
+sudo gen-hub uninstall              # Gỡ container, giữ dữ liệu để cài lại
+sudo gen-hub uninstall --purge      # Gỡ sạch Gen-hub và dữ liệu trên máy
+sudo gen-hub uninstall --purge --cloudflare  # Gỡ sạch máy và xóa thêm tunnel/DNS của bản cài
+```
+
+**`--purge` xóa vĩnh viễn** container/network Gen-hub, database, credentials, master.key, chứng chỉ Caddy, cấu hình, source và backup nằm trong `/opt/gen-hub/backups`. Chương trình yêu cầu nhập `DELETE <domain>` trước khi thực hiện. Sao lưu ra ngoài thư mục Gen-hub nếu muốn giữ khả năng khôi phục.
+
+`--cloudflare` cần API token nhập ẩn với quyền Tunnel Edit và DNS Edit; chỉ xóa tunnel có tên/ID đúng installation và DNS vẫn trỏ tới tunnel đó. Nếu tài nguyên đã được dùng cho hostname khác hoặc API lỗi, dừng để kiểm tra; không báo đã xóa sạch Cloudflare khi chưa thành công.
+
+Docker Engine, image nền dùng chung, ứng dụng khác và backup bạn lưu nơi khác được giữ. Tài khoản Linux `genhub` chỉ gỡ khi bộ cài ghi nhận đã tạo tài khoản đó và UID/home vẫn đúng; không gỡ tài khoản có sẵn của quản trị viên. `uninstall` và `--purge` đều tắt lịch tự cập nhật trước khi gỡ.
+
+Dữ liệu: `/var/lib/gen-hub`. Cấu hình: `/etc/gen-hub`. Source: `/opt/gen-hub/releases/<SHA>`. Dữ liệu dùng bind volume, tồn tại qua thay container. Chi tiết khôi phục và xử lý lỗi: [OPERATIONS.md](docs/OPERATIONS.md).
 
 ## Phát triển và kiểm thử
 

@@ -136,15 +136,11 @@ def check_ports(state, legacy):
     if state['mode'] != 'vps':
         return  # No published host ports at all in personal mode.
     own = set()
-    if (CONF / 'compose.json').exists():
-        config = json.loads((CONF / 'compose.json').read_text())
-        if config.get('x-gen-hub', {}).get('installation_id') != state['installation_id']:
-            raise RuntimeError('Compose hiện có thuộc installation khác.')
-        ids = compose(CONF / 'compose.json', 'ps', '-q', 'caddy', capture_output=True).stdout.split()
-        for cid in ids:
-            info = json.loads(run([*DOCKER, 'inspect', cid], capture_output=True).stdout)[0]
+    for cid in ids:
+        info = json.loads(run([*DOCKER, 'inspect', cid], capture_output=True).stdout)[0]
+        if info.get('Config', {}).get('Labels', {}).get('com.docker.compose.service') == 'caddy':
             for bindings in (info.get('NetworkSettings', {}).get('Ports') or {}).values():
-                own.update(int(b['HostPort']) for b in bindings or [])
+                own.update(int(binding['HostPort']) for binding in bindings or [])
     if 'gen-hub-caddy' in legacy and subprocess.run(['systemctl', 'is-active', '--quiet', 'gen-hub-caddy']).returncode == 0:
         own.update([80, 443])
     for port in [80, 443]:
@@ -180,10 +176,12 @@ def prepare_images(path):
     run([*DOCKER, 'run', '--rm', '--network', 'none', '-v', mount, config['services']['caddy']['image'], 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile'])
 
 
-def ensure_owner(path):
+def ensure_owner(path, unattended=False):
     if admin(path, 'owner-exists').stdout.strip() == 'yes':
         print('✓ Giữ nguyên tài khoản owner đã có.')
         return
+    if unattended:
+        raise RuntimeError('Tự cập nhật không tạo owner. Hoàn tất TUI trước.')
     while True:
         username = ask('Tên đăng nhập owner (3–80 chữ/số, _, ., @, -)')
         if 3 <= len(username) <= 80 and all(c.isalnum() or c in '_.@-' for c in username):
@@ -214,7 +212,7 @@ def legacy_backup(target):
             archive.add(CONF, arcname='config', filter=lambda info: None if info.name.endswith('.lock') else info)
 
 
-def activate(state, old, release, candidate, save, legacy, restore_tunnel=None):
+def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, unattended=False):
     path = CONF / 'compose.json'
     previous = path.read_text() if path.exists() else None
     previous_caddy = (CONF / 'Caddyfile').read_text() if (CONF / 'Caddyfile').exists() else None
@@ -245,7 +243,7 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None):
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--remove-orphans', '--no-build', '--force-recreate')
         checkpoint(state, save, 'Kiểm tra container, SQLite và kết nối nội bộ', lambda: verify_local(path, state))
         checkpoint(state, save, 'Kiểm tra HTTPS qua domain', lambda: public_test(state))
-        checkpoint(state, save, 'Tạo hoặc xác minh owner', lambda: ensure_owner(path))
+        checkpoint(state, save, 'Tạo hoặc xác minh owner', lambda: ensure_owner(path, unattended))
         # Ensure the owner is visible through the public route, not merely in the CLI process.
         status = json.loads(fetch('https://' + state['domain'] + '/healthz'))
         if not status.get('initialized') or status.get('installationId') != state['installation_id']:
@@ -291,6 +289,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', required=True)
     parser.add_argument('--revision', required=True)
+    parser.add_argument('--auto', action='store_true')
     args = parser.parse_args()
     if os.geteuid() != 0:
         raise RuntimeError('Chạy bộ cài bằng sudo.')
@@ -309,6 +308,15 @@ def main():
     path = CONF / 'install.json'
     state = json.loads(path.read_text()) if path.exists() else {'installation_id': secrets.token_hex(24)}
     old = copy.deepcopy(state)
+    if args.auto:
+        if not state.get('completed') or state.get('engine') != 'compose' or not state.get('auto_update', True):
+            raise RuntimeError('Tự cập nhật chỉ chạy trên bản Compose đã cài hoàn tất và đang bật auto-update.')
+        if args.revision == state.get('revision'):
+            print('Đang dùng đúng revision.'); return
+        if state.get('mode') == 'personal' and (not (CONF / 'tunnel.token').exists() or not (CONF / 'tunnel.token').stat().st_size):
+            raise RuntimeError('Thiếu token; chạy doctor --fix --cloudflare trước.')
+        from lifecycle import check_storage
+        check_storage(state)
     def save():
         atomic(path, json.dumps(state, indent=2))
     try:
@@ -332,7 +340,11 @@ def main():
                 if not ipaddress.ip_address(address).is_global:
                     raise RuntimeError('VPS cần IP public hợp lệ.')
                 state['ip'] = address; save()
-            checkpoint(state, save, 'Kiểm tra DNS (cả A và AAAA)', lambda: wait_vps_dns(state))
+            if args.auto:
+                if not check_dns(state['domain'], state['ip']):
+                    raise RuntimeError('DNS A/AAAA không còn khớp IP cài đặt; không tự sửa DNS.')
+            else:
+                checkpoint(state, save, 'Kiểm tra DNS (cả A và AAAA)', lambda: wait_vps_dns(state))
         checkpoint(state, save, 'Chuẩn bị và kiểm tra Docker', ensure_docker)
         legacy = legacy_services(state)
         checkpoint(state, save, 'Kiểm tra cổng không bị chiếm', lambda: check_ports(state, legacy))
@@ -341,6 +353,7 @@ def main():
         except KeyError:
             run(['useradd', '--system', '--home-dir', str(DATA), '--shell', '/usr/sbin/nologin', 'genhub'])
             user = pwd.getpwnam('genhub')
+            state['created_service_user'] = True
         state.update(uid=user.pw_uid, gid=user.pw_gid)
         DATA.mkdir(exist_ok=True, mode=0o700); os.chown(DATA, user.pw_uid, user.pw_gid)
         for name in ['gen-hub-caddy', 'gen-hub-caddy-config']:
@@ -368,7 +381,12 @@ def main():
             os.chown(CONF / 'tunnel.token', state['uid'], state['gid'])
             if shutil.which('selinuxenabled') and subprocess.run(['selinuxenabled']).returncode == 0:
                 run(['chcon', '-t', 'container_file_t', str(CONF / 'tunnel.token')])
-        activate(state, old, release, candidate, save, legacy, restore_tunnel)
+        activate(state, old, release, candidate, save, legacy, restore_tunnel, args.auto)
+        state.setdefault('auto_update', True)
+        state['failed_update_revision'] = None
+        from lifecycle import configure_updates
+        configure_updates(state)
+        save()
         print('\n✓ Gen-hub đã sẵn sàng.\nĐăng nhập: https://' + state['domain'] + '\nMCP tổng: https://' + state['domain'] + '/mcp\nKiểm tra lại: sudo gen-hub doctor')
     except Exception as error:
         state['last_error'] = 'Lệnh hệ thống thất bại' if isinstance(error, subprocess.CalledProcessError) else str(error)
