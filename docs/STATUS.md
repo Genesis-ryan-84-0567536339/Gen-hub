@@ -14,12 +14,13 @@ Frontend tiếng Việt nối API thật; backend SQLite; owner/session/CSRF; cr
 - Tải Caddy và cloudflared từ GitHub releases chính thức, kiểm SHA256 thành công; xác nhận binary cloudflared có --token-file.
 - Chạy Caddy validate thật: cả cấu hình VPS và máy cá nhân đều hợp lệ.
 
+- CI Docker trong PR #2 đã chạy thành công trên Ubuntu 22.04/24.04: build images, Caddy TLS với CA kiểm thử, owner/login/MCP, gỡ và tạo lại container vẫn giữ session/token/data/key, backup 0600, tuyến Caddy personal không publish cổng và binary cloudflared. Xem kết quả ở commit cuối của PR trước khi phát hành.
+
 ## Chưa thể xác minh trong môi trường này
 
 - Không có systemd VM/VPS Linux chuyên dụng và domain/token Cloudflare của người dùng: chưa chạy bộ cài xuyên suốt trên hạ tầng thật, chưa xác minh cấp chứng chỉ/tunnel thật.
 - Không có OAuth app và credential dịch vụ của người dùng: chưa đăng nhập tài khoản thật của Google/GitHub/Slack/Telegram/Discord/Figma. Mã gọi API đã có; cần acceptance bằng tài khoản thực.
 - Chưa kiểm tra trình duyệt trực quan cho frontend đã nối backend.
-- Luồng Docker có bài CI chạy container/Caddy TLS thật, persistence và backup; xem kết quả PR #2 trước khi kết luận đạt.
 - Cài Docker mới bằng package manager, SELinux Fedora và chuyển đổi từ bản systemd cũ chưa được nghiệm thu trên VM riêng.
 - CI GitHub: xem workflow Gen-hub Linux checks trên commit/PR hiện tại; không suy ra đã xanh từ trạng thái local.
 

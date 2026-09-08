@@ -128,6 +128,11 @@ def legacy_services(state):
 
 
 def check_ports(state, legacy):
+    ids = run([*DOCKER, 'ps', '-aq', '--filter', 'label=com.docker.compose.project=gen-hub'], capture_output=True).stdout.split()
+    for cid in ids:
+        info = json.loads(run([*DOCKER, 'inspect', cid], capture_output=True).stdout)[0]
+        if info.get('Config', {}).get('Labels', {}).get('io.gen-hub.installation-id') != state['installation_id']:
+            raise RuntimeError('Compose project gen-hub đã được installation khác sử dụng.')
     if state['mode'] != 'vps':
         return  # No published host ports at all in personal mode.
     own = set()
@@ -336,7 +341,9 @@ def main():
         state.update(uid=user.pw_uid, gid=user.pw_gid)
         DATA.mkdir(exist_ok=True, mode=0o700); os.chown(DATA, user.pw_uid, user.pw_gid)
         for name in ['gen-hub-caddy', 'gen-hub-caddy-config']:
-            (DATA.parent / name).mkdir(exist_ok=True, mode=0o700)
+            directory = DATA.parent / name
+            directory.mkdir(exist_ok=True, mode=0o700)
+            os.chown(directory, user.pw_uid, user.pw_gid)
         release = copy_release(args.source, args.revision)
         candidate_state = {**state, 'revision': args.revision}
         staging = CONF / 'candidate'

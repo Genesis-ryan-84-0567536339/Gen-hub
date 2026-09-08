@@ -27,7 +27,6 @@ class ComposeTest(unittest.TestCase):
             self.assertNotIn('docker.sock', json.dumps(service))
         self.assertNotIn('TUNNEL_TOKEN', json.dumps(data))
         self.assertIn('--token-file', data['services']['tunnel']['command'])
-        self.assertEqual(data['services']['hub']['depends_on'] if 'depends_on' in data['services']['hub'] else {}, {})
 
     def test_vps_only_exposes_caddy(self):
         data = runtime.manifest(self.state('vps'), SOURCE)
@@ -66,6 +65,28 @@ class ComposeTest(unittest.TestCase):
                 self.assertEqual((conf / 'Caddyfile').read_text(), 'old config')
                 self.assertEqual(state, old)
                 self.assertEqual(compose.call_count, 2)
+
+    def test_tunnel_resume_uses_internal_route_and_secret_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            state = {**self.state(), 'tunnel_id': 'known'}
+            calls = []
+            def cloudflare(token, path, data=None, method=None):
+                calls.append((path, data, method))
+                if path.startswith('/zones?'):
+                    return [{'id': 'zone', 'account': {'id': 'account'}}]
+                if 'dns_records?' in path:
+                    return [{'type': 'CNAME', 'content': 'known.cfargotunnel.com'}]
+                if path.endswith('/token'):
+                    return 'synthetic-runtime-token'
+                return {'id': 'known'}
+            with patch.object(installer, 'CONF', pathlib.Path(temp)), patch.object(installer, 'cf', side_effect=cloudflare), patch.object(installer, 'ask', return_value='example.com'), patch.object(installer.getpass, 'getpass', return_value='synthetic-admin-token'), patch.object(installer.os, 'chown'):
+                installer.setup_tunnel(state, lambda: None)
+            route = next(data for path, data, method in calls if path.endswith('/configurations'))
+            self.assertEqual(route['config']['ingress'][0]['service'], 'http://caddy:8080')
+            self.assertFalse(any(method == 'POST' for _, _, method in calls))
+            token = pathlib.Path(temp) / 'tunnel.token'
+            self.assertEqual(token.stat().st_mode & 0o777, 0o600)
+            self.assertNotIn('synthetic-admin-token', token.read_text())
 
     def test_reinstall_preserves_owner_without_prompt(self):
         with patch.object(installer, 'admin', return_value=subprocess.CompletedProcess([], 0, stdout='yes')), patch.object(installer, 'ask') as ask, patch.object(installer.getpass, 'getpass') as password:

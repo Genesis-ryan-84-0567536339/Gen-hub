@@ -29,6 +29,10 @@ def main():
         state = {'mode': 'vps', 'domain': 'localhost:18443', 'revision': 'ci',
                  'uid': 1001, 'gid': 1001, 'installation_id': secrets.token_hex(24)}
         os.chown(data, state['uid'], state['gid'])
+        for name in ['gen-hub-caddy', 'gen-hub-caddy-config']:
+            directory = data.parent / name
+            directory.mkdir(mode=0o700)
+            os.chown(directory, state['uid'], state['gid'])
         config = rt.manifest(state, SOURCE, conf, data)
         config['services']['caddy']['ports'] = ['127.0.0.1:18443:443']
         # Only the issuer/listen address differ from public VPS config; never disable TLS verification.

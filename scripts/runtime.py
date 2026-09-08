@@ -55,7 +55,7 @@ def manifest(state, release, conf=CONF, data=DATA):
         'restart': 'unless-stopped', 'read_only': True,
         'security_opt': ['no-new-privileges:true'], 'cap_drop': ['ALL'],
         'logging': {'driver': 'json-file', 'options': {'max-size': '10m', 'max-file': '3'}},
-        'networks': ['hub'],
+        'networks': ['hub'], 'labels': {'io.gen-hub.installation-id': state['installation_id']},
     }
     hub = {
         **copy.deepcopy(common), 'image': 'gen-hub:' + state['revision'],
@@ -70,6 +70,7 @@ def manifest(state, release, conf=CONF, data=DATA):
     }
     caddy = {
         **copy.deepcopy(common), 'image': images['caddy'],
+        'user': f"{state['uid']}:{state['gid']}",
         'cap_add': ['NET_BIND_SERVICE'], 'pids_limit': 128, 'mem_limit': '256m',
         'volumes': [f'{conf}/Caddyfile:/etc/caddy/Caddyfile:ro,Z',
                     f'{data.parent}/gen-hub-caddy:/data:Z', f'{data.parent}/gen-hub-caddy-config:/config:Z'],
