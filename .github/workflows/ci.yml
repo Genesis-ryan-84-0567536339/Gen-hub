@@ -22,3 +22,14 @@ jobs:
         run: npm test
       - name: Linux installer and syntax checks
         run: npm run check
+  docker:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Actual Docker, Caddy TLS and persistent data acceptance
+        run: python3 tests/docker_smoke.py
