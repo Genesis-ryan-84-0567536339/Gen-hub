@@ -8,8 +8,8 @@ export const passwordHash=p=>{const salt=randomBytes(16).toString('hex');return 
 export function passwordCheck(p,h){try{const [s,v]=h.split(':');return timingSafeEqual(Buffer.from(v,'hex'),scryptSync(p,s,64,{N:32768,maxmem:64*1024*1024}))}catch{return false}}
 export function openStore(dir){
  mkdirSync(dir,{recursive:true,mode:0o700});chmodSync(dir,0o700);
- const kp=join(dir,'master.key');if(!existsSync(kp))writeFileSync(kp,randomBytes(32),{flag:'wx',mode:0o600});const key=readFileSync(kp);if(key.length!==32)throw Error('Invalid master.key');
- const db=new DatabaseSync(join(dir,'hub.db'));chmodSync(join(dir,'hub.db'),0o600);db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+ const kp=join(dir,'master.key');if(existsSync(join(dir,'hub.db'))&&!existsSync(kp))throw Error('Missing master.key for existing database; restore the original key from backup');if(!existsSync(kp))writeFileSync(kp,randomBytes(32),{flag:'wx',mode:0o600});const key=readFileSync(kp);if(key.length!==32)throw Error('Invalid master.key');
+ const db=new DatabaseSync(join(dir,'hub.db'));if(db.prepare('PRAGMA user_version').get().user_version>1){db.close();throw Error('Unsupported database schema; do not downgrade this database')}chmodSync(join(dir,'hub.db'),0o600);db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(kind,id));
  CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT,created TEXT NOT NULL,actor TEXT NOT NULL,mcp TEXT NOT NULL,tool TEXT NOT NULL,status TEXT NOT NULL,latency INTEGER NOT NULL,payload TEXT NOT NULL);
  PRAGMA user_version=1;`);

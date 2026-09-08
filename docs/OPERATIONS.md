@@ -1,35 +1,72 @@
-# Vận hành Gen-hub Linux
+# Vận hành Gen-hub Docker Compose
 
-## Dịch vụ
+## Runtime
 
-`gen-hub.service` backend loopback 127.0.0.1:3080; `gen-hub-caddy.service` reverse proxy; `gen-hub-tunnel.service` chỉ cho máy cá nhân. Unit tự khởi động theo systemd, tự restart khi lỗi. Source thuộc root; service không sửa source.
+`install.sh` và Python TUI chạy trên host. Systemd quản lý Docker Engine và timer cập nhật `gen-hub-update.timer`; các dịch vụ ứng dụng chạy trong Compose. Compose project `gen-hub` quản lý `hub`, `caddy` và (máy cá nhân) `tunnel`; tự chạy lại khi Docker/máy khởi động. CLI chỉ dùng Docker socket local `/var/run/docker.sock`, không dùng remote context của người quản trị.
 
-VPS: Internet → Caddy 80/443 (HTTPS) → Hub 3080. Cần mở firewall ở OS và nhà cung cấp; bộ cài không tự thay đổi firewall đang có. DNS-only trong bước kiểm tra DNS.
+- VPS: Internet → Caddy 80/443 HTTPS → `hub:3080`. Backend không publish port. Cần mở firewall OS/nhà cung cấp; không tự sửa firewall. Docker published ports có quy tắc riêng, phải kiểm tra cả firewall nhà cung cấp.
+- Máy cá nhân: Cloudflare HTTPS → cloudflared → `caddy:8080` HTTP nội bộ → `hub:3080`. Không publish bất kỳ host port nào. Cần outbound DNS/HTTPS và Cloudflare Tunnel 7844 TCP/UDP.
+- Gen-hub chạy bằng UID/GID tài khoản hệ thống `genhub`, filesystem container chỉ đọc; không mount Docker socket. Docker không được coi là máy ảo bảo mật tuyệt đối.
+- Node/Caddy/cloudflared khóa theo digest trong `deploy/images.json`. Thay runtime bằng cập nhật repo được kiểm CI; không dùng Watchtower/tự kéo latest. Docker Engine cập nhật qua package manager của OS.
 
-Máy cá nhân: Internet HTTPS → Cloudflare → cloudflared → Caddy loopback 8080 → Hub loopback 3080. Không cần mở cổng inbound. Kết nối outbound tới Cloudflare phải hoạt động (thông thường 7844 TCP/UDP theo cấu hình tunnel). Cloudflare terminate HTTPS public; Caddy phía local dùng HTTP loopback để tránh redirect loop.
+## Dữ liệu giữ ngoài container
 
-## Khi cài lỗi
+| Đường dẫn host | Nội dung |
+|---|---|
+| `/var/lib/gen-hub` | SQLite, WAL/SHM, `master.key` |
+| `/var/lib/gen-hub-caddy` | Chứng chỉ và trạng thái Caddy |
+| `/var/lib/gen-hub-caddy-config` | Cấu hình runtime Caddy |
+| `/etc/gen-hub` | Compose JSON, Caddyfile, token tunnel, trạng thái/checkpoint |
+| `/opt/gen-hub/releases/<SHA>` | Mã nguồn chuẩn theo commit |
+| `/opt/gen-hub/backups` | Backup tự động trước cập nhật/rollback |
 
-Chạy lại cùng lệnh cài. State giữ trong `/etc/gen-hub/install.json`; chỉ có thể tạo owner sau khi HTTPS trả đúng installation ID. DNS cần thời gian cập nhật. Nếu hostname đã có bản ghi khác, sửa thủ công hoặc chọn hostname khác trước khi cài tiếp; không tự ghi đè.
+Các bind volume có SELinux label cho Fedora. `tunnel.token` owner genhub, mode 0600 dưới thư mục root-only; Compose secret mount file này vào container. Compose secrets trên một máy không phải kho mã hóa riêng. API token Cloudflare quản trị chỉ giữ trong bộ nhớ khi thiết lập; runtime token không nằm trong môi trường container hoặc repo.
 
-`sudo gen-hub status` và `sudo gen-hub logs` xem dịch vụ. Không gửi `master.key`, database, hub.env hoặc tunnel.token lên issue/chat. Khi cần đổi hostname/mode, sao lưu trước, dừng dịch vụ rồi sửa cấu hình qua người quản trị; bản đầu không có wizard đổi domain.
+## Kiểm tra / khắc phục
 
-## Sao lưu và khôi phục
+```bash
+sudo gen-hub status
+sudo gen-hub logs
+sudo gen-hub doctor
+sudo gen-hub restart
+```
 
-`sudo gen-hub backup /root/backup.tar.gz` dùng SQLite VACUUM INTO tạo snapshot nhất quán, kèm master.key và cấu hình; file mode 0600. Có key mới giải mã được dữ liệu. Bảo quản bản backup như credential.
+`doctor`: SQLite đọc/ghi + mã hóa, Caddy nội bộ và Cloudflare readiness khi có tunnel, HTTPS hợp lệ trả đúng installation ID, trạng thái owner. Không tự tạo owner hoặc đổi quyền tool. `doctor --fix` sửa quyền file/cấu hình chuẩn, dựng lại container và kiểm tra; `--fix --cloudflare` yêu cầu API token nhập ẩn để cấp lại token/route đúng installation. Thiếu khóa hoặc database lỗi thì dừng, yêu cầu khôi phục backup. Healthcheck container kiểm tra HTTP/installation ID; Docker restart policy khởi động lại process đã thoát, không tự restart một process còn chạy nhưng unhealthy.
 
-Khôi phục trên bản cài cùng revision: dừng dịch vụ `sudo systemctl stop gen-hub`; giải nén backup vào thư mục root-only tạm, thay `hub.db` và `master.key` trong `/var/lib/gen-hub`; xóa WAL/SHM cũ sau khi dịch vụ đã dừng; sửa ownership genhub:genhub, mode thư mục 0700 và files 0600; khởi động lại. Không đặt DB mới cạnh WAL cũ. Nếu chuyển máy/domain, cần cấu hình DNS/tunnel/HTTPS và OAuth callback tương ứng.
+Cài lỗi: chạy lại cùng lệnh cài. State giữ bước/lỗi gần nhất. Nếu DNS có AAAA cũ trỏ sai, sửa cả A/AAAA; VPS cần DNS-only khi kiểm tra. Không gửi master.key, database, token hoặc backup lên issue/chat. Đổi domain/mode chưa có wizard; cần thao tác của quản trị viên với backup và callback OAuth tương ứng.
 
-## Cập nhật
+## Cập nhật / rollback
 
-`sudo gen-hub update` tải bootstrap của repo SSOT và hỏi xác nhận. Source được resolve thành commit SHA trước khi tải archive. Phiên bản Node/Caddy/cloudflared tải từ nguồn chính thức và kiểm SHA256. Các binary đã có được giữ; cần kiểm tra cập nhật bảo mật binary riêng khi nâng phiên bản vận hành.
+Mặc định bật timer mỗi giờ (+0–10 phút ngẫu nhiên, chạy bù sau khi bật máy). `sudo gen-hub auto-update on|off` điều khiển timer. Chỉ cập nhật đúng SHA trên main có push CI hoàn tất/thành công. Bản đã update lỗi bị bỏ qua tự động cho đến khi có commit mới hoặc update thủ công. Log: `sudo journalctl -u gen-hub-update -n 100 --no-pager`. Rollback thủ công tạm tắt auto-update để tránh lập tức nâng lại.
 
-`rollback` quay source về revision trước, không tự hạ schema DB. Bản đầu schema v1; khi có migration thay đổi phải đọc release notes trước rollback. Khuyên sao lưu trước cập nhật.
+```bash
+sudo gen-hub update
+sudo gen-hub rollback
+```
+
+Update tải source theo commit SHA, pull image digest, build app, validate Caddy trước khi đổi runtime. Với bản đã có dữ liệu, tự backup nhất quán trước đổi. Tạo lại container, kiểm tra local/HTTPS rồi xác nhận thành công. Nếu kiểm tra thất bại, khôi phục Compose/Caddy/runtime trước; không hạ database. Rollback hiện chỉ cho schema v1 và cần image/source cũ còn được giữ. Không chạy docker prune tự động.
+
+Cài lại sau `uninstall` giữ domain, token, owner và dữ liệu. Chạy lại bản cùng SHA vẫn kiểm tra đầy đủ; không hỏi lại Cloudflare API token nếu đã có cấu hình Compose/token runtime hợp lệ. Tunnel bị xóa hoặc token bị thu hồi cần quản trị viên xử lý trước khi doctor đạt.
+
+Nếu đã cài bản systemd cũ: xác minh đúng unit Gen-hub, chuẩn bị image trước; dừng unit cũ, backup DB/key, giữ nguyên UID/data và chuyển sang Compose. Chỉ disable unit cũ khi kiểm tra thành công. Nếu thất bại, khởi động lại unit cũ và khôi phục route tunnel cũ. Unit/source cũ không bị xóa tự động. Luồng chuyển đổi này cần nghiệm thu riêng trên máy đã cài bản cũ.
+
+## Backup / khôi phục
+
+```bash
+sudo gen-hub backup /root/gen-hub-backup.tar.gz
+```
+
+SQLite `VACUUM INTO` tạo snapshot nhất quán khi Hub đang chạy; lưu cùng master.key và cấu hình trong archive 0600. Backup chứa đủ thông tin giải mã dữ liệu, cần bảo quản như credential. Chứng chỉ Caddy không nằm trong archive DB; giữ thư mục Caddy riêng khi chuyển máy để tránh cấp lại chứng chỉ không cần thiết.
+
+Khôi phục trên cùng revision: dừng container Hub bằng `sudo docker compose -p gen-hub -f /etc/gen-hub/compose.json stop hub`; giải nén archive tin cậy vào thư mục root-only tạm; thay `hub.db` và `master.key` trong `/var/lib/gen-hub`, dọn WAL/SHM cũ chỉ sau khi đã dừng Hub. Đặt owner genhub:genhub, thư mục 0700/file 0600; chạy `sudo gen-hub restart` rồi `sudo gen-hub doctor`. Không đặt database mới cạnh WAL cũ. Khi chuyển máy cần khôi phục cấu hình phù hợp và DNS/tunnel; không tự ghi đè domain của ứng dụng khác.
 
 ## Gỡ
 
-`uninstall` chỉ dừng/gỡ các unit và source của Gen-hub; giữ DB, key, cấu hình và tunnel/DNS. Muốn xóa dữ liệu hoặc Cloudflare resources, kiểm tra đúng installation rồi xóa thủ công. Không ảnh hưởng Caddy/cloudflared của ứng dụng khác.
+`sudo gen-hub uninstall` hỏi xác nhận, chạy Compose down để gỡ container/network của Gen-hub. Giữ data, key, config, source, images, backup, Docker và Cloudflare tunnel/DNS. Không dùng `down -v` hoặc `system prune`; không gỡ container ứng dụng khác. `sudo gen-hub uninstall --purge` xóa luôn data/key/cert/config/source/backup nội bộ, yêu cầu nhập DELETE kèm domain. Thêm `--cloudflare` để xóa tài nguyên Cloudflare đúng installation sau khi nhập API token; kiểm tra tên tunnel và các hostname/DNS trước khi xóa. Giữ Docker và image nền dùng chung. Backup cần giữ phải nằm ngoài thư mục Gen-hub. Lệnh gỡ tắt timer tự cập nhật.
 
-## Phạm vi bảo vệ
+## Nguồn thiết kế
 
-Đổi password vô hiệu hóa session owner. Thu hồi agent vô hiệu hóa token access và refresh. Mã hóa credential không bảo vệ khi attacker có root hoặc đọc được cả master.key và DB. Owner có quyền thêm endpoint mạng riêng; chỉ cấp khi tin tưởng.
+- [Docker Compose startup/health](https://docs.docker.com/compose/how-tos/startup-order/)
+- [Docker packages Ubuntu](https://docs.docker.com/engine/install/ubuntu/) / [Fedora](https://docs.docker.com/engine/install/fedora/)
+- [Caddy Docker Compose](https://caddyserver.com/docs/running#docker-compose)
+- [cloudflared token file](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/configure-tunnels/run-parameters/)

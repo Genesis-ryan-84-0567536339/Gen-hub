@@ -7,8 +7,12 @@
 - `server/connectors.mjs`: provider API adapters, refresh OAuth, remote HTTP MCP session.
 - `server/net.mjs`: outbound request giới hạn thời gian/kích thước, DNS pinning, kiểm tra mạng riêng, không theo redirect.
 - `public/`: frontend vanilla JS/CSS, không build step, không sessionStorage/localStorage cho dữ liệu backend.
-- `scripts/install.py`: TUI Linux, trạng thái resumable, Cloudflare provisioning, Caddy/systemd và tạo owner qua stdin.
-- `scripts/manage.py`: vận hành, sao lưu/reset/update/rollback/gỡ có xác nhận.
+- `scripts/install.py`: TUI Linux, trạng thái resumable, Cloudflare provisioning, Caddy/Compose và tạo owner qua stdin.
+- `scripts/runtime.py`: sinh Compose JSON, Caddyfile, gọi Docker local, kiểm tra storage/tunnel và backup.
+- `scripts/docker_setup.py`: cài Docker từ package repository chính thức nếu thiếu.
+- `Dockerfile` / `deploy/images.json`: app image tối thiểu và digest runtime chuẩn.
+- `scripts/lifecycle.py`: cập nhật theo CI/SHA, systemd timer, doctor repair và gỡ sạch theo installation.
+- `scripts/manage.py`: status/logs/doctor, sao lưu/reset/update/rollback/gỡ.
 
 Server stateless MCP dùng POST JSON; GET/DELETE phía downstream trả 405 theo transport cho phép. Không thông báo tools/list_changed; client lấy lại tools/list để thấy thay đổi. Phía server luôn kiểm policy trên tools/call, nên cache danh sách của client không vượt quyền.
 

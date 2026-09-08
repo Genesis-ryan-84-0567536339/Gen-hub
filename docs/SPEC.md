@@ -5,14 +5,15 @@ Chốt với Ryan ngày 2026-09-08. Đích: Hub tự sở hữu; repo Gen-hub l�
 ## Luồng chấp nhận
 
 1. Một lệnh từ terminal, mọi nhập liệu tương tác qua TTY kể cả bootstrap được tải bằng curl.
-2. Quét OS/kiến trúc, gợi ý môi trường; người dùng xác nhận VPS hay máy cá nhân.
+2. Runtime chuẩn: Docker Compose, tự cài Docker khi thiếu. Quét OS/kiến trúc, gợi ý môi trường; người dùng xác nhận VPS hay máy cá nhân.
 3. VPS: domain + IP public; hướng dẫn DNS cụ thể, chờ xác nhận thủ công và test; DNS chưa đúng dừng bước.
 4. Máy cá nhân: domain gốc + hostname + token Cloudflare đủ quyền; tạo/reuse tunnel riêng của installation; tạo route/DNS; không ghi đè tài nguyên không thuộc installation.
 5. Caddy/HTTPS và kết nối public cần trả đúng installation ID. Chỉ mở health check khi chưa có owner.
 6. Tạo owner và password ngay trên TUI. Không có API bootstrap owner công khai.
 7. In URL giao diện và MCP tổng. Agent phải xác thực riêng với Hub.
 8. Web onboarding: add MCP → xác thực dịch vụ → công bố tool → duyệt/cấp quyền agent → gọi và xem log.
-9. UI tiếng Việt theo hướng thiết kế được duyệt; mọi số liệu từ backend, không seed dữ liệu giả.
+9. Tự cập nhật từ main sau khi CI đạt, backup/health gates/khôi phục runtime khi lỗi; có bật/tắt timer. Doctor có chế độ tự sửa an toàn; gỡ sạch có xác nhận domain, tùy chọn xóa đúng tài nguyên Cloudflare.
+10. UI tiếng Việt theo hướng thiết kế được duyệt; mọi số liệu từ backend, không seed dữ liệu giả.
 
 ## Bất biến
 
@@ -23,10 +24,12 @@ Chốt với Ryan ngày 2026-09-08. Đích: Hub tự sở hữu; repo Gen-hub l�
 - Password chỉ hash; credential mã hóa bằng key trên máy. Không log secret.
 - Quyền/credential/log/tài khoản tồn tại qua restart.
 - Installer chạy lại không tạo tunnel trùng, không thay thế DNS bên ngoài, không tạo lại owner.
+- Personal không publish host port; VPS chỉ publish Caddy 80/443.
+- Mọi gate phải đạt trước owner. Cập nhật backup trước đổi runtime; lỗi kiểm tra khôi phục runtime trước, không tự hạ database.
 
 ## Giới hạn bản đầu được ghi rõ
 
-- Linux systemd + glibc, x86_64/arm64. Không Windows/macOS/Alpine/OpenRC.
+- Linux systemd + Docker Engine/Compose, x86_64/arm64. Không Windows/macOS/Alpine/OpenRC.
 - Remote MCP qua Streamable HTTP. Stdio và legacy SSE riêng endpoint chưa thuộc bản đầu.
 - Remote OAuth tự khám phá cho MCP bên thứ ba chưa có; dùng bearer token. OAuth tích hợp cho Google Drive/GitHub/Slack và OAuth phía agent đã có.
 - Không proxy sampling/elicitation server-to-client; chưa hỗ trợ giao thức 2026-07-28.
