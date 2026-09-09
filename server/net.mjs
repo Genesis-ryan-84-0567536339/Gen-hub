@@ -1,13 +1,161 @@
-import http from 'node:http';import https from 'node:https';import dns from 'node:dns/promises';import {isIP} from 'node:net';
-export class HubError extends Error{constructor(message,status=400){super(message);this.status=status}}
-export function privateIP(ip){if(ip.startsWith('::ffff:')){const tail=ip.slice(7);if(tail.includes('.'))return privateIP(tail);const v=tail.split(':');if(v.length===2){const n=parseInt(v[0],16)*65536+parseInt(v[1],16);return privateIP([n>>>24,(n>>>16)&255,(n>>>8)&255,n&255].join('.'))}return true;}if(isIP(ip)===6)return !/^[23][0-9a-f]{3}:/i.test(ip);const n=ip.split('.').map(Number);return n[0]===0||n[0]===10||n[0]===127||n[0]>=224||n[0]===169&&n[1]===254||n[0]===172&&n[1]>=16&&n[1]<=31||n[0]===192&&n[1]===168||n[0]===100&&n[1]>=64&&n[1]<=127}
-export async function request(url,{method='GET',headers={},body,allowPrivate=false,maxBytes=4*1024*1024,timeout=30000,responseId}={}){
- const u=new URL(url);if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw new HubError('Địa chỉ HTTP/HTTPS không hợp lệ');
- const host=u.hostname.replace(/^\[|\]$/g,''),addresses=isIP(host)?[{address:host,family:isIP(host)}]:await dns.lookup(host,{all:true});
- if(!addresses.length||!allowPrivate&&addresses.some(a=>privateIP(a.address)))throw new HubError('Địa chỉ mạng riêng chưa được owner cho phép');
- if(addresses.some(a=>a.address==='169.254.169.254'||a.address==='169.254.170.2'))throw new HubError('Địa chỉ metadata bị chặn');
- const data=body===undefined?undefined:typeof body==='string'?body:JSON.stringify(body);
- return new Promise((resolve,reject)=>{let size=0;const chunks=[];const req=(u.protocol==='https:'?https:http).request(u,{method,headers:{'User-Agent':'Gen-hub/0.1',...(data?{'Content-Type':'application/json','Content-Length':Buffer.byteLength(data)}:{}),...headers},lookup:(hostname,opts,cb)=>opts.all?cb(null,addresses):cb(null,addresses[0].address,addresses[0].family)},res=>{res.on('data',c=>{size+=c.length;if(size>maxBytes){req.destroy(new HubError('Phản hồi vượt giới hạn 4 MiB',502));return}chunks.push(c);if(responseId!==undefined&&res.headers['content-type']?.includes('text/event-stream')){const text=Buffer.concat(chunks).toString('utf8');for(const event of text.split(/\r?\n\r?\n/).slice(0,-1)){const data=event.split(/\r?\n/).filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trim()).join('\n');try{const json=JSON.parse(data);if(json.id===responseId){resolve({status:res.statusCode,headers:res.headers,text,json});req.destroy();return}}catch{}}}});res.on('end',()=>{const text=Buffer.concat(chunks).toString('utf8');let json;try{json=JSON.parse(text)}catch{}resolve({status:res.statusCode,headers:res.headers,text,json})});res.on('error',reject)});const timer=setTimeout(()=>req.destroy(new HubError('Dịch vụ không phản hồi trong thời hạn',504)),timeout);req.on('close',()=>clearTimeout(timer));req.on('error',reject);req.end(data)});
+import http from 'node:http';
+import https from 'node:https';
+import dns from 'node:dns/promises';
+import { isIP } from 'node:net';
+export class HubError extends Error {
+  constructor(message, status = 400) {
+    super(message);
+    this.status = status;
+  }
 }
-export async function jsonRequest(url,options){const r=await request(url,options);if(r.status<200||r.status>=300)throw new HubError(`Dịch vụ trả HTTP ${r.status}`,r.status===401?401:502);if(r.json?.ok===false||r.json?.error)throw new HubError('Dịch vụ từ chối: '+String(r.json.error?.message||r.json.error||r.json.description).slice(0,300),502);return r.json??{text:r.text}}
-export function assertSchema(schema,args){if(!args||typeof args!=='object'||Array.isArray(args))throw new HubError('Arguments phải là object');for(const k of schema.required||[])if(args[k]===undefined)throw new HubError('Thiếu tham số '+k);for(const [k,v]of Object.entries(args)){const p=schema.properties?.[k];if(!p){if(schema.additionalProperties===false)throw new HubError('Tham số không hỗ trợ: '+k);continue}if(p.type==='string'&&(typeof v!=='string'||v.length>100000))throw new HubError(k+' phải là chuỗi');if(p.type==='integer'&&(!Number.isSafeInteger(v)||v<(p.minimum??-Infinity)||v>(p.maximum??Infinity)))throw new HubError(k+' ngoài phạm vi');if(p.type==='boolean'&&typeof v!=='boolean')throw new HubError(k+' phải là boolean');if(p.type==='object'&&(!v||typeof v!=='object'||Array.isArray(v)))throw new HubError(k+' phải là object')};}
+export function privateIP(ip) {
+  if (ip.startsWith('::ffff:')) {
+    const tail = ip.slice(7);
+    if (tail.includes('.')) return privateIP(tail);
+    const v = tail.split(':');
+    if (v.length === 2) {
+      const n = parseInt(v[0], 16) * 65536 + parseInt(v[1], 16);
+      return privateIP([n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.'));
+    }
+    return true;
+  }
+  if (isIP(ip) === 6) return !/^[23][0-9a-f]{3}:/i.test(ip);
+  const n = ip.split('.').map(Number);
+  return (
+    n[0] === 0 ||
+    n[0] === 10 ||
+    n[0] === 127 ||
+    n[0] >= 224 ||
+    (n[0] === 169 && n[1] === 254) ||
+    (n[0] === 172 && n[1] >= 16 && n[1] <= 31) ||
+    (n[0] === 192 && n[1] === 168) ||
+    (n[0] === 100 && n[1] >= 64 && n[1] <= 127)
+  );
+}
+export async function request(
+  url,
+  {
+    method = 'GET',
+    headers = {},
+    body,
+    allowPrivate = false,
+    maxBytes = 4 * 1024 * 1024,
+    timeout = 30000,
+    responseId
+  } = {}
+) {
+  const u = new URL(url);
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password)
+    throw new HubError('Địa chỉ HTTP/HTTPS không hợp lệ');
+  const host = u.hostname.replace(/^\[|\]$/g, ''),
+    addresses = isIP(host)
+      ? [{ address: host, family: isIP(host) }]
+      : await dns.lookup(host, { all: true });
+  if (!addresses.length || (!allowPrivate && addresses.some(a => privateIP(a.address))))
+    throw new HubError('Địa chỉ mạng riêng chưa được owner cho phép');
+  if (addresses.some(a => a.address === '169.254.169.254' || a.address === '169.254.170.2'))
+    throw new HubError('Địa chỉ metadata bị chặn');
+  const data =
+    body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    const req = (u.protocol === 'https:' ? https : http).request(
+      u,
+      {
+        method,
+        headers: {
+          'User-Agent': 'Gen-hub/0.1',
+          ...(data
+            ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+            : {}),
+          ...headers
+        },
+        lookup: (hostname, opts, cb) =>
+          opts.all ? cb(null, addresses) : cb(null, addresses[0].address, addresses[0].family)
+      },
+      res => {
+        res.on('data', c => {
+          size += c.length;
+          if (size > maxBytes) {
+            req.destroy(new HubError('Phản hồi vượt giới hạn 4 MiB', 502));
+            return;
+          }
+          chunks.push(c);
+          if (
+            responseId !== undefined &&
+            res.headers['content-type']?.includes('text/event-stream')
+          ) {
+            const text = Buffer.concat(chunks).toString('utf8');
+            for (const event of text.split(/\r?\n\r?\n/).slice(0, -1)) {
+              const data = event
+                .split(/\r?\n/)
+                .filter(l => l.startsWith('data:'))
+                .map(l => l.slice(5).trim())
+                .join('\n');
+              try {
+                const json = JSON.parse(data);
+                if (json.id === responseId) {
+                  resolve({ status: res.statusCode, headers: res.headers, text, json });
+                  req.destroy();
+                  return;
+                }
+              } catch {}
+            }
+          }
+        });
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          let json;
+          try {
+            json = JSON.parse(text);
+          } catch {}
+          resolve({ status: res.statusCode, headers: res.headers, text, json });
+        });
+        res.on('error', reject);
+      }
+    );
+    const timer = setTimeout(
+      () => req.destroy(new HubError('Dịch vụ không phản hồi trong thời hạn', 504)),
+      timeout
+    );
+    req.on('close', () => clearTimeout(timer));
+    req.on('error', reject);
+    req.end(data);
+  });
+}
+export async function jsonRequest(url, options) {
+  const r = await request(url, options);
+  if (r.status < 200 || r.status >= 300)
+    throw new HubError(`Dịch vụ trả HTTP ${r.status}`, r.status === 401 ? 401 : 502);
+  if (r.json?.ok === false || r.json?.error)
+    throw new HubError(
+      'Dịch vụ từ chối: ' +
+        String(r.json.error?.message || r.json.error || r.json.description).slice(0, 300),
+      502
+    );
+  return r.json ?? { text: r.text };
+}
+export function assertSchema(schema, args) {
+  if (!args || typeof args !== 'object' || Array.isArray(args))
+    throw new HubError('Arguments phải là object');
+  for (const k of schema.required || [])
+    if (args[k] === undefined) throw new HubError('Thiếu tham số ' + k);
+  for (const [k, v] of Object.entries(args)) {
+    const p = schema.properties?.[k];
+    if (!p) {
+      if (schema.additionalProperties === false) throw new HubError('Tham số không hỗ trợ: ' + k);
+      continue;
+    }
+    if (p.type === 'string' && (typeof v !== 'string' || v.length > 100000))
+      throw new HubError(k + ' phải là chuỗi');
+    if (
+      p.type === 'integer' &&
+      (!Number.isSafeInteger(v) || v < (p.minimum ?? -Infinity) || v > (p.maximum ?? Infinity))
+    )
+      throw new HubError(k + ' ngoài phạm vi');
+    if (p.type === 'boolean' && typeof v !== 'boolean') throw new HubError(k + ' phải là boolean');
+    if (p.type === 'object' && (!v || typeof v !== 'object' || Array.isArray(v)))
+      throw new HubError(k + ' phải là object');
+  }
+}

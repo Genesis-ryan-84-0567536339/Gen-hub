@@ -1,0 +1,9 @@
+{
+  "printWidth": 100,
+  "tabWidth": 2,
+  "singleQuote": true,
+  "quoteProps": "preserve",
+  "trailingComma": "none",
+  "arrowParens": "avoid",
+  "embeddedLanguageFormatting": "off"
+}
