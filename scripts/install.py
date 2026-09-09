@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Guided Linux installer: every gate must pass before creating the owner."""
-import argparse, copy, getpass, ipaddress, json, os, pathlib, platform, pwd, re
+import argparse, copy, ipaddress, json, os, pathlib, platform, pwd, re
 import secrets, shutil, socket, sqlite3, subprocess, sys, tarfile, tempfile, time
 import urllib.request, urllib.error, urllib.parse
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -48,7 +48,7 @@ def wait_vps_dns(state):
 def setup_tunnel(state,save):
     print('\nCloudflare API token cần Account → Cloudflare Tunnel → Edit; Zone → DNS → Edit; Zone → Zone → Read.')
     print('Giới hạn quyền đúng account/domain. Domain gốc phải đang dùng DNS Cloudflare và ở trạng thái Active.')
-    token=getpass.getpass('Cloudflare API token (ẩn): ').strip()
+    token=input('Cloudflare API token: ').strip()
     if not token:raise RuntimeError('Thiếu API token.')
     root=normalize_domain(ask('Domain gốc trên Cloudflare',state.get('zone_name','')))
     if state['domain']!=root and not state['domain'].endswith('.'+root):raise RuntimeError('Hostname phải thuộc domain gốc.')
@@ -188,8 +188,8 @@ def ensure_owner(path, unattended=False):
             break
         print('Tên đăng nhập chưa hợp lệ.')
     while True:
-        password = getpass.getpass('Mật khẩu (12–256 ký tự, nhập ẩn): ')
-        repeat = getpass.getpass('Nhập lại mật khẩu: ')
+        password = input('Mật khẩu (12–256 ký tự): ')
+        repeat = input('Nhập lại mật khẩu: ')
         if password == repeat and 12 <= len(password) <= 256:
             break
         print('Mật khẩu chưa khớp hoặc độ dài không hợp lệ.')

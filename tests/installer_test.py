@@ -24,7 +24,7 @@ class InstallerTest(unittest.TestCase):
    if 'dns_records?' in path:return [{'type':'A','content':'1.2.3.4'}]
    if path.endswith('/known'):return {'id':'known'}
    return {}
-  with patch.object(m.getpass,'getpass',return_value='secret'),patch.object(m,'ask',return_value='example.com'),patch.object(m,'cf',side_effect=cf):
+  with patch('builtins.input',return_value='secret'),patch.object(m,'ask',return_value='example.com'),patch.object(m,'cf',side_effect=cf):
    with self.assertRaisesRegex(RuntimeError,'bản ghi khác'):m.setup_tunnel(state,lambda:None)
   self.assertFalse(any(method=='POST' for _,method in calls))
 if __name__=='__main__':unittest.main()

@@ -56,7 +56,7 @@ class LifecycleTest(unittest.TestCase):
     def test_cloudflare_cleanup_refuses_resources_reused_by_other_hostnames(self):
         import install
         state = {'account_id':'account','tunnel_id':'tunnel','zone_id':'zone','domain':'hub.example.com','installation_id':'abc'}
-        with patch.object(install.getpass,'getpass',return_value='synthetic'), patch.object(install,'cf',side_effect=[{'name':'gen-hub-abc'},{'config':{'ingress':[{'hostname':'other.example.com'}]}}]) as cf:
+        with patch('builtins.input',return_value='synthetic'), patch.object(install,'cf',side_effect=[{'name':'gen-hub-abc'},{'config':{'ingress':[{'hostname':'other.example.com'}]}}]) as cf:
             with self.assertRaisesRegex(RuntimeError,'hostname khác'):
                 lc.cloudflare_cleanup(state)
             self.assertFalse(any(call.kwargs.get('method') == 'DELETE' for call in cf.call_args_list))

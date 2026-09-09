@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Small host-side CLI; all application commands execute inside Compose containers."""
 import copy
-import getpass
 import json
 import os
 import pathlib
@@ -58,8 +57,8 @@ def main():
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
         verify_local(path, state); return
     if command == 'reset-password':
-        password = getpass.getpass('Mật khẩu owner mới (12–256 ký tự): ')
-        if password != getpass.getpass('Nhập lại mật khẩu: '):
+        password = input('Mật khẩu owner mới (12–256 ký tự): ')
+        if password != input('Nhập lại mật khẩu: '):
             raise RuntimeError('Mật khẩu không khớp.')
         admin(path, 'reset-password', {'password': password})
         print('✓ Mật khẩu đã đổi; các phiên owner cũ đã bị thu hồi.'); return

@@ -156,8 +156,7 @@ def repair(state, cloudflare=False):
 
 def cloudflare_cleanup(state):
     from install import cf
-    import getpass
-    token = getpass.getpass('Cloudflare API token để xóa tunnel/DNS của bản cài này (ẩn): ').strip()
+    token = input('Cloudflare API token để xóa tunnel/DNS của bản cài này: ').strip()
     endpoint = '/accounts/' + state['account_id'] + '/cfd_tunnel/' + state['tunnel_id']
     tunnel = cf(token, endpoint)
     if tunnel.get('name') != 'gen-hub-' + state['installation_id'][:16]:
