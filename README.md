@@ -101,6 +101,15 @@ npm test
 npm run check
 ```
 
+Format JavaScript bằng Prettier 3.6.2 theo cấu hình trong repo (công cụ phát triển, không cần khi chạy/cài Gen-hub):
+
+```bash
+npx --yes prettier@3.6.2 --write 'server/*.mjs' public/app.js
+npx --yes prettier@3.6.2 --check 'server/*.mjs' public/app.js
+```
+
+Giữ nguyên nội dung chuỗi HTML/SQL khi format; không trộn thay đổi logic với PR chỉ chỉnh định dạng.
+
 Khởi tạo owner local qua CLI, rồi chạy server trên loopback (chỉ dùng phát triển; cài chính thức qua TUI):
 
 ```bash
