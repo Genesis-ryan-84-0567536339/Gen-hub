@@ -28,16 +28,17 @@ Theo [Issue #3](https://github.com/Genesis-ryan-84-0567536339/Gen-hub/issues/3),
 
 Đây là kết quả được người kiểm thử báo cáo trong issue, không phải toàn bộ nghiệm thu production. Lần kiểm thử đó chưa xác minh handshake MCP qua HTTPS, tài khoản nhà cung cấp thật, MCP client thật qua OAuth hoặc bộ cài trên hạ tầng thật.
 
+## Đã nghiệm thu thật trên hạ tầng thật (2026-09-09, Claude Code + agy CLI)
+
+- **[Issue #11](https://github.com/Genesis-ryan-84-0567536339/Gen-hub/issues/11)**: chạy `install.sh` xuyên suốt thật trên 1 VM Ubuntu 24.04 sạch (systemd thật, KVM local, chưa cài Docker/Podman) qua nhánh máy cá nhân + Cloudflare Tunnel + domain thật. Docker Engine cài tự động đúng (29.8.0, không phải Podman — xác nhận logic PR #6 hoạt động đúng trên hạ tầng thật, không chỉ trên máy dev có sẵn Podman). 3 container healthy, HTTPS thật hoạt động, `gen-hub status`/`doctor` đều ✓, Owner tạo được, login UI thật (Playwright) pass. **Phát hiện thêm 1 bug thật khác** (không liên quan Podman): `install.sh` báo exit code 1 dù cài thành công 100%, do lỗi quyền dọn `__pycache__` sinh ra khi chạy Python qua sudo — xem Issue #11 để biết chi tiết root cause.
+- **[Issue #12](https://github.com/Genesis-ryan-84-0567536339/Gen-hub/issues/12)**: nghiệm thu đầy đủ luồng **Agent thật** kết nối qua OAuth PKEC + gọi tool qua `/mcp` bằng curl thật (không qua thư viện trung gian) — đăng ký client động, chủ sở hữu duyệt, đổi token, `initialize`/`tools/list`/`tools/call` đúng namespace, proxy tới downstream MCP thật thành công, và xác nhận **thu hồi quyền chặn token cũ ngay lập tức** (đúng bất biến bảo mật quan trọng nhất trong SPEC.md). Audit log ghi chính xác toàn bộ, kể cả latency thật.
+
 ## Còn cần nghiệm thu trên môi trường thật
 
-- [Issue #4](https://github.com/Genesis-ryan-84-0567536339/Gen-hub/issues/4) ghi nhận Fedora dùng podman-docker bị nhận nhầm là Docker Engine. Bộ cài đã thêm phát hiện CLI/symlink/JSON Podman trước thao tác package/service, thông báo cách khắc phục và 8 test hồi quy. Đây là xử lý nhận diện và hướng dẫn chuyển sang Docker Engine; chưa phải hỗ trợ runtime Podman hoặc nghiệm thu chuyển đổi trên máy Fedora thật.
-
-- Không có systemd VM/VPS Linux chuyên dụng và domain/token Cloudflare của người dùng: chưa chạy bộ cài xuyên suốt trên hạ tầng thật, chưa xác minh cấp chứng chỉ/tunnel thật.
-- Không có OAuth app và credential dịch vụ của người dùng: chưa đăng nhập tài khoản thật của Google/GitHub/Slack/Telegram/Discord/Figma. Mã gọi API đã có; cần acceptance bằng tài khoản thực.
+- Chưa đăng nhập tài khoản thật của Google/GitHub/Slack/Telegram/Discord/Figma (OAuth app + credential dịch vụ thật) — mã gọi API đã có, cần acceptance bằng tài khoản thực.
 - UI đã có kiểm thử Chromium headless được báo cáo ở trên; chưa nghiệm thu toàn bộ thao tác, kích thước màn hình và trình duyệt trên bản cài chính thức.
-- Remote MCP qua HTTPS với token và MCP client thật đăng nhập OAuth PKCE rồi gọi tool chưa được nghiệm thu; test HTTP/OAuth nội bộ không thay thế hai bước này.
 - Chưa chạy xuyên suốt một chu kỳ tự cập nhật từ bản cũ sang bản mới trên máy đã cài; timer và các gate hiện được kiểm tra từng phần.
-- Cài Docker mới bằng package manager, SELinux Fedora và chuyển đổi từ bản systemd cũ chưa được nghiệm thu trên VM riêng.
+- Cài Docker mới bằng package manager **trên Fedora cụ thể (SELinux)** và chuyển đổi từ bản systemd cũ chưa được nghiệm thu trên VM riêng — VM đã nghiệm thu ở Issue #11 là Ubuntu 24.04, không phải Fedora.
 - CI GitHub: xem workflow Gen-hub Linux checks trên commit/PR hiện tại; không suy ra đã xanh từ trạng thái local.
 
 Bản này là implementation đầu tiên để kiểm thử cài đặt thực tế, chưa gọi là bản production đã nghiệm thu. Những thiếu hụt chức năng có chủ ý được liệt kê trong SPEC.md; không dùng dữ liệu mẫu để che API chưa có.
