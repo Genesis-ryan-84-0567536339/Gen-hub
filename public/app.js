@@ -528,6 +528,7 @@ async function act(action, args) {
     return;
   }
   if (action === 'copyendpoint') return copy(state.endpoint);
+  if (action === 'copytoken') return copy(modalContext.token);
   if (action === 'onboard') return onboarding();
   if (action === 'onboard-done' || action === 'onboard-add') {
     await api('settings', 'PATCH', { onboarded: true });
@@ -713,10 +714,11 @@ document.addEventListener('submit', async e => {
         permissions: new FormData(f).getAll('permissions')
       });
       await refresh();
+      modalContext = { kind: 'token', token: r.token };
       show(
         'Token đã được tạo',
         'Sao chép ngay; token sẽ không được hiển thị lại.',
-        `<label class="field">Token riêng<textarea class="input mono" readonly rows="3">${esc(r.token)}</textarea></label><p class="footnote">Endpoint: ${esc(state.endpoint)}</p><pre class="json">${esc(JSON.stringify({ mcpServers: { 'gen-hub': { url: state.endpoint, headers: { Authorization: 'Bearer ' + r.token } } } }, null, 2))}</pre><p class="footnote">Hết hạn sau 90 ngày. Không chia sẻ cấu hình chứa token.</p>`,
+        `<label class="field">Token riêng</label><div style="display:flex;gap:8px;align-items:flex-start"><textarea class="input mono" readonly rows="3" style="flex:1">${esc(r.token)}</textarea><button type="button" class="iconbutton" data-action="copytoken" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Endpoint: ${esc(state.endpoint)}</p><pre class="json">${esc(JSON.stringify({ mcpServers: { 'gen-hub': { url: state.endpoint, headers: { Authorization: 'Bearer ' + r.token } } } }, null, 2))}</pre><p class="footnote">Hết hạn sau 90 ngày. Không chia sẻ cấu hình chứa token.</p>`,
         btn('Đã lưu token', 'close')
       );
     }
@@ -743,10 +745,11 @@ document.addEventListener('submit', async e => {
       const result = await api('admin-assistant', 'POST', { password: b.password });
       f.reset();
       await refresh();
+      modalContext = { kind: 'token', token: result.token };
       show(
         'Token trợ lý quản trị đã tạo',
         'Sao chép ngay; không thể xem lại token sau khi đóng.',
-        `<label class="field">Admin token<textarea class="input mono" readonly rows="3">${esc(result.token)}</textarea></label><p>Endpoint: <code>${esc(result.endpoint)}</code></p><pre class="json">${esc(JSON.stringify({ mcpServers: { 'gen-hub-admin': { url: result.endpoint, headers: { Authorization: 'Bearer ' + result.token } } } }, null, 2))}</pre><p class="footnote">Dùng Bearer token, không qua OAuth. Token có quyền quản trị và chỉ mất hiệu lực khi owner thu hồi.</p>`,
+        `<label class="field">Admin token</label><div style="display:flex;gap:8px;align-items:flex-start"><textarea class="input mono" readonly rows="3" style="flex:1">${esc(result.token)}</textarea><button type="button" class="iconbutton" data-action="copytoken" aria-label="Sao chép">${I('copy')}</button></div><p>Endpoint: <code>${esc(result.endpoint)}</code></p><pre class="json">${esc(JSON.stringify({ mcpServers: { 'gen-hub-admin': { url: result.endpoint, headers: { Authorization: 'Bearer ' + result.token } } } }, null, 2))}</pre><p class="footnote">Dùng Bearer token, không qua OAuth. Token có quyền quản trị và chỉ mất hiệu lực khi owner thu hồi.</p>`,
         btn('Đã lưu token', 'close')
       );
     }
