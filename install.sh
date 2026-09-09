@@ -45,7 +45,7 @@ curl --proto '=https' --tlsv1.2 --fail --silent --show-error --retry 3 "https://
 mkdir "$TMPDIR_GENHUB/source"
 tar -xzf "$TMPDIR_GENHUB/source.tar.gz" --strip-components=1 -C "$TMPDIR_GENHUB/source"
 if [[ $GENHUB_AUTO -eq 1 ]]; then
-  python3 "$TMPDIR_GENHUB/source/scripts/install.py" --source "$TMPDIR_GENHUB/source" --revision "$GENHUB_SHA" --auto </dev/null
+  PYTHONDONTWRITEBYTECODE=1 python3 "$TMPDIR_GENHUB/source/scripts/install.py" --source "$TMPDIR_GENHUB/source" --revision "$GENHUB_SHA" --auto </dev/null
 else
-  "${SUDO[@]}" python3 "$TMPDIR_GENHUB/source/scripts/install.py" --source "$TMPDIR_GENHUB/source" --revision "$GENHUB_SHA" </dev/tty
+  "${SUDO[@]}" env PYTHONDONTWRITEBYTECODE=1 python3 "$TMPDIR_GENHUB/source/scripts/install.py" --source "$TMPDIR_GENHUB/source" --revision "$GENHUB_SHA" </dev/tty
 fi
