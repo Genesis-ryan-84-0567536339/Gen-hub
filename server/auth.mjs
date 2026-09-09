@@ -140,7 +140,7 @@ export function authService(store, origin) {
     if (!f || f.expires < Date.now()) throw new HubError('Yêu cầu kết nối đã hết hạn');
     return f;
   }
-  function consent(fid, permissions, approve) {
+  function consent(fid, permissions, approve, name, actor = 'owner') {
     return store.tx(() => {
       const f = flow(fid);
       store.del('flow', fid);
@@ -154,7 +154,7 @@ export function authService(store, origin) {
         code = id() + id();
       store.put('agent', agentId, {
         id: agentId,
-        name: f.name,
+        name: name || f.name,
         client: f.client_id,
         status: 'active',
         permissions,
@@ -169,11 +169,11 @@ export function authService(store, origin) {
       });
       redirect.searchParams.set('code', code);
       store.audit(
-        'owner',
+        actor,
         'hub',
         'agent.authorize',
         'success',
-        { agent: agentId, permissions },
+        { agent: agentId, name: name || f.name, permissions },
         { approved: true }
       );
       return redirect.href;
