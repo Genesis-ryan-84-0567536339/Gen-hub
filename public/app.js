@@ -1,4 +1,5 @@
-'use strict';
+import { connectionGuide } from './connection-guides.js';
+('use strict');
 const $ = s => document.querySelector(s),
   esc = v =>
     String(v ?? '').replace(
@@ -220,10 +221,21 @@ function agents() {
     `<div class="toolbar">${searchInput('Tìm agent…')}</div><div id="results">${agentResults()}</div><div class="info" style="margin-top:20px">${I('shield')}Agent kết nối qua OAuth cần owner đăng nhập và duyệt. Bạn cũng có thể tạo token riêng cho MCP client không hỗ trợ OAuth.</div>`
   );
 }
+function shortAgentId(agent) {
+  let size = Math.min(8, agent.id.length);
+  while (
+    size < agent.id.length &&
+    state.agents.some(other => other.id !== agent.id && other.id.endsWith(agent.id.slice(-size)))
+  )
+    size++;
+  return agent.id.slice(-size);
+}
 function agentResults() {
-  const rows = state.agents.filter(a => a.name.toLowerCase().includes(filter.toLowerCase()));
+  const rows = state.agents.filter(a =>
+    (a.name + ' ' + a.id).toLowerCase().includes(filter.toLowerCase())
+  );
   return rows.length
-    ? `<div class="card tablewrap"><table><thead><tr><th>Agent</th><th>Trạng thái</th><th>Tool khả dụng</th><th>Lần gọi gần nhất</th><th></th></tr></thead><tbody>${rows.map(a => `<tr><td><div class="inline">${I('bot')}<div><h3>${esc(a.name)}</h3><p class="sub">${a.client === 'Manual' ? 'Token riêng' : 'OAuth'}</p></div></div></td><td>${badge(a.status)}</td><td>${a.effective} / ${a.permissions.length}</td><td>${date(a.last)}</td><td>${btn('Quản lý quyền', 'agent:' + a.id, 'small')}</td></tr>`).join('')}</tbody></table></div>`
+    ? `<div class="card tablewrap"><table><thead><tr><th>Agent</th><th>Trạng thái</th><th>Tool khả dụng</th><th>Lần gọi gần nhất</th><th></th></tr></thead><tbody>${rows.map(a => `<tr><td><div class="inline">${I('bot')}<div><h3>${esc(a.name)}</h3><code class="mono" title="${esc(a.id)}">#${esc(shortAgentId(a))}</code><p class="sub">${a.client === 'Manual' ? 'Token riêng' : 'OAuth'}</p></div></div></td><td>${badge(a.status)}</td><td>${a.effective} / ${a.permissions.length}</td><td>${date(a.last)}</td><td>${btn('Quản lý quyền', 'agent:' + a.id, 'small')}</td></tr>`).join('')}</tbody></table></div>`
     : empty('Chưa có agent', 'Kết nối agent bằng endpoint MCP hoặc tạo token riêng.');
 }
 function options(rows, current) {
@@ -258,7 +270,7 @@ function auditPage() {
         ['error', 'Có lỗi']
       ],
       statusFilter
-    )}</select><select id="agentfilter" class="filter" aria-label="Agent">${options([['all', 'Tất cả agent'], ['owner', 'Owner'], ...state.agents.map(a => [a.id, a.name])], agentFilter)}</select><select id="mcpfilter" class="filter" aria-label="MCP">${options([['all', 'Tất cả MCP'], ['hub', 'Hub'], ...state.mcps.map(m => [m.id, m.name])], mcpFilter)}</select><select id="timefilter" class="filter" aria-label="Thời gian">${options(
+    )}</select><select id="agentfilter" class="filter" aria-label="Agent">${options([['all', 'Tất cả agent'], ['owner', 'Owner'], ...[...new Set(state.logs.filter(l => l.actor.startsWith('admin-assistant:')).map(l => l.actor))].map(actor => [actor, 'Trợ lý quản trị #' + actor.slice(-8)]), ...state.agents.map(a => [a.id, a.name])], agentFilter)}</select><select id="mcpfilter" class="filter" aria-label="MCP">${options([['all', 'Tất cả MCP'], ['hub', 'Hub'], ...state.mcps.map(m => [m.id, m.name])], mcpFilter)}</select><select id="timefilter" class="filter" aria-label="Thời gian">${options(
       [
         ['all', 'Tất cả thời gian'],
         ['1', 'Giờ qua'],
@@ -284,8 +296,13 @@ function settings() {
         [90, '90 ngày']
       ],
       state.settings.retention
-    )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><div class="settingsrow"><div><h3>Agent mới cần được duyệt</h3><p>Quyền do owner cấp tại Hub.</p></div><span class="badge">Luôn bật</span></div><div class="settingsrow"><div><h3>Credential được mã hóa</h3><p>Khóa và dữ liệu nằm trên máy cài Gen-hub.</p></div>${I('lock')}</div><div class="divider"></div>${btn('Đổi mật khẩu owner', 'password', '', 'lock')}</section><div><section class="card cardpad"><h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code></section><section class="card cardpad" style="margin-top:22px"><h2>Bắt đầu sử dụng</h2><p class="footnote" style="margin-bottom:18px">Mở lại hướng dẫn thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}</section></div></div>`
+    )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><div class="settingsrow"><div><h3>Agent mới cần được duyệt</h3><p>Quyền do owner cấp tại Hub.</p></div><span class="badge">Luôn bật</span></div><div class="settingsrow"><div><h3>Credential được mã hóa</h3><p>Khóa và dữ liệu nằm trên máy cài Gen-hub.</p></div>${I('lock')}</div><div class="divider"></div>${btn('Đổi mật khẩu owner', 'password', '', 'lock')}</section><div><section class="card cardpad"><h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code></section><section class="card cardpad" style="margin-top:22px"><h2>Bắt đầu sử dụng</h2><p class="footnote" style="margin-bottom:18px">Mở lại hướng dẫn thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}</section></div></div>` +
+    adminAssistantSettings()
   );
+}
+function adminAssistantSettings() {
+  const a = state.adminAssistant || {};
+  return `<section class="card cardpad" style="margin-top:24px"><h2>Trợ lý AI quản trị riêng</h2><p class="footnote">Quyền quản trị console như owner. Token không tự hết hạn; chỉ cấp cho trợ lý cá nhân và thu hồi tại đây khi cần.</p><div class="codecopy"><code>${esc(a.endpoint || state.origin + '/mcp/admin')}</code></div>${a.active ? `<p>Đang hoạt động · #${esc(a.id.slice(-8))}</p><p class="footnote">Tạo: ${date(a.created)} · Dùng gần nhất: ${date(a.lastUsed)}</p>${btn('Thu hồi token trợ lý', 'admin-revoke', 'danger')}` : `<p class="footnote">Chưa có token hoạt động. Bạn cần nhập lại mật khẩu owner để tạo; token chỉ hiển thị một lần.</p>${btn('Tạo token trợ lý', 'admin-create', 'primary')}`}</section>`;
 }
 function show(title, sub, body, footer = '', sheet = false) {
   modal.className = sheet ? 'sheet' : '';
@@ -294,6 +311,7 @@ function show(title, sub, body, footer = '', sheet = false) {
 }
 function close() {
   modal.close();
+  modal.innerHTML = '';
   modalContext = {};
 }
 function onboarding() {
@@ -332,7 +350,7 @@ function add() {
           `<div class="catalogrow">${logo({ provider: c.id })}<div><h3>${esc(c.name)}</h3><p>${esc(c.description)} · ${esc(c.auth)}</p></div>${btn('Thêm', 'install:' + c.id, 'small')}</div>`
       )
       .join('') +
-      `<div class="divider"></div><h3>MCP HTTP tùy chỉnh</h3><form id="remote" style="margin-top:20px"><label class="field">Tên MCP<input class="input" name="name" required maxlength="60"></label><label class="field">Địa chỉ endpoint<input class="input" type="url" name="url" placeholder="https://mcp.example.com/mcp" required></label><label class="field">Xác thực<select name="auth"><option value="token">Bearer token</option><option value="none">Không xác thực</option></select></label><label class="checkboxline"><input type="checkbox" name="allowPrivate">Cho phép truy cập server nội bộ / localhost của máy cài Hub</label><button class="btn primary" type="submit">Thêm MCP tùy chỉnh</button></form>`,
+      `<div class="divider"></div><h3>MCP HTTP tùy chỉnh</h3><form id="remote" style="margin-top:20px"><label class="field">Tên MCP<input class="input" name="name" required maxlength="60"></label><label class="field">Địa chỉ endpoint<input class="input" type="url" name="url" placeholder="https://mcp.example.com/mcp" required></label><div id="remote-guide" aria-live="polite"></div><label class="field">Xác thực<select name="auth"><option value="token">Bearer token</option><option value="none">Không xác thực</option></select></label><label class="checkboxline"><input type="checkbox" name="allowPrivate">Cho phép truy cập server nội bộ / localhost của máy cài Hub</label><button class="btn primary" type="submit">Thêm MCP tùy chỉnh</button></form>`,
     btn('Đóng', 'close')
   );
 }
@@ -347,14 +365,27 @@ function mcp(id) {
     true
   );
 }
+function connectionGuideHtml(provider, endpoint) {
+  const guide = connectionGuide(provider, endpoint);
+  if (!guide)
+    return '<p class="footnote">Lấy loại token do nhà cung cấp MCP yêu cầu. Gen-hub hiện hỗ trợ Bearer token hoặc không xác thực cho MCP HTTP tùy chỉnh.</p>';
+  return `<section class="card cardpad"><h3>${esc(guide.title)}</h3><p>${esc(guide.recommendation)}</p><ol>${guide.steps.map(step => `<li>${esc(step)}</li>`).join('')}</ol><div class="actions">${guide.links.map(([label, url]) => `<a class="textbutton" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)} ↗</a>`).join('')}</div><p class="footnote">${esc(guide.note)}</p></section>`;
+}
 function credential(id) {
   const m = state.mcps.find(m => m.id === id),
     c = state.catalog.find(c => c.id === m.provider);
   modalContext = { kind: 'credential', id };
+  const tokenForm =
+    m.provider === 'drive'
+      ? ''
+      : `<div class="divider"></div><h3>${m.auth === 'none' ? 'Kết nối không xác thực' : 'Kết nối bằng token'}</h3>${m.auth === 'none' ? `<p class="footnote">Endpoint: ${esc(m.url)}</p>${btn('Kiểm tra & đồng bộ', 'sync:' + id, 'primary')}` : `<form id="credential" style="margin-top:18px"><label class="field">${['telegram', 'discord'].includes(m.provider) ? 'Bot token' : 'Access token'}<input class="input" name="token" type="password" required autocomplete="new-password"></label><button class="btn primary" type="submit">Lưu & kiểm tra kết nối</button></form>`}`;
+  const oauthForm = !c?.oauth
+    ? ''
+    : `<div class="divider"></div><h3>Đăng nhập bằng OAuth</h3><p class="footnote">Tạo OAuth App của bạn tại <a href="${esc(c.guide)}" target="_blank" rel="noopener noreferrer">trang nhà cung cấp</a>, rồi khai báo chính xác Redirect URI: <code>${esc(state.origin)}/oauth/callback</code></p><form id="oauth" style="margin-top:18px"><label class="field">Client ID<input name="client_id" class="input" required autocomplete="off"></label><label class="field">Client secret<input name="client_secret" class="input" type="password" required autocomplete="new-password"></label><button class="btn primary" type="submit">Lưu & đăng nhập ${esc(m.name)}</button></form>`;
   show(
     'Kết nối ' + esc(m.name),
     'Thông tin xác thực được mã hóa trên Hub.',
-    `<div class="info">${I('lock')}Gen-hub dùng kết nối này cho những agent được bạn cấp quyền.</div>${c ? `<p class="footnote"><a class="textbutton" href="${esc(c.guide)}" target="_blank" rel="noopener noreferrer">Mở hướng dẫn / trang tạo ứng dụng ${I('arrow')}</a></p>` : ''}<p class="footnote">${m.provider === 'drive' ? 'Bật Google Drive API; tạo OAuth client loại Web application, thêm callback dưới đây và cấu hình người dùng thử nghiệm hoặc xuất bản app.' : m.provider === 'slack' ? 'OAuth app cần channels:read, channels:history và chat:write. Bot phải được mời vào các kênh cần dùng.' : m.provider === 'discord' ? 'Tạo bot, mời vào máy chủ và cấp quyền đọc/gửi tin nhắn phù hợp.' : m.provider === 'telegram' ? 'Lấy bot token từ BotFather. get_updates không dùng đồng thời với webhook.' : ''}</p>${c?.oauth ? `<div class="divider"></div><h3>Đăng nhập bằng OAuth</h3><p class="footnote">Redirect URI: <code>${esc(state.origin)}/oauth/callback</code></p><form id="oauth" style="margin-top:18px"><label class="field">Client ID<input name="client_id" class="input" required autocomplete="off"></label><label class="field">Client secret<input name="client_secret" class="input" type="password" required autocomplete="new-password"></label><button class="btn primary" type="submit">Lưu & đăng nhập ${esc(m.name)}</button></form>` : ''}${m.provider !== 'drive' ? `<div class="divider"></div><h3>${m.auth === 'none' ? 'Kết nối không xác thực' : 'Kết nối bằng token'}</h3>${m.auth === 'none' ? `<p class="footnote" style="margin-bottom:18px">Endpoint: ${esc(m.url)}</p>${btn('Kiểm tra & đồng bộ', 'sync:' + id, 'primary')}` : `<form id="credential" style="margin-top:18px"><label class="field">${m.provider === 'telegram' || m.provider === 'discord' ? 'Bot token' : 'Access token'}<input class="input" name="token" type="password" required autocomplete="new-password"></label><button class="btn primary" type="submit">Lưu & kiểm tra kết nối</button></form>`}` : ''}`,
+    connectionGuideHtml(m.provider, m.url) + tokenForm + oauthForm,
     btn('Đóng', 'close')
   );
 }
@@ -381,8 +412,8 @@ function agent(id) {
   modalContext = { kind: 'agent', id };
   show(
     esc(a.name),
-    'Chỉ thay đổi quyền khi bấm lưu.',
-    `<div class="inline" style="margin-bottom:22px">${badge(a.status)}<span class="muted">${a.effective} tool khả dụng</span></div><form id="grants">${grantRows(a.permissions)}<div class="actions"><button class="btn primary" type="submit">Lưu quyền</button>${a.status === 'active' ? btn('Thu hồi agent', 'revoke:' + id, 'danger') : ''}</div></form><div class="divider"></div><h3>Kiểm tra quyền đã lưu</h3><form id="test" style="margin-top:18px"><label class="field">Chọn tool<select name="tool">${state.mcps.flatMap(m => m.tools.map(t => `<option value="${esc(m.id + ':' + t.name)}">${esc(m.name)} / ${esc(t.name)}</option>`)).join('')}</select></label><button class="btn" type="submit">Kiểm tra quyền</button><div id="test-result" style="margin-top:16px"></div></form>`,
+    'ID: ' + esc(a.id),
+    `<div class="inline" style="margin-bottom:22px">${badge(a.status)}<span class="muted">${a.effective} tool khả dụng</span></div><form id="grants"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(a.name)}" required maxlength="80"></label>${grantRows(a.permissions)}<div class="actions"><button class="btn primary" type="submit">Lưu quyền</button>${a.status === 'active' ? btn('Thu hồi agent', 'revoke:' + id, 'danger') : btn('Xóa agent', 'delete-agent:' + id, 'danger')}</div></form><div class="divider"></div><h3>Kiểm tra quyền đã lưu</h3><form id="test" style="margin-top:18px"><label class="field">Chọn tool<select name="tool">${state.mcps.flatMap(m => m.tools.map(t => `<option value="${esc(m.id + ':' + t.name)}">${esc(m.name)} / ${esc(t.name)}</option>`)).join('')}</select></label><button class="btn" type="submit">Kiểm tra quyền</button><div id="test-result" style="margin-top:16px"></div></form>`,
     btn('Đóng', 'close'),
     true
   );
@@ -403,7 +434,7 @@ async function consent(flow) {
   show(
     'Duyệt kết nối agent',
     esc(f.name),
-    `<div class="info">${I('shield')}Client yêu cầu sử dụng Gen-hub. Chỉ chọn tool bạn muốn cấp.</div><p class="footnote" style="margin-bottom:20px">Sau khi duyệt, quay về: ${esc(f.redirect_uri)}</p><form id="consent">${grantRows([])}<div class="actions">${btn('Từ chối', 'deny:' + flow, 'danger')}<button class="btn primary" type="submit">Duyệt & cấp quyền</button></div></form>`,
+    `<div class="info">${I('shield')}Client yêu cầu sử dụng Gen-hub. Chỉ chọn tool bạn muốn cấp.</div><p class="footnote" style="margin-bottom:20px">Sau khi duyệt, quay về: ${esc(f.redirect_uri)}</p><form id="consent"><label class="field">Tên gợi nhớ cho agent<input class="input" name="name" value="${esc(f.name)}" maxlength="80" placeholder="Ví dụ: Claude trên laptop"></label><p class="footnote">Tên gợi ý do client tự khai báo; bạn có thể sửa. Mỗi agent còn có ID riêng trong danh sách.</p>${grantRows([])}<div class="actions">${btn('Từ chối', 'deny:' + flow, 'danger')}<button class="btn primary" type="submit">Duyệt & cấp quyền</button></div></form>`,
     '',
     true
   );
@@ -574,6 +605,17 @@ async function act(action, args) {
     close();
     return refresh();
   }
+  if (action === 'delete-agent')
+    return confirmation(
+      'Xóa agent đã thu hồi?',
+      'Xóa khỏi danh sách và giữ nhật ký theo thời gian lưu đã cấu hình.',
+      'do-delete-agent:' + id
+    );
+  if (action === 'do-delete-agent') {
+    await api('agents/' + id, 'DELETE');
+    close();
+    return refresh();
+  }
   if (action === 'log') return log(id);
   if (action === 'logtab') return log(modalContext.id, id);
   if (action === 'export') {
@@ -585,6 +627,20 @@ async function act(action, args) {
     const r = await api('flows/' + id, 'POST', { approve: false });
     location.href = r.redirect;
     return;
+  }
+  if (action === 'admin-create') {
+    show(
+      'Tạo token trợ lý quản trị',
+      'Xác thực lại bằng mật khẩu owner.',
+      `<form id="admin-create"><label class="field">Mật khẩu owner<input class="input" type="password" name="password" required autocomplete="current-password"></label><button class="btn primary" type="submit">Xác nhận & tạo token</button></form>`,
+      btn('Hủy', 'close')
+    );
+    return;
+  }
+  if (action === 'admin-revoke') {
+    await api('admin-assistant', 'DELETE');
+    await refresh();
+    return toast('Đã thu hồi token trợ lý quản trị');
   }
   if (action === 'password') {
     show(
@@ -644,11 +700,12 @@ document.addEventListener('submit', async e => {
     }
     if (f.id === 'grants') {
       await api('agents/' + modalContext.id, 'PATCH', {
+        name: b.name,
         permissions: new FormData(f).getAll('permissions')
       });
       close();
       await refresh();
-      toast('Đã lưu quyền');
+      toast('Đã lưu tên và quyền');
     }
     if (f.id === 'manual-agent') {
       const r = await api('agents', 'POST', {
@@ -666,6 +723,7 @@ document.addEventListener('submit', async e => {
     if (f.id === 'consent') {
       const r = await api('flows/' + modalContext.id, 'POST', {
         approve: true,
+        name: b.name,
         permissions: new FormData(f).getAll('permissions')
       });
       location.href = r.redirect;
@@ -680,6 +738,17 @@ document.addEventListener('submit', async e => {
       await api('settings', 'PATCH', { name: b.name, retention: Number(b.retention) });
       await refresh();
       toast('Đã lưu cài đặt');
+    }
+    if (f.id === 'admin-create') {
+      const result = await api('admin-assistant', 'POST', { password: b.password });
+      f.reset();
+      await refresh();
+      show(
+        'Token trợ lý quản trị đã tạo',
+        'Sao chép ngay; không thể xem lại token sau khi đóng.',
+        `<label class="field">Admin token<textarea class="input mono" readonly rows="3">${esc(result.token)}</textarea></label><p>Endpoint: <code>${esc(result.endpoint)}</code></p><pre class="json">${esc(JSON.stringify({ mcpServers: { 'gen-hub-admin': { url: result.endpoint, headers: { Authorization: 'Bearer ' + result.token } } } }, null, 2))}</pre><p class="footnote">Dùng Bearer token, không qua OAuth. Token có quyền quản trị và chỉ mất hiệu lực khi owner thu hồi.</p>`,
+        btn('Đã lưu token', 'close')
+      );
     }
     if (f.id === 'password') {
       if (b.password !== b.repeat) throw Error('Mật khẩu nhập lại không khớp');
@@ -703,6 +772,8 @@ function updateResults() {
       route === 'mcps' ? mcpResults() : route === 'agents' ? agentResults() : logTable(logFilter());
 }
 document.addEventListener('input', e => {
+  if (e.target.name === 'url' && e.target.form?.id === 'remote')
+    $('#remote-guide').innerHTML = connectionGuideHtml('remote', e.target.value);
   if (e.target.id === 'search') {
     filter = e.target.value;
     updateResults();

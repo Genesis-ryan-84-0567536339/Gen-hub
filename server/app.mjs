@@ -8,6 +8,7 @@ import { HubError, assertSchema, jsonRequest, request } from './net.mjs';
 import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
 import { authService } from './auth.mjs';
+import { adminAssistant } from './admin-assistant.mjs';
 const pub = fileURLToPath(new URL('../public/', import.meta.url));
 const cleanMcp = ({ secret, ...m }) => ({ ...m, hasCredential: !!secret });
 const text = (v, max = 200) =>
@@ -274,6 +275,228 @@ export function createHub({
       return result({ content: [{ type: 'text', text: message }], isError: true });
     }
   }
+  async function ownerApi({ method, parts, b = {}, s, req, actor = 'owner' }) {
+    const write = !['GET', 'HEAD'].includes(method);
+    const [resource, mid, action] = parts;
+    const respond = (status, data, headers) => ({ status, data, headers });
+    const audit = (tool, input, output = {}, mcp = 'hub') =>
+      store.audit(actor, mcp, tool, 'success', redact(input), redact(output));
+    const m = mid ? store.get('mcp', mid) : null;
+    if (resource === 'session')
+      return respond(200, { csrf: s.csrf, owner: store.get('owner', 'main').username });
+    if (resource === 'logout' && write)
+      return respond(200, { ok: true }, { 'Set-Cookie': auth.logout(req) });
+    if (resource === 'state' && !write) {
+      store.clean();
+      const mcps = store.list('mcp').map(cleanMcp),
+        agents = store.list('agent').map(a => ({
+          ...a,
+          effective: mcps.reduce((n, m) => n + m.tools.filter(t => allowed(a, m, t)).length, 0)
+        }));
+      return respond(200, {
+        mcps,
+        agents,
+        logs: store.logs(200).map(redact),
+        settings: store.get('settings', 'main') || {
+          name: 'Gen-hub',
+          retention: 30,
+          onboarded: false
+        },
+        origin,
+        endpoint: origin + '/mcp',
+        catalog,
+        adminAssistant: assistant.status(),
+        owner: store.get('owner', 'main').username
+      });
+    }
+    if (resource === 'settings' && method === 'PATCH') {
+      const old = store.get('settings', 'main') || {};
+      if (b.name !== undefined) old.name = text(b.name, 60);
+      if (b.retention !== undefined) {
+        if (![7, 30, 90].includes(b.retention)) throw new HubError('Thời gian lưu không hợp lệ');
+        old.retention = b.retention;
+      }
+      if (b.onboarded !== undefined) old.onboarded = !!b.onboarded;
+      store.put('settings', 'main', old);
+      audit('settings.update', b);
+      return respond(200, old);
+    }
+    if (resource === 'password' && method === 'POST') {
+      const o = store.get('owner', 'main');
+      if (!passwordCheck(String(b.current || ''), o.password))
+        throw new HubError('Mật khẩu hiện tại không đúng', 403);
+      if (typeof b.password !== 'string' || b.password.length < 12 || b.password.length > 256)
+        throw new HubError('Mật khẩu cần 12–256 ký tự');
+      o.password = passwordHash(b.password);
+      store.put('owner', 'main', o);
+      for (const sess of store.list('session')) store.del('session', sess.id);
+      audit('owner.password_changed', {});
+      return respond(200, { ok: true });
+    }
+    if (resource === 'mcps' && method === 'POST' && !mid) {
+      const template = provider(b.provider);
+      if (!template && b.provider !== 'remote') throw new HubError('Dịch vụ không hợp lệ');
+      const mid = randomBytes(12).toString('hex'),
+        m = {
+          id: mid,
+          name: text(b.name || template?.name, 60),
+          provider: b.provider,
+          description: template?.description || 'MCP HTTP tùy chỉnh',
+          on: true,
+          status: 'disconnected',
+          tools: template ? template.tools : [],
+          auth: b.auth === 'none' ? 'none' : 'token',
+          url: b.url || '',
+          allowPrivate: !!b.allowPrivate,
+          created: new Date().toISOString()
+        };
+      if (m.provider === 'remote') {
+        if (m.url.length > 2048) throw new HubError('URL quá dài');
+        const url = new URL(m.url);
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+          throw new HubError('Địa chỉ không hợp lệ');
+      }
+      store.put('mcp', mid, m);
+      audit('mcp.add', { name: m.name, provider: m.provider }, { id: mid }, mid);
+      return respond(201, cleanMcp(m));
+    }
+    if (resource === 'mcps' && m) {
+      if (method === 'DELETE' && !action) {
+        store.del('mcp', mid);
+        for (const a of store.list('agent')) {
+          a.permissions = a.permissions.filter(p => !p.startsWith(mid + ':'));
+          store.put('agent', a.id, a);
+        }
+        audit('mcp.remove', { id: mid });
+        return respond(200, { ok: true });
+      }
+      if (method === 'PATCH' && !action) {
+        if (b.on !== undefined) m.on = !!b.on;
+        if (b.name) m.name = text(b.name, 60);
+        if (b.published) {
+          if (
+            !Array.isArray(b.published) ||
+            b.published.some(n => !m.tools.some(t => t.name === n))
+          )
+            throw new HubError('Tool không hợp lệ');
+          m.tools = m.tools.map(t => ({ ...t, published: b.published.includes(t.name) }));
+        }
+        store.put('mcp', mid, m);
+        audit('mcp.update', b, {}, mid);
+        return respond(200, cleanMcp(m));
+      }
+      if (action === 'credential' && method === 'POST') {
+        if (m.provider === 'remote' && new URL(m.url).protocol !== 'https:' && !m.allowPrivate)
+          throw new HubError('Dùng HTTPS để bảo vệ token');
+        const token = text(b.token, 16000);
+        m.credentialVersion = (m.credentialVersion || 0) + 1;
+        m.secret = store.seal({ token });
+        m.status = 'disconnected';
+        store.put('mcp', mid, m);
+        const result = await syncMcp(m);
+        audit('connection.authorize', { mcp: mid }, { connected: true }, mid);
+        return respond(200, result);
+      }
+      if (action === 'oauth' && method === 'POST') return respond(200, await startOAuth(m, b, s));
+      if (action === 'sync' && method === 'POST') {
+        const result = await syncMcp(m);
+        audit('mcp.sync', {}, { toolCount: result.tools.length }, mid);
+        return respond(200, result);
+      }
+      if (action === 'disconnect' && method === 'POST') {
+        delete m.secret;
+        m.credentialVersion = (m.credentialVersion || 0) + 1;
+        m.status = 'disconnected';
+        store.put('mcp', mid, m);
+        audit('connection.disconnect', {}, {}, mid);
+        return respond(200, { ok: true });
+      }
+    }
+    if (resource === 'agents' && method === 'POST' && !mid) {
+      const aid = id();
+      store.put('agent', aid, {
+        id: aid,
+        name: text(b.name, 80),
+        client: 'Manual',
+        status: 'active',
+        permissions: validateGrants(b.permissions || []),
+        created: new Date().toISOString()
+      });
+      const raw = id() + id();
+      store.put('token', digest(raw), {
+        id: digest(raw),
+        agent: aid,
+        client: 'Manual',
+        type: 'access',
+        resource: origin + '/mcp',
+        expires: Date.now() + 90 * 86400000
+      });
+      audit('agent.create', { name: b.name, permissions: b.permissions }, { id: aid });
+      return respond(201, { id: aid, token: raw, expires_in: 90 * 86400 });
+    }
+    if (resource === 'agents' && mid && method === 'PATCH') {
+      const a = store.get('agent', mid);
+      if (!a) throw new HubError('Không tìm thấy agent', 404);
+      if (b.name !== undefined) a.name = text(b.name, 80);
+      if (b.permissions) a.permissions = validateGrants(b.permissions);
+      if (b.status) {
+        if (!['active', 'revoked'].includes(b.status))
+          throw new HubError('Trạng thái không hợp lệ');
+        a.status = b.status;
+        if (b.status === 'revoked')
+          for (const t of store.list('token')) if (t.agent === mid) store.del('token', t.id);
+      }
+      store.put('agent', mid, a);
+      audit('agent.update', { id: mid, ...b });
+      return respond(200, a);
+    }
+    if (resource === 'agents' && mid && !action && method === 'DELETE') {
+      const a = store.get('agent', mid);
+      if (!a) throw new HubError('Không tìm thấy agent', 404);
+      if (a.status !== 'revoked') throw new HubError('Thu hồi agent trước khi xóa', 409);
+      store.tx(() => {
+        for (const type of ['token', 'code'])
+          for (const record of store.list(type))
+            if (record.agent === mid) store.del(type, record.id);
+        store.del('agent', mid);
+        audit('agent.remove', { id: mid, name: a.name });
+      });
+      return respond(200, { ok: true });
+    }
+    if (resource === 'flows' && mid) {
+      const f = auth.flow(mid);
+      if (method === 'GET')
+        return respond(200, { id: f.id, name: f.name, redirect_uri: f.redirect_uri });
+      if (method === 'POST')
+        return respond(200, {
+          redirect: auth.consent(
+            mid,
+            validateGrants(b.permissions || []),
+            b.approve === true,
+            b.approve === true && b.name !== undefined && b.name !== ''
+              ? text(b.name, 80)
+              : undefined,
+            actor
+          )
+        });
+    }
+    if (resource === 'test' && method === 'POST') {
+      const a = store.get('agent', b.agent),
+        m = store.get('mcp', b.mcp),
+        t = m?.tools.find(t => t.name === b.tool);
+      return respond(200, {
+        allowed: !!allowed(a, m, t),
+        reason: allowed(a, m, t)
+          ? 'Agent được cấp quyền và tool khả dụng'
+          : 'Agent chưa được cấp, MCP tạm dừng, kết nối lỗi hoặc tool chưa công bố'
+      });
+    }
+    if (resource === 'logs' && !write) return respond(200, store.logs(5000).map(redact));
+    throw new HubError('Không tìm thấy API', 404);
+  }
+  const assistant = adminAssistant(store, origin, ({ path, ...context }) =>
+    ownerApi({ ...context, parts: path.split('/') })
+  );
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
@@ -303,7 +526,12 @@ export function createHub({
         });
       if (!store.get('owner', 'main') && !['/healthz'].includes(p))
         return send(res, 503, { error: 'Hoàn tất tạo owner trong TUI trước khi sử dụng.' });
-      if (p.startsWith('/.well-known/oauth-protected-resource'))
+      if (
+        [
+          '/.well-known/oauth-protected-resource',
+          '/.well-known/oauth-protected-resource/mcp'
+        ].includes(p)
+      )
         return send(res, 200, {
           resource: origin + '/mcp',
           authorization_servers: [origin],
@@ -379,207 +607,56 @@ export function createHub({
         audit('owner.login', {});
         return send(res, 200, { csrf: r.csrf }, { 'Set-Cookie': r.cookie });
       }
+      if (p === '/mcp/admin') {
+        let actor;
+        try {
+          actor = assistant.authenticate(req);
+        } catch (e) {
+          return send(
+            res,
+            401,
+            { error: e.message },
+            { 'WWW-Authenticate': 'Bearer realm="gen-hub-admin"' }
+          );
+        }
+        rate(actor, 120);
+        const response = await assistant.rpc(
+          req,
+          req.method === 'POST' ? await body(req) : {},
+          actor
+        );
+        return send(res, response.status, response.data, response.headers);
+      }
       if (p.startsWith('/api/')) {
         const write = !['GET', 'HEAD'].includes(req.method),
-          s = auth.owner(req, write),
-          b = write ? await body(req) : {},
-          parts = p.split('/').slice(2),
-          [resource, mid, action] = parts;
-        const m = mid ? store.get('mcp', mid) : null;
-        if (resource === 'session')
-          return send(res, 200, { csrf: s.csrf, owner: store.get('owner', 'main').username });
-        if (resource === 'logout' && write)
-          return send(res, 200, { ok: true }, { 'Set-Cookie': auth.logout(req) });
-        if (resource === 'state' && !write) {
-          store.clean();
-          const mcps = store.list('mcp').map(cleanMcp),
-            agents = store.list('agent').map(a => ({
-              ...a,
-              effective: mcps.reduce((n, m) => n + m.tools.filter(t => allowed(a, m, t)).length, 0)
-            }));
-          return send(res, 200, {
-            mcps,
-            agents,
-            logs: store.logs(200).map(redact),
-            settings: store.get('settings', 'main') || {
-              name: 'Gen-hub',
-              retention: 30,
-              onboarded: false
-            },
-            origin,
-            endpoint: origin + '/mcp',
-            catalog,
-            owner: store.get('owner', 'main').username
-          });
-        }
-        if (resource === 'settings' && req.method === 'PATCH') {
-          const old = store.get('settings', 'main') || {};
-          if (b.name !== undefined) old.name = text(b.name, 60);
-          if (b.retention !== undefined) {
-            if (![7, 30, 90].includes(b.retention))
-              throw new HubError('Thời gian lưu không hợp lệ');
-            old.retention = b.retention;
+          s = auth.owner(req, write);
+        const b = write ? await body(req) : {};
+        if (p === '/api/admin-assistant') {
+          if (req.method === 'GET') return send(res, 200, assistant.status());
+          if (req.method === 'POST') {
+            rate('admin-token:owner', 5, 15 * 60000);
+            return send(res, 201, assistant.create(b.password));
           }
-          if (b.onboarded !== undefined) old.onboarded = !!b.onboarded;
-          store.put('settings', 'main', old);
-          audit('settings.update', b);
-          return send(res, 200, old);
+          if (req.method === 'DELETE') return send(res, 200, assistant.revoke());
+          throw new HubError('Method not allowed', 405);
         }
-        if (resource === 'password' && req.method === 'POST') {
-          const o = store.get('owner', 'main');
-          if (!passwordCheck(String(b.current || ''), o.password))
-            throw new HubError('Mật khẩu hiện tại không đúng', 403);
-          if (typeof b.password !== 'string' || b.password.length < 12 || b.password.length > 256)
-            throw new HubError('Mật khẩu cần 12–256 ký tự');
-          o.password = passwordHash(b.password);
-          store.put('owner', 'main', o);
-          for (const sess of store.list('session')) store.del('session', sess.id);
-          audit('owner.password_changed', {});
-          return send(res, 200, { ok: true });
-        }
-        if (resource === 'mcps' && req.method === 'POST' && !mid) {
-          const template = provider(b.provider);
-          if (!template && b.provider !== 'remote') throw new HubError('Dịch vụ không hợp lệ');
-          const mid = randomBytes(12).toString('hex'),
-            m = {
-              id: mid,
-              name: text(b.name || template?.name, 60),
-              provider: b.provider,
-              description: template?.description || 'MCP HTTP tùy chỉnh',
-              on: true,
-              status: 'disconnected',
-              tools: template ? template.tools : [],
-              auth: b.auth === 'none' ? 'none' : 'token',
-              url: b.url || '',
-              allowPrivate: !!b.allowPrivate,
-              created: new Date().toISOString()
-            };
-          if (m.provider === 'remote') {
-            if (m.url.length > 2048) throw new HubError('URL quá dài');
-            const url = new URL(m.url);
-            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
-              throw new HubError('Địa chỉ không hợp lệ');
-          }
-          store.put('mcp', mid, m);
-          audit('mcp.add', { name: m.name, provider: m.provider }, { id: mid }, mid);
-          return send(res, 201, cleanMcp(m));
-        }
-        if (resource === 'mcps' && m) {
-          if (req.method === 'DELETE' && !action) {
-            store.del('mcp', mid);
-            for (const a of store.list('agent')) {
-              a.permissions = a.permissions.filter(p => !p.startsWith(mid + ':'));
-              store.put('agent', a.id, a);
-            }
-            audit('mcp.remove', { id: mid });
-            return send(res, 200, { ok: true });
-          }
-          if (req.method === 'PATCH' && !action) {
-            if (b.on !== undefined) m.on = !!b.on;
-            if (b.name) m.name = text(b.name, 60);
-            if (b.published) {
-              if (
-                !Array.isArray(b.published) ||
-                b.published.some(n => !m.tools.some(t => t.name === n))
-              )
-                throw new HubError('Tool không hợp lệ');
-              m.tools = m.tools.map(t => ({ ...t, published: b.published.includes(t.name) }));
-            }
-            store.put('mcp', mid, m);
-            audit('mcp.update', b, {}, mid);
-            return send(res, 200, cleanMcp(m));
-          }
-          if (action === 'credential' && req.method === 'POST') {
-            if (m.provider === 'remote' && new URL(m.url).protocol !== 'https:' && !m.allowPrivate)
-              throw new HubError('Dùng HTTPS để bảo vệ token');
-            const token = text(b.token, 16000);
-            m.credentialVersion = (m.credentialVersion || 0) + 1;
-            m.secret = store.seal({ token });
-            m.status = 'disconnected';
-            store.put('mcp', mid, m);
-            const result = await syncMcp(m);
-            audit('connection.authorize', { mcp: mid }, { connected: true }, mid);
-            return send(res, 200, result);
-          }
-          if (action === 'oauth' && req.method === 'POST')
-            return send(res, 200, await startOAuth(m, b, s));
-          if (action === 'sync' && req.method === 'POST') {
-            const result = await syncMcp(m);
-            audit('mcp.sync', {}, { toolCount: result.tools.length }, mid);
-            return send(res, 200, result);
-          }
-          if (action === 'disconnect' && req.method === 'POST') {
-            delete m.secret;
-            m.credentialVersion = (m.credentialVersion || 0) + 1;
-            m.status = 'disconnected';
-            store.put('mcp', mid, m);
-            audit('connection.disconnect', {}, {}, mid);
-            return send(res, 200, { ok: true });
-          }
-        }
-        if (resource === 'agents' && req.method === 'POST' && !mid) {
-          const aid = id();
-          store.put('agent', aid, {
-            id: aid,
-            name: text(b.name, 80),
-            client: 'Manual',
-            status: 'active',
-            permissions: validateGrants(b.permissions || []),
-            created: new Date().toISOString()
-          });
-          const raw = id() + id();
-          store.put('token', digest(raw), {
-            id: digest(raw),
-            agent: aid,
-            client: 'Manual',
-            type: 'access',
-            resource: origin + '/mcp',
-            expires: Date.now() + 90 * 86400000
-          });
-          audit('agent.create', { name: b.name, permissions: b.permissions }, { id: aid });
-          return send(res, 201, { id: aid, token: raw, expires_in: 90 * 86400 });
-        }
-        if (resource === 'agents' && mid && req.method === 'PATCH') {
-          const a = store.get('agent', mid);
-          if (!a) throw new HubError('Không tìm thấy agent', 404);
-          if (b.permissions) a.permissions = validateGrants(b.permissions);
-          if (b.status) {
-            if (!['active', 'revoked'].includes(b.status))
-              throw new HubError('Trạng thái không hợp lệ');
-            a.status = b.status;
-            if (b.status === 'revoked')
-              for (const t of store.list('token')) if (t.agent === mid) store.del('token', t.id);
-          }
-          store.put('agent', mid, a);
-          audit('agent.update', { id: mid, ...b });
-          return send(res, 200, a);
-        }
-        if (resource === 'flows' && mid) {
-          const f = auth.flow(mid);
-          if (req.method === 'GET')
-            return send(res, 200, { id: f.id, name: f.name, redirect_uri: f.redirect_uri });
-          if (req.method === 'POST')
-            return send(res, 200, {
-              redirect: auth.consent(mid, validateGrants(b.permissions || []), b.approve === true)
-            });
-        }
-        if (resource === 'test' && req.method === 'POST') {
-          const a = store.get('agent', b.agent),
-            m = store.get('mcp', b.mcp),
-            t = m?.tools.find(t => t.name === b.tool);
-          return send(res, 200, {
-            allowed: !!allowed(a, m, t),
-            reason: allowed(a, m, t)
-              ? 'Agent được cấp quyền và tool khả dụng'
-              : 'Agent chưa được cấp, MCP tạm dừng, kết nối lỗi hoặc tool chưa công bố'
-          });
-        }
-        if (resource === 'logs' && !write) return send(res, 200, store.logs(5000).map(redact));
-        throw new HubError('Không tìm thấy API', 404);
+        const response = await ownerApi({
+          method: req.method,
+          parts: p.split('/').slice(2),
+          b,
+          s,
+          req
+        });
+        return send(res, response.status, response.data, response.headers);
       }
       if (req.method !== 'GET' && req.method !== 'HEAD')
         throw new HubError('Method not allowed', 405);
-      const files = { '/': 'index.html', '/app.js': 'app.js', '/styles.css': 'styles.css' };
+      const files = {
+        '/': 'index.html',
+        '/app.js': 'app.js',
+        '/connection-guides.js': 'connection-guides.js',
+        '/styles.css': 'styles.css'
+      };
       if (!files[p]) throw new HubError('Không tìm thấy trang', 404);
       const data = await readFile(join(pub, files[p]));
       res.setHeader(

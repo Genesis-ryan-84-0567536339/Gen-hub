@@ -17,10 +17,15 @@ Chốt với Ryan ngày 2026-09-08. Đích: Hub tự sở hữu; repo Gen-hub l�
 
 ## Bất biến
 
+- Trợ lý quản trị cá nhân (Issue #15) dùng `/mcp/admin` và loại token riêng, tách khỏi `/mcp` và OAuth agent thường. Owner phải nhập lại mật khẩu khi tạo, chỉ một token hoạt động, chỉ hiện một lần, lưu hash và không tự hết hạn. Owner thu hồi trong Cài đặt; token này không đăng nhập web hoặc tự cấp token quản trị mới.
+- Tool quản trị dùng chung dispatcher với web API, trong phạm vi console. OAuth dịch vụ vẫn cần owner thao tác trong trình duyệt; đổi mật khẩu vẫn cần mật khẩu hiện tại. Không có shell, sửa mã nguồn, deploy hoặc truy cập filesystem.
+- Audit trợ lý ghi actor `admin-assistant:<id>` riêng; đọc log chỉ ghi số lượng/ID để tránh lặp lại payload audit vô hạn. Credential và mật khẩu bị che trước khi ghi.
+
 - Cho phép gọi = agent active AND MCP enabled AND kết nối connected AND tool published AND agent có grant.
 - Kiểm tra quyền ngay trước khi gửi lệnh upstream; thu hồi chặn lượt gọi mới. Lượt gọi đã gửi ra dịch vụ không thể đảm bảo thu hồi ngược.
 - Token agent không thay thế token dịch vụ; không token passthrough.
 - Tools/list chỉ liệt kê tool khả dụng, tên namespace ổn định theo MCP ID.
+- Agent có ID riêng hiển thị thường trực; owner đặt tên khi duyệt OAuth hoặc sửa sau đó. Chỉ xóa agent đã thu hồi, xóa token/code còn lại và giữ audit theo retention.
 - Password chỉ hash; credential mã hóa bằng key trên máy. Không log secret.
 - Quyền/credential/log/tài khoản tồn tại qua restart.
 - Installer chạy lại không tạo tunnel trùng, không thay thế DNS bên ngoài, không tạo lại owner.

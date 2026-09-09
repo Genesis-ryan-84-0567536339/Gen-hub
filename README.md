@@ -62,6 +62,14 @@ Không xóa dữ liệu/container Podman và không tự chuyển chúng sang Do
 - MCP HTTP tùy chỉnh: bearer token hoặc không xác thực; owner chủ động cho phép mạng riêng nếu cần. Không tự chạy lệnh shell của MCP từ nguồn chưa kiểm soát.
 - Giao diện tiếng Việt, dữ liệu thật, onboarding, cấp quyền, kiểm tra policy, log và đổi mật khẩu owner.
 
+## Trợ lý quản trị cá nhân
+
+Trong **Cài đặt → Trợ lý AI quản trị riêng**, nhập lại mật khẩu owner để tạo token. Sao chép token ngay; chỉ hiển thị một lần. Kết nối MCP client bằng `https://<domain>/mcp/admin` và header `Authorization: Bearer <token>`; không dùng OAuth cho endpoint này.
+
+Token có quyền thao tác console (connector, agent, audit, cài đặt) và không tự hết hạn. Chỉ có một token hoạt động; bấm **Thu hồi token trợ lý** trong Cài đặt để chặn các lượt gọi mới, rồi tạo lại nếu cần. Token không dùng được tại `/mcp` hoặc web API. Đổi mật khẩu owner vẫn yêu cầu mật khẩu hiện tại; đăng nhập OAuth dịch vụ phải hoàn tất trong trình duyệt. Không có quyền shell, mã nguồn hoặc deploy. Nhật ký phân biệt trợ lý bằng actor `admin-assistant:<id>`.
+
+Trong **Agent & quyền**, ID giúp phân biệt các client trùng tên. Owner có thể sửa tên, thu hồi rồi xóa agent khỏi danh sách; nhật ký liên quan được giữ theo thời gian lưu đã cấu hình.
+
 ## Tự cập nhật từ repo Gen-hub
 
 **Mặc định bật sau khi cài thành công.** Máy kiểm tra `Gen-hub/main` mỗi giờ, lệch ngẫu nhiên tối đa 10 phút. Chỉ cập nhật commit có workflow CI trên `main` đã thành công; tải source theo đúng SHA và dùng image digest trong repo. Không tự cập nhật image `latest` riêng lẻ.
