@@ -20,11 +20,15 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'scripts'))
 import runtime as rt
 import install as installer
 import lifecycle
+from docker_setup import ensure_docker
 
 SOURCE = pathlib.Path(__file__).resolve().parents[1]
 
 
 def main():
+    # Exercise the same engine preflight as install.sh against the runner's real
+    # Docker daemon and systemd, not only mocked docker info fixtures.
+    ensure_docker()
     with tempfile.TemporaryDirectory(prefix='gen-hub-docker-') as temp:
         root = pathlib.Path(temp)
         conf = root / 'config'; conf.mkdir()

@@ -35,6 +35,8 @@ sudo gen-hub restart
 
 Cài lỗi: chạy lại cùng lệnh cài. State giữ bước/lỗi gần nhất. Nếu DNS có AAAA cũ trỏ sai, sửa cả A/AAAA; VPS cần DNS-only khi kiểm tra. Không gửi master.key, database, token hoặc backup lên issue/chat. Đổi domain/mode chưa có wizard; cần thao tác của quản trị viên với backup và callback OAuth tương ứng.
 
+Fedora báo phát hiện Podman/podman-docker: làm theo [README — Fedora / Podman](../README.md#fedora--podman), gỡ shim sau khi kiểm tra giao dịch DNF rồi chạy lại bộ cài. Gen-hub cần Docker Engine và unit hệ thống `docker.service`; không thể chỉ thay `OSType` bằng `host.os` để dùng Podman. `doctor --fix` cũng áp dụng bước phát hiện này và không tự gỡ/chuyển đổi Podman.
+
 ## Cập nhật / rollback
 
 Mặc định bật timer mỗi giờ (+0–10 phút ngẫu nhiên, chạy bù sau khi bật máy). `sudo gen-hub auto-update on|off` điều khiển timer. Chỉ cập nhật đúng SHA trên main có push CI hoàn tất/thành công. Bản đã update lỗi bị bỏ qua tự động cho đến khi có commit mới hoặc update thủ công. Log: `sudo journalctl -u gen-hub-update -n 100 --no-pager`. Rollback thủ công tạm tắt auto-update để tránh lập tức nâng lại.

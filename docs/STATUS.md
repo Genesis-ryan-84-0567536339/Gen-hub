@@ -30,6 +30,8 @@ Theo [Issue #3](https://github.com/Genesis-ryan-84-0567536339/Gen-hub/issues/3),
 
 ## Còn cần nghiệm thu trên môi trường thật
 
+- [Issue #4](https://github.com/Genesis-ryan-84-0567536339/Gen-hub/issues/4) ghi nhận Fedora dùng podman-docker bị nhận nhầm là Docker Engine. Bộ cài đã thêm phát hiện CLI/symlink/JSON Podman trước thao tác package/service, thông báo cách khắc phục và 8 test hồi quy. Đây là xử lý nhận diện và hướng dẫn chuyển sang Docker Engine; chưa phải hỗ trợ runtime Podman hoặc nghiệm thu chuyển đổi trên máy Fedora thật.
+
 - Không có systemd VM/VPS Linux chuyên dụng và domain/token Cloudflare của người dùng: chưa chạy bộ cài xuyên suốt trên hạ tầng thật, chưa xác minh cấp chứng chỉ/tunnel thật.
 - Không có OAuth app và credential dịch vụ của người dùng: chưa đăng nhập tài khoản thật của Google/GitHub/Slack/Telegram/Discord/Figma. Mã gọi API đã có; cần acceptance bằng tài khoản thực.
 - UI đã có kiểm thử Chromium headless được báo cáo ở trên; chưa nghiệm thu toàn bộ thao tác, kích thước màn hình và trình duyệt trên bản cài chính thức.

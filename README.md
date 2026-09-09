@@ -8,6 +8,8 @@ Trung tâm MCP tự lưu trữ trên Linux. Một giao diện tiếng Việt đ�
 
 Yêu cầu Linux **systemd**, x86_64 hoặc aarch64; Python >=3.10, quyền sudo và ít nhất 2 GiB trống tại nơi Docker lưu images. Tự cài Docker Engine + Compose trên Ubuntu/Debian/Fedora nếu thiếu, rồi chạy Gen-hub, Caddy và cloudflared bằng container. Máy chủ không cần cài Node.js hoặc npm. Các images được khóa digest trong repo.
 
+Runtime được hỗ trợ là **Docker Engine Linux + Docker Compose >=2.20** qua socket hệ thống; chưa hỗ trợ Podman/podman-docker hoặc Docker rootless. Podman có thể cùng được cài trên máy, nhưng lệnh `docker` và `/var/run/docker.sock` dùng cho Gen-hub phải thuộc Docker Engine.
+
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/Genesis-ryan-84-0567536339/Gen-hub/main/install.sh)
 ```
@@ -24,6 +26,19 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Genesis-ryan-84-0567536339/G
 Cloudflare token cần **Account / Cloudflare Tunnel / Edit**, **Zone / DNS / Edit**, **Zone / Zone / Read**, giới hạn đúng account/zone. Token quản trị chỉ dùng trong tiến trình cài; runtime tunnel token riêng lưu root-only. Không nhập token vào GitHub hoặc chat.
 
 Bộ cài không ghi đè DNS đang trỏ nơi khác, không chiếm dịch vụ đang dùng cổng cần thiết. Trạng thái được lưu để chạy lại khi mất mạng hoặc ngắt cài. Máy cá nhân cần bật máy và kết nối Internet để agent từ xa truy cập được.
+
+### Fedora / Podman
+
+Nếu `docker` là shim do `podman-docker` cung cấp, bộ cài phát hiện và dừng trước khi cài package hoặc gọi `docker.service`. Cách chuyển lệnh `docker` sang Docker Engine:
+
+```bash
+rpm -q podman-docker
+sudo dnf remove podman-docker
+```
+
+Xem danh sách thay đổi của DNF trước khi xác nhận. Sau đó chạy lại lệnh cài Gen-hub ở trên; bộ cài sẽ tự cài các package Docker Engine + Compose còn thiếu từ repo chính thức. Không dùng `dnf install docker` để thay bước này. Nếu dùng wrapper/symlink tự tạo, hãy sửa đường dẫn lệnh `docker`; nếu socket `/var/run/docker.sock` trỏ tới Podman, quản trị viên cần xử lý cấu hình socket trước.
+
+Không xóa dữ liệu/container Podman và không tự chuyển chúng sang Docker. Nếu DNF báo package xung đột khác, xử lý theo [hướng dẫn Docker cho Fedora](https://docs.docker.com/engine/install/fedora/) rồi chạy lại; bộ cài không tự gỡ package xung đột hoặc dùng `--allowerasing`.
 
 ## Bắt đầu sử dụng
 
