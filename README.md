@@ -20,7 +20,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Genesis-ryan-84-0567536339/G
 2. VPS: nhập domain, xác nhận IP, tạo DNS theo hướng dẫn rồi kiểm tra. Mở TCP 80/443; Caddy tự cấp/gia hạn HTTPS.
 3. Máy cá nhân: nhập hostname, domain gốc và Cloudflare API token; bộ cài tạo tunnel, DNS và container cloudflared/Caddy. Không publish cổng trên máy cá nhân. Domain gốc cần ở trạng thái Active trên Cloudflare.
 4. Bộ cài kiểm Docker, cổng, image/build, Caddy, container health và SQLite. Chờ kiểm tra HTTPS tới **đúng installation ID**. Chưa đạt không cho tạo owner.
-5. Tạo owner/mật khẩu ngay trên TUI; mật khẩu nhập ẩn, không đi qua tham số lệnh.
+5. Tạo owner/mật khẩu ngay trên TUI; mật khẩu hiện ra khi gõ (không ẩn — để paste/gõ ổn định trên mọi terminal), không đi qua tham số lệnh hay lưu lịch sử lệnh.
 6. Nhận URL đăng nhập và MCP tổng `/mcp`; đăng nhập để xem hướng dẫn thiết lập đầu tiên.
 
 Cloudflare token cần **Account / Cloudflare Tunnel / Edit**, **Zone / DNS / Edit**, **Zone / Zone / Read**, giới hạn đúng account/zone. Token quản trị chỉ dùng trong tiến trình cài; runtime tunnel token riêng lưu root-only. Không nhập token vào GitHub hoặc chat.
@@ -83,7 +83,7 @@ Cần Internet tới GitHub và registry. Máy cá nhân tắt máy thì không 
 ```bash
 sudo gen-hub doctor                 # Chẩn đoán, không sửa cấu hình
 sudo gen-hub doctor --fix           # Sửa quyền file/cấu hình, tạo lại container và kiểm tra
-sudo gen-hub doctor --fix --cloudflare  # Thêm cấp lại token/route tunnel bằng API token nhập ẩn
+sudo gen-hub doctor --fix --cloudflare  # Thêm cấp lại token/route tunnel bằng API token (hiện khi gõ)
 sudo gen-hub status
 sudo gen-hub logs
 ```
@@ -101,7 +101,7 @@ sudo gen-hub uninstall --purge --cloudflare  # Gỡ sạch máy và xóa thêm t
 
 **`--purge` xóa vĩnh viễn** container/network Gen-hub, database, credentials, master.key, chứng chỉ Caddy, cấu hình, source và backup nằm trong `/opt/gen-hub/backups`. Chương trình yêu cầu nhập `DELETE <domain>` trước khi thực hiện. Sao lưu ra ngoài thư mục Gen-hub nếu muốn giữ khả năng khôi phục.
 
-`--cloudflare` cần API token nhập ẩn với quyền Tunnel Edit và DNS Edit; chỉ xóa tunnel có tên/ID đúng installation và DNS vẫn trỏ tới tunnel đó. Nếu tài nguyên đã được dùng cho hostname khác hoặc API lỗi, dừng để kiểm tra; không báo đã xóa sạch Cloudflare khi chưa thành công.
+`--cloudflare` cần API token (hiện khi gõ, không lưu ra đĩa/tham số lệnh) với quyền Tunnel Edit và DNS Edit; chỉ xóa tunnel có tên/ID đúng installation và DNS vẫn trỏ tới tunnel đó. Nếu tài nguyên đã được dùng cho hostname khác hoặc API lỗi, dừng để kiểm tra; không báo đã xóa sạch Cloudflare khi chưa thành công.
 
 Docker Engine, image nền dùng chung, ứng dụng khác và backup bạn lưu nơi khác được giữ. Tài khoản Linux `genhub` chỉ gỡ khi bộ cài ghi nhận đã tạo tài khoản đó và UID/home vẫn đúng; không gỡ tài khoản có sẵn của quản trị viên. `uninstall` và `--purge` đều tắt lịch tự cập nhật trước khi gỡ.
 

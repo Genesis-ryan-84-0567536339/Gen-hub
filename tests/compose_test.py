@@ -79,7 +79,7 @@ class ComposeTest(unittest.TestCase):
                 if path.endswith('/token'):
                     return 'synthetic-runtime-token'
                 return {'id': 'known'}
-            with patch.object(installer, 'CONF', pathlib.Path(temp)), patch.object(installer, 'cf', side_effect=cloudflare), patch.object(installer, 'ask', return_value='example.com'), patch.object(installer.getpass, 'getpass', return_value='synthetic-admin-token'), patch.object(installer.os, 'chown'):
+            with patch.object(installer, 'CONF', pathlib.Path(temp)), patch.object(installer, 'cf', side_effect=cloudflare), patch.object(installer, 'ask', return_value='example.com'), patch('builtins.input', return_value='synthetic-admin-token'), patch.object(installer.os, 'chown'):
                 installer.setup_tunnel(state, lambda: None)
             route = next(data for path, data, method in calls if path.endswith('/configurations'))
             self.assertEqual(route['config']['ingress'][0]['service'], 'http://caddy:8080')
@@ -89,7 +89,7 @@ class ComposeTest(unittest.TestCase):
             self.assertNotIn('synthetic-admin-token', token.read_text())
 
     def test_reinstall_preserves_owner_without_prompt(self):
-        with patch.object(installer, 'admin', return_value=subprocess.CompletedProcess([], 0, stdout='yes')), patch.object(installer, 'ask') as ask, patch.object(installer.getpass, 'getpass') as password:
+        with patch.object(installer, 'admin', return_value=subprocess.CompletedProcess([], 0, stdout='yes')), patch.object(installer, 'ask') as ask, patch('builtins.input') as password:
             installer.ensure_owner(pathlib.Path('/test/compose.json'))
             ask.assert_not_called(); password.assert_not_called()
 

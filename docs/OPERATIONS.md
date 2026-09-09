@@ -31,7 +31,7 @@ sudo gen-hub doctor
 sudo gen-hub restart
 ```
 
-`doctor`: SQLite đọc/ghi + mã hóa, Caddy nội bộ và Cloudflare readiness khi có tunnel, HTTPS hợp lệ trả đúng installation ID, trạng thái owner. Không tự tạo owner hoặc đổi quyền tool. `doctor --fix` sửa quyền file/cấu hình chuẩn, dựng lại container và kiểm tra; `--fix --cloudflare` yêu cầu API token nhập ẩn để cấp lại token/route đúng installation. Thiếu khóa hoặc database lỗi thì dừng, yêu cầu khôi phục backup. Healthcheck container kiểm tra HTTP/installation ID; Docker restart policy khởi động lại process đã thoát, không tự restart một process còn chạy nhưng unhealthy.
+`doctor`: SQLite đọc/ghi + mã hóa, Caddy nội bộ và Cloudflare readiness khi có tunnel, HTTPS hợp lệ trả đúng installation ID, trạng thái owner. Không tự tạo owner hoặc đổi quyền tool. `doctor --fix` sửa quyền file/cấu hình chuẩn, dựng lại container và kiểm tra; `--fix --cloudflare` yêu cầu API token (hiện khi gõ) để cấp lại token/route đúng installation. Thiếu khóa hoặc database lỗi thì dừng, yêu cầu khôi phục backup. Healthcheck container kiểm tra HTTP/installation ID; Docker restart policy khởi động lại process đã thoát, không tự restart một process còn chạy nhưng unhealthy.
 
 Cài lỗi: chạy lại cùng lệnh cài. State giữ bước/lỗi gần nhất. Nếu DNS có AAAA cũ trỏ sai, sửa cả A/AAAA; VPS cần DNS-only khi kiểm tra. Không gửi master.key, database, token hoặc backup lên issue/chat. Đổi domain/mode chưa có wizard; cần thao tác của quản trị viên với backup và callback OAuth tương ứng.
 
