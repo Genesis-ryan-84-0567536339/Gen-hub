@@ -136,7 +136,7 @@ function badge(status) {
   return `<span class="badge ${['expired', 'pending', 'denied'].includes(status) ? 'warn' : status === 'error' ? 'red' : ['revoked', 'disconnected'].includes(status) ? 'gray' : ''}">${label[status] || esc(status)}</span>`;
 }
 function logo(m) {
-  return `<span class="serviceicon ${esc(m.provider || 'files')}">${m.provider === 'github' ? 'G' : m.provider === 'drive' ? I('file') : m.provider === 'slack' ? '#' : m.provider === 'figma' ? 'F' : I('plug')}</span>`;
+  return `<span class="serviceicon ${esc(m.provider === 'github-mcp' ? 'github' : m.provider || 'files')}">${['github', 'github-mcp'].includes(m.provider) ? 'G' : m.provider === 'drive' ? I('file') : m.provider === 'slack' ? '#' : m.provider === 'figma' ? 'F' : I('plug')}</span>`;
 }
 async function api(path, method = 'GET', data) {
   const r = await fetch('/api/' + path, {

@@ -118,8 +118,16 @@ test('Gen-hub Playwright UI automated flow (Issue #9)', async t => {
   const catalogNames = await page.$$eval('dialog#modal .catalogrow h3', els =>
     els.map(e => e.textContent.trim())
   );
-  assert.equal(catalogNames.length, 6, 'Modal Thêm MCP phải hiển thị đủ 6 connector tích hợp');
-  const expectedConnectors = ['GitHub', 'Google Drive', 'Slack', 'Telegram', 'Discord', 'Figma'];
+  assert.equal(catalogNames.length, 7, 'Modal Thêm MCP phải hiển thị đủ 7 connector tích hợp');
+  const expectedConnectors = [
+    'GitHub',
+    'GitHub MCP (pilot)',
+    'Google Drive',
+    'Slack',
+    'Telegram',
+    'Discord',
+    'Figma'
+  ];
   for (const exp of expectedConnectors) {
     assert(
       catalogNames.includes(exp),

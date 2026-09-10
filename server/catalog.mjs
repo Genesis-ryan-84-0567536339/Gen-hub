@@ -69,6 +69,17 @@ export const catalog = [
     ]
   },
   {
+    id: 'github-mcp',
+    name: 'GitHub MCP (pilot)',
+    description:
+      'MCP chính thức của GitHub, chạy song song với GitHub REST. Owner công bố từng tool.',
+    category: 'Phát triển',
+    auth: 'PAT',
+    guide: 'https://github.com/github/github-mcp-server',
+    tokenGuide: 'https://github.com/settings/personal-access-tokens/new',
+    tools: []
+  },
+  {
     id: 'drive',
     name: 'Google Drive',
     description: 'Tìm, đọc và tạo tài liệu trên Drive.',
