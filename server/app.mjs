@@ -1,5 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
@@ -13,6 +15,34 @@ import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
 const pub = fileURLToPath(new URL('../public/', import.meta.url));
 const cleanMcp = ({ secret, ...m }) => ({ ...m, hasCredential: !!secret });
+
+function detectRevision() {
+  if (process.env.GENHUB_REVISION) return process.env.GENHUB_REVISION.trim();
+  if (process.env.REVISION) return process.env.REVISION.trim();
+  try {
+    const installData = JSON.parse(readFileSync('/etc/gen-hub/install.json', 'utf8'));
+    if (installData.revision) return installData.revision.trim();
+  } catch {}
+  try {
+    const gitSha = execSync('git rev-parse HEAD', {
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
+      .toString()
+      .trim();
+    if (/^[0-9a-f]{40}$/.test(gitSha)) return gitSha;
+  } catch {}
+  return null;
+}
+
+function detectUpdatedAt() {
+  if (process.env.GENHUB_UPDATED_AT) return process.env.GENHUB_UPDATED_AT.trim();
+  try {
+    const installData = JSON.parse(readFileSync('/etc/gen-hub/install.json', 'utf8'));
+    if (installData.updated_at) return String(installData.updated_at).trim();
+  } catch {}
+  return null;
+}
 const text = (v, max = 200) =>
   typeof v === 'string' && v.trim() && v.length <= max
     ? v.trim()
@@ -23,7 +53,10 @@ export function createHub({
   dir,
   origin = 'http://127.0.0.1:3080',
   connector,
-  installationId = ''
+  installationId = '',
+  revision,
+  updatedAt,
+  fetchFn
 }) {
   const base = new URL(origin);
   if (
@@ -39,6 +72,182 @@ export function createHub({
     auth = authService(store, origin),
     up = connector || connectorService(store),
     limits = new Map();
+
+  const currentRevision = revision !== undefined ? revision : detectRevision();
+  const currentUpdatedAt = updatedAt !== undefined ? updatedAt : detectUpdatedAt();
+  const storedVersion = store.get('system', 'version');
+  if (currentRevision) {
+    if (storedVersion && storedVersion.revision && storedVersion.revision !== currentRevision) {
+      store.put('system', 'previous_version', storedVersion);
+      store.audit(
+        'system',
+        'hub',
+        'system.update',
+        'success',
+        { previous: storedVersion.revision, revision: currentRevision },
+        { revision: currentRevision }
+      );
+      store.put('system', 'version', {
+        revision: currentRevision,
+        updatedAt: currentUpdatedAt || new Date().toISOString()
+      });
+    } else if (!storedVersion) {
+      store.put('system', 'version', {
+        revision: currentRevision,
+        updatedAt: currentUpdatedAt || new Date().toISOString()
+      });
+    }
+  }
+
+  const effectiveUpdatedAt = currentUpdatedAt || store.get('system', 'version')?.updatedAt || null;
+
+  const GITHUB_REPO = process.env.GENHUB_REPO || 'Genesis-ryan-84-0567536339/Gen-hub';
+  const GITHUB_COMMITS_URL = 'https://api.github.com/repos/' + GITHUB_REPO + '/commits/main';
+  const GITHUB_ACTIONS_URL =
+    'https://api.github.com/repos/' + GITHUB_REPO + '/actions/workflows/ci.yml/runs';
+  const UPDATE_CHECK_TTL = 30 * 60 * 1000;
+
+  let updateCheckPromise = null;
+
+  async function checkRemoteUpdate(force = false) {
+    const cached = store.get('system', 'update_check');
+    const now = Date.now();
+    if (!force && cached && now - (cached.timestamp || 0) < UPDATE_CHECK_TTL) {
+      return cached;
+    }
+    if (updateCheckPromise) {
+      return updateCheckPromise;
+    }
+
+    const previousVersion = store.get('system', 'previous_version');
+    const effectiveFetch = fetchFn || globalThis.fetch;
+
+    updateCheckPromise = (async () => {
+      let latestRevision = cached?.latestRevision || null;
+      let latestCommitDate = cached?.latestCommitDate || null;
+      let latestCommitMessage = cached?.latestCommitMessage || null;
+      let ciStatus = cached?.ciStatus || 'unknown';
+      let error = null;
+
+      try {
+        const commitRes = await effectiveFetch(GITHUB_COMMITS_URL, {
+          headers: {
+            'User-Agent': 'Gen-hub-app',
+            'Accept': 'application/vnd.github+json'
+          },
+          signal: AbortSignal.timeout(10000)
+        });
+
+        if (commitRes.status === 403 || commitRes.status === 429) {
+          error = 'Giới hạn tốc độ kết nối GitHub (rate limit), vui lòng thử lại sau';
+        } else if (!commitRes.ok) {
+          error = `GitHub API trả mã ${commitRes.status}`;
+        } else {
+          const commitData = await commitRes.json();
+          if (commitData && commitData.sha) {
+            latestRevision = commitData.sha;
+            latestCommitDate =
+              commitData.commit?.committer?.date || commitData.commit?.author?.date || null;
+            latestCommitMessage = commitData.commit?.message?.split('\n')[0] || '';
+
+            if (latestRevision !== currentRevision) {
+              try {
+                const runsRes = await effectiveFetch(
+                  GITHUB_ACTIONS_URL + '?head_sha=' + latestRevision + '&event=push&per_page=5',
+                  {
+                    headers: {
+                      'User-Agent': 'Gen-hub-app',
+                      'Accept': 'application/vnd.github+json'
+                    },
+                    signal: AbortSignal.timeout(6000)
+                  }
+                );
+                if (runsRes.ok) {
+                  const runsData = await runsRes.json();
+                  const runs = runsData.workflow_runs || [];
+                  const match = runs.find(
+                    r => r.head_sha === latestRevision && r.head_branch === 'main'
+                  );
+                  if (match) {
+                    if (match.conclusion === 'success' && match.status === 'completed') {
+                      ciStatus = 'success';
+                    } else if (match.status === 'in_progress' || match.status === 'queued') {
+                      ciStatus = 'pending';
+                    } else {
+                      ciStatus = match.conclusion || match.status;
+                    }
+                  } else {
+                    ciStatus = 'pending';
+                  }
+                }
+              } catch {
+                // Non-fatal
+              }
+            } else {
+              ciStatus = 'success';
+            }
+          }
+        }
+      } catch (err) {
+        error = err.message || 'Không thể kết nối GitHub';
+      }
+
+      const hasUpdate = Boolean(
+        latestRevision && currentRevision && latestRevision !== currentRevision
+      );
+      const result = {
+        revision: currentRevision,
+        updatedAt: effectiveUpdatedAt,
+        previousRevision: previousVersion?.revision || null,
+        checkedAt: new Date().toISOString(),
+        timestamp: now,
+        latestRevision,
+        latestCommitDate,
+        latestCommitMessage,
+        hasUpdate,
+        ciStatus,
+        error
+      };
+
+      store.put('system', 'update_check', result);
+      return result;
+    })().finally(() => {
+      updateCheckPromise = null;
+    });
+
+    return updateCheckPromise;
+  }
+
+  function getUpdateStatus() {
+    const cached = store.get('system', 'update_check');
+    const previousVersion = store.get('system', 'previous_version');
+    const base = {
+      revision: currentRevision,
+      updatedAt: effectiveUpdatedAt,
+      previousRevision: previousVersion?.revision || null,
+      checkedAt: cached?.checkedAt || null,
+      timestamp: cached?.timestamp || null,
+      latestRevision: cached?.latestRevision || null,
+      latestCommitDate: cached?.latestCommitDate || null,
+      latestCommitMessage: cached?.latestCommitMessage || null,
+      hasUpdate: Boolean(
+        cached?.latestRevision && currentRevision && cached.latestRevision !== currentRevision
+      ),
+      ciStatus: cached?.ciStatus || 'unknown',
+      error: cached?.error || null
+    };
+
+    if (!cached || Date.now() - (cached.timestamp || 0) >= UPDATE_CHECK_TTL) {
+      checkRemoteUpdate(false).catch(() => {});
+    }
+
+    return base;
+  }
+
+  const updateTimer = setInterval(() => {
+    checkRemoteUpdate(false).catch(() => {});
+  }, UPDATE_CHECK_TTL);
+  updateTimer.unref();
   let inFlight = 0;
   const rate = (key, max, period = 60000) => {
     const now = Date.now(),
@@ -366,7 +575,8 @@ export function createHub({
         endpoint: origin + '/mcp',
         catalog,
         adminAssistant: assistant.status(),
-        owner: store.get('owner', 'main').username
+        owner: store.get('owner', 'main').username,
+        update: getUpdateStatus()
       });
     }
     if (resource === 'vault') {
@@ -594,6 +804,21 @@ export function createHub({
         throw new HubError('Giới hạn nhật ký cần từ 1 đến 5000');
       return respond(200, store.logs(limit, filters).map(redact));
     }
+    if (resource === 'check-update') {
+      if (method === 'POST') {
+        rate('check-update:' + actor, 10, 60000);
+        const result = await checkRemoteUpdate(true);
+        audit(
+          'system.check_update',
+          {},
+          { hasUpdate: result.hasUpdate, latestRevision: result.latestRevision }
+        );
+        return respond(200, result);
+      }
+      if (method === 'GET') {
+        return respond(200, getUpdateStatus());
+      }
+    }
     throw new HubError('Không tìm thấy API', 404);
   }
   const assistant = adminAssistant(store, origin, ({ path, ...context }) =>
@@ -808,8 +1033,10 @@ export function createHub({
     store,
     auth,
     allowed,
+    checkRemoteUpdate,
     close: () => {
       clearInterval(timer);
+      clearInterval(updateTimer);
       server.close();
       store.close();
     }

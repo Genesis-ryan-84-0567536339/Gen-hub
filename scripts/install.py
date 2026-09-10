@@ -285,7 +285,8 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, 
     link = ROOT / 'current.new'
     link.unlink(missing_ok=True); link.symlink_to(release); os.replace(link, ROOT / 'current')
     state.update(revision=release.name, engine='compose', completed=True, services_installed=True,
-                 step='Hoàn tất', pending_revision=None, last_error=None)
+                 step='Hoàn tất', pending_revision=None, last_error=None,
+                 updated_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()))
     save()
 
 

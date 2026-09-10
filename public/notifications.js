@@ -49,7 +49,9 @@ export function formatNotification(log, state = {}) {
     findMcp(l.mcp)?.name ||
     findMcp(input.mcp)?.name ||
     (l.mcp && l.mcp !== 'hub' && l.mcp !== 'vault'
-      ? (l.mcp.length > 12 ? l.mcp.slice(0, 8) + '…' : l.mcp)
+      ? l.mcp.length > 12
+        ? l.mcp.slice(0, 8) + '…'
+        : l.mcp
       : 'Hub');
 
   const ts = Date.parse(l.created) || Date.now();
@@ -364,6 +366,41 @@ export function formatNotification(log, state = {}) {
     };
   }
 
+  if (tool === 'system.update') {
+    const rev = (output.revision || input.revision || '').slice(0, 7);
+    return {
+      id: l.id,
+      created: l.created,
+      timestamp: ts,
+      title: 'Gen-hub đã cập nhật',
+      message: rev
+        ? `Hệ thống vừa cập nhật lên phiên bản ${rev}.`
+        : 'Hệ thống vừa tự động cập nhật phiên bản mới.',
+      level: 'info',
+      icon: 'shield',
+      target: '#overview',
+      actor: 'Hệ thống',
+      status
+    };
+  }
+
+  if (tool === 'system.check_update') {
+    return {
+      id: l.id,
+      created: l.created,
+      timestamp: ts,
+      title: 'Kiểm tra cập nhật',
+      message: output.hasUpdate
+        ? `Có bản cập nhật mới (${(output.latestRevision || '').slice(0, 7)}) trên GitHub.`
+        : 'Đã kiểm tra cập nhật: Hệ thống đang ở bản mới nhất.',
+      level: 'info',
+      icon: 'activity',
+      target: '#settings',
+      actor: actorName,
+      status
+    };
+  }
+
   // 5. Tool calls by external agents or general tools
   if (status === 'error' || status === 'denied') {
     const isDenied = status === 'denied';
@@ -408,9 +445,7 @@ export function getNotifications(logs = [], state = {}, lastRead = 0) {
 
   const unreadCount = notifications.filter(n => n.unread).length;
   const latestTimestamp =
-    notifications.length > 0
-      ? Math.max(...notifications.map(n => n.timestamp))
-      : 0;
+    notifications.length > 0 ? Math.max(...notifications.map(n => n.timestamp)) : 0;
 
   return {
     notifications,
