@@ -43,3 +43,10 @@ Chốt với Ryan ngày 2026-09-08. Đích: Hub tự sở hữu; repo Gen-hub l�
 - Không proxy sampling/elicitation server-to-client; chưa hỗ trợ giao thức 2026-07-28.
 - Các bộ công cụ tích hợp là tập tool được định nghĩa trong catalog, không phải toàn bộ API nhà cung cấp.
 - Dashboard tính trên 200 log gần nhất; export tối đa 5.000 bản ghi. Dữ liệu lưu theo retention 7/30/90 ngày.
+
+## Chi tiết theo tab và thống kê audit (#27)
+
+- Agent, Connector, Vault: danh sách + chi tiết theo tab; Cài đặt: danh sách nhóm + tab. Audit giữ bảng/modal, Dashboard không đổi.
+- Agent lưu `description` và `instructions` tùy chọn trong record hiện có. Initialize chỉ lấy instruction từ agent đã được xác thực, fallback câu mặc định nếu thiếu/trống. Không thay đổi policy grant.
+- Audit lọc actor/connector/secret/time/tool trước limit, dùng chung web và admin. Secret ID nằm trong payload mã hóa nên được đối chiếu sau decrypt trong iterator, trước khi dừng ở limit. Không thu thập dữ liệu mới, không đưa giá trị Vault vào audit.
+- Biểu đồ chỉ tổng hợp lượt gọi tool của agent thường, theo thời gian GMT+7; byte = độ dài UTF-8 của JSON input/output đã redact. Tối đa 5.000 bản ghi phù hợp trong khoảng chọn và retention; UI ghi rõ giới hạn, đơn vị và dữ liệu trống.

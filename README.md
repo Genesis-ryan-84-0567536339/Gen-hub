@@ -70,6 +70,17 @@ Token có quyền thao tác console (connector, agent, audit, cài đặt) và k
 
 Trong **Agent & quyền**, ID giúp phân biệt các client trùng tên. Owner có thể sửa tên, thu hồi rồi xóa agent khỏi danh sách; nhật ký liên quan được giữ theo thời gian lưu đã cấu hình.
 
+## Danh sách và chi tiết theo tab
+
+Agent, MCP/Connector và Vault dùng hai cột: chọn mục bên trái, xem/sửa theo tab bên phải. Màn hình nhỏ xếp danh sách trên chi tiết; có tìm kiếm theo tên hoặc ID. Cài đặt chia nhóm bên trái. Dashboard giữ nguyên; Audit giữ bảng và hộp thoại xem payload. Hộp thoại vẫn dùng cho tạo mục, credential, token, đọc giá trị secret và xác nhận thao tác.
+
+- **Agent / Thông tin**: tên, ID, ngày tạo, mô tả tùy chọn (tối đa 2.000 ký tự) và instruction bootstrap riêng (tối đa 16.000 ký tự). `POST /api/agents`, `PATCH /api/agents/:id` và tool admin `agent_create`/`agent_update` nhận `description`, `instructions`. Agent đã có không cần migration. Khi chính agent đó gọi `/mcp` → `initialize`, Hub trả instruction riêng trong `instructions`; chuỗi trống/toàn khoảng trắng dùng câu mặc định “Chỉ sử dụng các công cụ được owner cấp quyền.”
+- **Agent / Phân quyền**, **Connector / Tool**, **Vault / Quyền đọc** giữ cơ chế cấp quyền/công bố/chia sẻ hiện có. Connector có tab thông tin, nhật ký và thống kê; Vault có metadata ngày tạo/sửa và nhật ký đọc đúng secret.
+- **Nhật ký và Thống kê của từng mục** lấy tối đa 5.000 bản ghi phù hợp, lọc ở backend trước giới hạn; chọn 24 giờ, 7/30/90 ngày và làm mới độc lập. Dữ liệu vẫn phụ thuộc thời hạn lưu audit. Khi chạm 5.000 bản ghi, UI hiển thị cảnh báo thiếu dữ liệu cũ hơn.
+- Hai biểu đồ đếm lượt gọi theo tool/thời gian và cộng **byte JSON UTF-8 của input/output đã redact**, chia giờ hoặc ngày GMT+7. Tỷ lệ dùng tổng lượt trong từng cột, gồm thành công/lỗi/bị từ chối; loại thao tác owner/admin/Hub. Có bảng số liệu để đọc chính xác. Đây **không phải token LLM hay kích thước byte truyền trên mạng**. Vault chỉ ghi metadata lượt đọc; giá trị secret không nằm trong audit hoặc thống kê payload.
+
+`GET /api/logs` và tool admin `audit_list` nhận bộ lọc tùy chọn `actor`, `mcp`, `tool`, `secret`, `since` (thời gian ISO 8601), `limit` (1–5.000). Các bộ lọc kết hợp bằng AND. `secret` chỉ trả `vault.read` có `input.id` tương ứng, kể cả lượt đọc bị từ chối/lỗi; không trả thao tác sửa/chia sẻ. Response vẫn là mảng audit đã redact, sắp xếp ID mới nhất trước. API tiếp tục yêu cầu phiên owner; tool admin yêu cầu token quản trị riêng.
+
 ## Kho bí mật (Vault)
 
 1. Mở **Kho bí mật → Thêm secret**, nhập tên và giá trị (tối đa 64 KiB).
@@ -160,6 +171,8 @@ npm start
 ```
 
 CI còn build/chạy Docker thật trên Ubuntu 22.04/24.04, thử Caddy TLS với CA kiểm thử được tin cậy, đăng nhập/MCP, tạo lại container, giữ dữ liệu và backup; kiểm tra tuyến nội bộ personal và binary cloudflared. Không dùng token giả để kết nối Cloudflare.
+
+`npm run test:ui` chạy cả luồng UI cơ bản và Issue #27 trên Chromium. Cài browser bằng `npx playwright-core install --with-deps chromium`, hoặc đặt `PLAYWRIGHT_CHROMIUM_PATH` tới Chrome/Chromium có sẵn. CI có job UI riêng trên Ubuntu 24.04. Đặt `UI_SCREENSHOT_DIR` nếu cần lưu ảnh desktop/mobile để review.
 
 Các test sử dụng HTTP thật trên loopback cho MCP/đăng nhập/OAuth và server MCP kiểm soát trong test. Test installer dùng API/DNS giả lập để không thay đổi hạ tầng thật.
 

@@ -210,7 +210,7 @@ export function createHub({
           : '2025-06-18',
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'gen-hub', version: '0.1.0' },
-        instructions: 'Chỉ sử dụng các công cụ được owner cấp quyền.'
+        instructions: a.instructions?.trim() || 'Chỉ sử dụng các công cụ được owner cấp quyền.'
       });
     if (b.method === 'ping') return result({});
     if (b.method === 'tools/list') {
@@ -318,6 +318,12 @@ export function createHub({
       return result({ content: [{ type: 'text', text: message }], isError: true });
     }
   }
+  const optionalAgentText = (value, max) => {
+    if (value === undefined) return '';
+    if (typeof value !== 'string' || value.length > max)
+      throw new HubError(`Nội dung cần là chuỗi tối đa ${max} ký tự`);
+    return value.trim();
+  };
   async function ownerApi({ method, parts, b = {}, s, req, actor = 'owner' }) {
     const write = !['GET', 'HEAD'].includes(method);
     const [resource, mid, action] = parts;
@@ -480,6 +486,8 @@ export function createHub({
       store.put('agent', aid, {
         id: aid,
         name: text(b.name, 80),
+        description: optionalAgentText(b.description, 2000),
+        instructions: optionalAgentText(b.instructions, 16000),
         client: 'Manual',
         status: 'active',
         permissions: validateGrants(b.permissions || []),
@@ -501,6 +509,8 @@ export function createHub({
       const a = store.get('agent', mid);
       if (!a) throw new HubError('Không tìm thấy agent', 404);
       if (b.name !== undefined) a.name = text(b.name, 80);
+      if (b.description !== undefined) a.description = optionalAgentText(b.description, 2000);
+      if (b.instructions !== undefined) a.instructions = optionalAgentText(b.instructions, 16000);
       if (b.permissions) a.permissions = validateGrants(b.permissions);
       if (b.status) {
         if (!['active', 'revoked'].includes(b.status))
@@ -555,7 +565,24 @@ export function createHub({
           : 'Agent chưa được cấp, MCP tạm dừng, kết nối lỗi hoặc tool chưa công bố'
       });
     }
-    if (resource === 'logs' && !write) return respond(200, store.logs(5000).map(redact));
+    if (resource === 'logs' && !write) {
+      const filters = {};
+      for (const key of ['actor', 'mcp', 'secret', 'tool', 'since']) {
+        if (b[key] === undefined) continue;
+        if (typeof b[key] !== 'string' || !b[key].length || b[key].length > 256)
+          throw new HubError('Bộ lọc nhật ký không hợp lệ');
+        filters[key] = b[key];
+      }
+      if (filters.since) {
+        if (!Number.isFinite(Date.parse(filters.since)))
+          throw new HubError('Thời gian không hợp lệ');
+        filters.since = new Date(filters.since).toISOString();
+      }
+      const limit = b.limit === undefined ? 5000 : Number(b.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 5000)
+        throw new HubError('Giới hạn nhật ký cần từ 1 đến 5000');
+      return respond(200, store.logs(limit, filters).map(redact));
+    }
     throw new HubError('Không tìm thấy API', 404);
   }
   const assistant = adminAssistant(store, origin, ({ path, ...context }) =>
@@ -723,7 +750,7 @@ export function createHub({
         const response = await ownerApi({
           method: req.method,
           parts: p.split('/').slice(2),
-          b,
+          b: req.method === 'GET' ? Object.fromEntries(u.searchParams) : b,
           s,
           req
         });
@@ -735,6 +762,7 @@ export function createHub({
         '/': 'index.html',
         '/app.js': 'app.js',
         '/connection-guides.js': 'connection-guides.js',
+        '/audit-stats.js': 'audit-stats.js',
         '/styles.css': 'styles.css'
       };
       if (!files[p]) throw new HubError('Không tìm thấy trang', 404);

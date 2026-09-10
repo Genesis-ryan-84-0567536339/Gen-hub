@@ -89,11 +89,36 @@ export function openStore(dir) {
         Math.round(latency),
         seal({ input, output, reason })
       );
-  const logs = (limit = 200) =>
-    db
-      .prepare('SELECT * FROM audit ORDER BY id DESC LIMIT ?')
-      .all(limit)
-      .map(({ payload, ...r }) => ({ ...r, ...unseal(payload) }));
+  const logs = (limit = 200, filters = {}) => {
+    const clauses = [],
+      values = [];
+    for (const key of ['actor', 'mcp', 'tool']) {
+      if (filters[key] !== undefined) {
+        clauses.push(`${key} = ?`);
+        values.push(filters[key]);
+      }
+    }
+    if (filters.since) {
+      clauses.push('created >= ?');
+      values.push(filters.since);
+    }
+    if (filters.secret) clauses.push("mcp = 'vault' AND tool = 'vault.read'");
+    // Secret IDs live inside encrypted payloads. Filter while iterating, before LIMIT.
+    const query =
+      'SELECT * FROM audit' +
+      (clauses.length ? ' WHERE ' + clauses.join(' AND ') : '') +
+      ' ORDER BY id DESC' +
+      (filters.secret ? '' : ' LIMIT ?');
+    if (!filters.secret) values.push(limit);
+    const rows = [];
+    for (const { payload, ...r } of db.prepare(query).iterate(...values)) {
+      const data = unseal(payload);
+      if (filters.secret && data.input?.id !== filters.secret) continue;
+      rows.push({ ...r, ...data });
+      if (rows.length >= limit) break;
+    }
+    return rows;
+  };
   const tx = fn => {
     db.exec('BEGIN IMMEDIATE');
     try {

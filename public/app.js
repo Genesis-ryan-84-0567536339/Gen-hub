@@ -1,3 +1,4 @@
+import { auditStats } from './audit-stats.js';
 import { connectionGuide } from './connection-guides.js';
 ('use strict');
 const $ = s => document.querySelector(s),
@@ -54,6 +55,10 @@ let state = null,
   agentFilter = 'all',
   mcpFilter = 'all',
   timeFilter = 'all';
+const selected = { agents: null, mcps: null, vault: null, settings: 'general' };
+const detailTabs = { agents: 'info', mcps: 'info', vault: 'info', settings: 'info' };
+let activity = new Map(),
+  activityHours = 168;
 const modal = $('#modal');
 modal.addEventListener('cancel', e => {
   e.preventDefault();
@@ -112,6 +117,7 @@ function login(error = '') {
 }
 async function refresh() {
   state = await api('state');
+  activity = new Map();
   render();
 }
 async function boot() {
@@ -144,6 +150,7 @@ function render() {
         ''
       )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub v0.1.0</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
+  positionDetailContent();
 }
 function overview() {
   const logs = state.logs,
@@ -209,14 +216,11 @@ function mcps() {
       'Thêm dịch vụ, kết nối tài khoản và công bố tool cho agent.',
       btn('Thêm MCP', 'add', 'primary', 'plus')
     ) +
-    `<div class="toolbar">${searchInput('Tìm MCP…')}<span class="muted">${state.mcps.length} MCP</span></div><div id="results">${mcpResults()}</div>`
+    `<div class="toolbar">${searchInput('Tìm MCP…')}</div><div id="results">${mcpResults()}</div>`
   );
 }
 function mcpResults() {
-  const rows = state.mcps.filter(m => m.name.toLowerCase().includes(filter.toLowerCase()));
-  return rows.length
-    ? `<div class="servicegrid">${rows.map(m => `<article class="card servicecard"><div class="servicecardtop">${logo(m)}${badge(m.status)}</div><h2>${esc(m.name)}</h2><p>${esc(m.description)}</p><div class="inline" style="margin-top:17px"><span class="badge gray">${esc(m.provider === 'remote' ? 'MCP tùy chỉnh' : state.catalog.find(c => c.id === m.provider)?.category)}</span><span class="sub">${m.tools.filter(t => t.published).length}/${m.tools.length} tool công bố</span></div><div class="divider"></div><div class="servicecardfoot"><span class="togglelabel">${sw(m.on, 'toggle:' + m.id, 'Cung cấp ' + m.name)}Cung cấp</span>${btn('Quản lý', 'mcp:' + m.id, 'small')}</div></article>`).join('')}</div>`
-    : empty('Chưa có MCP phù hợp', 'Thêm MCP để kết nối dịch vụ và cung cấp công cụ cho agent.');
+  return entityResults('mcps');
 }
 function agents() {
   return (
@@ -225,7 +229,7 @@ function agents() {
       'Cấp công cụ riêng cho từng agent; thu hồi ngay khi cần.',
       btn('Kết nối agent', 'connect', 'primary', 'plus')
     ) +
-    `<div class="toolbar">${searchInput('Tìm agent…')}</div><div id="results">${agentResults()}</div><div class="info" style="margin-top:20px">${I('shield')}Agent kết nối qua OAuth cần owner đăng nhập và duyệt. Bạn cũng có thể tạo token riêng cho MCP client không hỗ trợ OAuth.</div>`
+    `<div class="toolbar">${searchInput('Tìm agent…')}</div><div id="results">${agentResults()}</div>`
   );
 }
 function shortAgentId(agent) {
@@ -238,13 +242,190 @@ function shortAgentId(agent) {
   return agent.id.slice(-size);
 }
 function agentResults() {
-  const rows = state.agents.filter(a =>
-    (a.name + ' ' + a.id).toLowerCase().includes(filter.toLowerCase())
-  );
-  return rows.length
-    ? `<div class="card tablewrap"><table><thead><tr><th>Agent</th><th>Trạng thái</th><th>Tool khả dụng</th><th>Lần gọi gần nhất</th><th></th></tr></thead><tbody>${rows.map(a => `<tr><td><div class="inline">${I('bot')}<div><h3>${esc(a.name)}</h3><code class="mono" title="${esc(a.id)}">#${esc(shortAgentId(a))}</code><p class="sub">${a.client === 'Manual' ? 'Token riêng' : 'OAuth'}</p></div></div></td><td>${badge(a.status)}</td><td>${a.effective} / ${a.permissions.length}</td><td>${date(a.last)}</td><td>${btn('Quản lý quyền', 'agent:' + a.id, 'small')}</td></tr>`).join('')}</tbody></table></div>`
-    : empty('Chưa có agent', 'Kết nối agent bằng endpoint MCP hoặc tạo token riêng.');
+  return entityResults('agents');
 }
+function positionDetailContent() {
+  document.querySelectorAll('.stats-scroll').forEach(chart => {
+    chart.scrollLeft = chart.scrollWidth;
+  });
+  const active = document.querySelector('.detail-tabs [aria-selected="true"]');
+  if (active) {
+    const tabs = active.parentElement;
+    tabs.scrollLeft = Math.max(
+      0,
+      active.offsetLeft - tabs.offsetLeft + active.offsetWidth - tabs.clientWidth
+    );
+  }
+}
+function selectEntity(kind, id) {
+  if (kind !== 'settings' && !state[kind]?.some(row => row.id === id)) return;
+  if (selected[kind] !== id) detailTabs[kind] = 'info';
+  selected[kind] = id;
+  close();
+  if (route !== kind) location.hash = kind;
+  else render();
+}
+function entityResults(kind) {
+  const rows = state[kind].filter(row =>
+    (row.name + ' ' + row.id).toLowerCase().includes(filter.toLowerCase())
+  );
+  if (!rows.some(row => row.id === selected[kind])) {
+    selected[kind] = rows[0]?.id || null;
+    detailTabs[kind] = 'info';
+  }
+  const list = rows
+    .map(
+      row =>
+        `<button class="entity-row ${row.id === selected[kind] ? 'selected' : ''}" data-action="select:${kind}:${esc(row.id)}" ${row.id === selected[kind] ? 'aria-current="true"' : ''}><strong>${esc(row.name)}</strong><span class="mono">${kind === 'agents' ? '#' + esc(shortAgentId(row)) : esc(row.id)}</span><span>${kind === 'vault' ? date(row.updated) : badge(row.status)}</span></button>`
+    )
+    .join('');
+  return `<div class="entity-layout"><aside class="card entity-list" aria-label="Danh sách ${names[kind]}"><div class="cardhead"><h2>${rows.length} mục</h2></div>${list || '<p class="empty">Không có mục phù hợp.</p>'}</aside><section class="card entity-detail" id="entity-detail" aria-label="Chi tiết mục đang chọn">${entityDetail(kind)}</section></div>`;
+}
+function entityDetail(kind) {
+  const row = state[kind].find(row => row.id === selected[kind]);
+  if (!row)
+    return '<div class="empty"><h3>Chưa có mục được chọn</h3><p>Thêm mục mới hoặc thay đổi tìm kiếm.</p></div>';
+  const tabs = [
+    ['info', 'Thông tin'],
+    [
+      kind === 'agents' ? 'grants' : kind === 'mcps' ? 'tools' : 'sharing',
+      kind === 'agents' ? 'Phân quyền' : kind === 'mcps' ? 'Tool' : 'Quyền đọc'
+    ],
+    ['logs', kind === 'vault' ? 'Nhật ký đọc secret' : 'Nhật ký sử dụng']
+  ];
+  if (kind !== 'vault') tabs.push(['stats', 'Thống kê']);
+  const current = detailTabs[kind];
+  const content = ['logs', 'stats'].includes(current)
+    ? activityPanel(kind, row.id, current)
+    : kind === 'agents'
+      ? current === 'info'
+        ? agentInfo(row)
+        : agentPermissions(row)
+      : kind === 'mcps'
+        ? current === 'info'
+          ? connectorInfo(row)
+          : connectorTools(row)
+        : vaultDetail(row, current);
+  return `<div class="cardhead"><div><h2>${esc(row.name)}</h2><p class="mono">${esc(row.id)}</p></div></div><div class="cardpad">${tabBar(tabs, current)}<div role="tabpanel" id="detail-panel" aria-labelledby="detail-tab-${current}">${content}</div></div>`;
+}
+function tabBar(tabs, current) {
+  return `<div class="tabs detail-tabs" role="tablist" aria-label="Chi tiết">${tabs.map(([key, label]) => `<button type="button" role="tab" id="detail-tab-${key}" aria-controls="detail-panel" aria-selected="${current === key}" tabindex="${current === key ? 0 : -1}" class="tab ${current === key ? 'active' : ''}" data-action="detail-tab:${key}">${label}</button>`).join('')}</div>`;
+}
+function agentInfo(a) {
+  return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(a.id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(a.created)}</dd></div><div><dt>Trạng thái</dt><dd>${badge(a.status)}</dd></div><div><dt>Lần gọi gần nhất</dt><dd>${date(a.last)}</dd></div></dl><form id="agent-info" data-id="${esc(a.id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(a.name)}" required maxlength="80"></label><label class="field">Mô tả (tùy chọn)<textarea class="input" name="description" rows="3" maxlength="2000">${esc(a.description || '')}</textarea></label><label class="field">Instruction bootstrap riêng (tùy chọn)<textarea class="input" name="instructions" rows="7" maxlength="16000" placeholder="Chỉ sử dụng các công cụ được owner cấp quyền.">${esc(a.instructions || '')}</textarea><small>Agent này nhận hướng dẫn trong response initialize khi kết nối /mcp. Để trống để dùng hướng dẫn mặc định.</small></label><button class="btn primary" type="submit">Lưu thông tin</button></form>`;
+}
+function vaultDetail(s, tab) {
+  if (tab === 'sharing')
+    return `<form id="vault-share" data-id="${esc(s.id)}">${sharingFields(state.agents.filter(a => a.status === 'active' && a.permissions.includes('vault:' + s.id)).map(a => a.id))}<button class="btn primary" type="submit">Lưu quyền đọc</button></form>`;
+  return `<dl class="detailgrid"><div><dt>Ngày tạo</dt><dd>${date(s.created)}</dd></div><div><dt>Cập nhật</dt><dd>${date(s.updated)}</dd></div></dl><form id="vault-save" data-id="${esc(s.id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(s.name)}" maxlength="80" required></label><label class="field">Giá trị mới (để trống để giữ nguyên)<textarea class="input mono" name="secret" rows="3" maxlength="65536" autocomplete="off" spellcheck="false"></textarea></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><div class="actions">${btn('Xem giá trị…', 'vault-reveal:' + s.id)}${btn('Xóa secret', 'vault-delete:' + s.id, 'danger')}</div>`;
+}
+function activityPanel(kind, id, tab) {
+  const key = kind + ':' + id;
+  let entry = activity.get(key);
+  if (!entry) {
+    entry = { now: Date.now() };
+    activity.set(key, entry);
+    const params = new URLSearchParams({
+      [kind === 'agents' ? 'actor' : kind === 'mcps' ? 'mcp' : 'secret']: id,
+      since: new Date(entry.now - activityHours * 3600000).toISOString(),
+      limit: '5000'
+    });
+    api('logs?' + params)
+      .then(rows => {
+        entry.rows = rows;
+      })
+      .catch(error => {
+        entry.error = error.message;
+      })
+      .finally(() => {
+        if (
+          state &&
+          activity.get(key) === entry &&
+          route === kind &&
+          selected[kind] === id &&
+          ['logs', 'stats'].includes(detailTabs[kind])
+        ) {
+          const panel = $('#entity-detail');
+          if (panel) {
+            panel.innerHTML = entityDetail(kind);
+            positionDetailContent();
+          }
+        }
+      });
+  }
+  const controls = `<div class="toolbar"><label>Khoảng thời gian<select id="activity-hours" aria-label="Khoảng thời gian">${options(
+    [
+      [24, '24 giờ qua'],
+      [168, '7 ngày qua'],
+      [720, '30 ngày qua'],
+      [2160, '90 ngày qua']
+    ],
+    activityHours
+  )}</select></label>${btn('Làm mới nhật ký', 'activity-reload', 'small', 'refresh')}</div>`;
+  if (entry.error) return controls + `<p class="errorline" role="alert">${esc(entry.error)}</p>`;
+  if (!entry.rows) return controls + '<p role="status">Đang tải nhật ký…</p>';
+  const note = `<p class="footnote">${entry.rows.length} bản ghi phù hợp trong ${activityHours / 24} ngày qua, tối đa 5.000 bản ghi mới nhất, theo thời hạn lưu nhật ký của Hub.${entry.rows.length === 5000 ? ' Đã chạm giới hạn; biểu đồ có thể thiếu dữ liệu cũ hơn. Hãy chọn khoảng thời gian ngắn hơn.' : ''}</p>`;
+  return (
+    controls + (tab === 'logs' ? logTable(entry.rows) : statsCharts(entry.rows, entry.now)) + note
+  );
+}
+function statsCharts(logs, now) {
+  const { buckets, tools, step } = auditStats(logs, activityHours, now);
+  if (!tools.length)
+    return '<div class="empty"><h3>Chưa có lượt gọi tool</h3><p>Biểu đồ sẽ xuất hiện khi agent gọi tool trong khoảng thời gian này.</p></div>';
+  const colors = [
+    '#28754f',
+    '#467fba',
+    '#b87324',
+    '#9164b0',
+    '#bd5266',
+    '#27878b',
+    '#6d7333',
+    '#77614c'
+  ];
+  const color = key => colors[tools.indexOf(key) % colors.length];
+  const label = value =>
+    new Date(value).toLocaleString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      day: '2-digit',
+      month: '2-digit',
+      ...(step === 3600000 ? { hour: '2-digit' } : {})
+    });
+  const toolLabel = key => {
+    const [id, ...rest] = key.split(' / ');
+    return (state.mcps.find(m => m.id === id)?.name || id) + ' / ' + rest.join(' / ');
+  };
+  const legend = `<div class="stats-legend">${tools.map(key => `<span><i style="background:${color(key)}"></i>${esc(toolLabel(key))}</span>`).join('')}</div>`;
+  const ratio = buckets
+    .map(
+      bucket =>
+        `<div class="stats-column"><div class="ratio-stack">${[...bucket.tools].map(([key, row]) => `<div style="height:${(row.count / bucket.count) * 100}%;background:${color(key)}" title="${esc(label(bucket.start) + ' · ' + toolLabel(key) + ': ' + row.count + ' lượt (' + ((row.count / bucket.count) * 100).toFixed(1) + '%)')}"></div>`).join('')}</div><small>${esc(label(bucket.start))}</small></div>`
+    )
+    .join('');
+  const max = Math.max(
+    1,
+    ...buckets.flatMap(bucket => [...bucket.tools.values()].flatMap(row => [row.input, row.output]))
+  );
+  const payload = buckets
+    .map(
+      bucket =>
+        `<div class="stats-column" style="width:${Math.max(64, tools.length * 10)}px"><div class="payload-group">${tools
+          .map(key => {
+            const row = bucket.tools.get(key) || { input: 0, output: 0 };
+            return ['input', 'output']
+              .map(
+                field =>
+                  `<div class="payload-bar payload-${field}" style="height:${(row[field] / max) * 100}%;background:${color(key)}" title="${esc(label(bucket.start) + ' · ' + toolLabel(key) + ' · ' + field + ': ' + row[field] + ' byte')}"></div>`
+              )
+              .join('');
+          })
+          .join('')}</div><small>${esc(label(bucket.start))}</small></div>`
+    )
+    .join('');
+  const table = `<details class="stats-data"><summary>Xem số liệu theo thời gian và tool</summary><div class="tablewrap"><table><thead><tr><th>Thời gian (GMT+7)</th><th>Tool</th><th>Lượt gọi</th><th>Tỷ lệ</th><th>Input (byte)</th><th>Output (byte)</th></tr></thead><tbody>${buckets.flatMap(bucket => [...bucket.tools].map(([key, row]) => `<tr><td>${esc(label(bucket.start))}</td><td>${esc(toolLabel(key))}</td><td>${row.count}</td><td>${((row.count / bucket.count) * 100).toFixed(1)}%</td><td>${row.input}</td><td>${row.output}</td></tr>`)).join('')}</tbody></table></div></details>`;
+  return `<section class="audit-chart"><h3>Tỷ lệ loại tool theo thời gian</h3><p class="footnote">0–100% lượt gọi trong từng ${step === 3600000 ? 'giờ' : 'ngày'} (GMT+7), gồm thành công, lỗi và bị từ chối. Cột trống = chưa có lượt gọi.</p><div class="stats-scroll" role="img" aria-label="Biểu đồ tỷ lệ tool; số liệu đầy đủ ở bảng bên dưới"><div class="stats-plot">${ratio}</div></div>${legend}</section><section class="audit-chart"><h3>Kích thước payload theo tool và thời gian</h3><p class="footnote">Tổng byte JSON UTF-8 của input/output đã redact; không phải token LLM hoặc byte mạng. Thang đo: 0–${max.toLocaleString('vi-VN')} byte. Input: đậm · Output: nhạt. Vault chỉ có metadata audit, không chứa giá trị secret.</p><div class="stats-scroll" role="img" aria-label="Biểu đồ byte input và output; số liệu đầy đủ ở bảng bên dưới"><div class="stats-plot">${payload}</div></div>${legend}</section>${table}`;
+}
+
 function options(rows, current) {
   return rows
     .map(
@@ -304,19 +485,7 @@ function vaultPage() {
       'Lưu secret độc lập và cấp quyền đọc cho từng agent.',
       btn('Thêm secret', 'vault-new', 'primary', 'plus')
     ) +
-    '<div class="info">Secret mới mặc định riêng tư. Agent được cấp quyền sẽ nhận giá trị thật; credential connector vẫn được giữ riêng tại Hub.</div>' +
-    `<section class="card" style="margin-top:24px">${
-      state.vault.length
-        ? `<div class="tablewrap"><table><thead><tr><th>Secret</th><th>Agent đang được cấp</th><th>Cập nhật</th><th></th></tr></thead><tbody>${state.vault
-            .map(s => {
-              const count = state.agents.filter(
-                a => a.status === 'active' && a.permissions.includes('vault:' + s.id)
-              ).length;
-              return `<tr data-vault-id="${esc(s.id)}"><td><b>${esc(s.name)}</b><div class="sub mono">${esc(s.id)}</div></td><td>${count ? count + ' agent' : 'Riêng tư'}</td><td>${date(s.updated)}</td><td>${btn('Quản lý', 'vault-edit:' + s.id, 'small')}</td></tr>`;
-            })
-            .join('')}</tbody></table></div>`
-        : '<div class="empty"><h3>Chưa có secret</h3><p>Thêm API key hoặc token, rồi chọn agent được đọc.</p></div>'
-    }</section>`
+    `<div class="toolbar">${searchInput('Tìm secret…')}</div><div id="results">${entityResults('vault')}</div>`
   );
 }
 function sharingFields(selected = []) {
@@ -338,32 +507,51 @@ function sharingFields(selected = []) {
   }</div><p class="footnote">“Tất cả” chỉ cấp cho agent hiện có tại lúc lưu; agent mới sau này vẫn cần được cấp riêng. Lưu chia sẻ thay thế danh sách đọc của secret này.</p>`;
 }
 function vaultEditor(id) {
-  const s = state.vault.find(s => s.id === id);
-  modalContext = { kind: 'vault', id };
+  if (id) return selectEntity('vault', id);
+  modalContext = { kind: 'vault' };
   show(
-    s ? esc(s.name) : 'Thêm secret',
-    s ? 'ID: ' + esc(id) : 'Giá trị được mã hóa tại Hub.',
-    `<form id="vault-save"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(s?.name || '')}" maxlength="80" required></label><label class="field">${s ? 'Giá trị mới (để trống để giữ nguyên)' : 'Giá trị secret'}<textarea class="input mono" name="secret" rows="3" maxlength="65536" autocomplete="off" spellcheck="false" ${s ? '' : 'required'}></textarea></label>${s ? '' : sharingFields()}<button class="btn primary" type="submit">${s ? 'Lưu thay đổi' : 'Tạo secret'}</button></form>${s ? `<div class="divider"></div><h3>Quyền đọc</h3><form id="vault-share">${sharingFields(state.agents.filter(a => a.status === 'active' && a.permissions.includes('vault:' + id)).map(a => a.id))}<button class="btn" type="submit">Lưu chia sẻ</button></form><div class="divider"></div><div class="actions">${btn('Xem giá trị…', 'vault-reveal:' + id)}${btn('Xóa secret', 'vault-delete:' + id, 'danger')}</div>` : ''}`,
-    btn('Đóng', 'close'),
-    true
+    'Thêm secret',
+    'Giá trị được mã hóa tại Hub.',
+    `<form id="vault-save"><label class="field">Tên gợi nhớ<input class="input" name="name" maxlength="80" required></label><label class="field">Giá trị secret<textarea class="input mono" name="secret" rows="3" maxlength="65536" autocomplete="off" spellcheck="false" required></textarea></label>${sharingFields()}<button class="btn primary" type="submit">Tạo secret</button></form>`,
+    btn('Đóng', 'close')
   );
 }
 function pinSettings() {
   return `<section class="card cardpad" style="margin-top:24px"><h2>PIN xác nhận thao tác xóa</h2><p class="footnote">${state.security.pinConfigured ? 'Đã đặt PIN.' : 'Chưa đặt PIN.'} Dùng khi xóa agent, MCP, secret hoặc ngắt kết nối. Năm lần nhập sai liên tiếp sẽ khóa thử PIN trong 15 phút.</p>${btn(state.security.pinConfigured ? 'Đổi / đặt lại PIN' : 'Đặt PIN', 'pin-setup', '', 'lock')}</section>`;
 }
 function settings() {
+  const groups = [
+    ['general', 'Không gian cá nhân'],
+    ['security', 'Bảo mật'],
+    ['assistant', 'Trợ lý quản trị']
+  ];
+  const group = selected.settings;
+  const tab = detailTabs.settings;
+  const tabs =
+    group === 'general'
+      ? [
+          ['info', 'Thông tin'],
+          ['endpoint', 'Domain & endpoint']
+        ]
+      : [['info', 'Thông tin']];
+  const content =
+    group === 'security'
+      ? `<h2>Bảo mật</h2><p class="footnote">Agent mới luôn cần owner duyệt. Credential được mã hóa tại Hub.</p><div class="divider"></div>${btn('Đổi mật khẩu owner', 'password', '', 'lock')}${pinSettings()}`
+      : group === 'assistant'
+        ? adminAssistantSettings()
+        : tab === 'endpoint'
+          ? `<h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code>`
+          : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
+              [
+                [7, '7 ngày'],
+                [30, '30 ngày'],
+                [90, '90 ngày']
+              ],
+              state.settings.retention
+            )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><h3>Bắt đầu sử dụng</h3><p class="footnote">Thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}`;
   return (
     head('Cài đặt', 'Thông tin Hub, truy cập và nhật ký.') +
-    `<div class="twocol"><section class="card cardpad"><h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
-      [
-        [7, '7 ngày'],
-        [30, '30 ngày'],
-        [90, '90 ngày']
-      ],
-      state.settings.retention
-    )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><div class="settingsrow"><div><h3>Agent mới cần được duyệt</h3><p>Quyền do owner cấp tại Hub.</p></div><span class="badge">Luôn bật</span></div><div class="settingsrow"><div><h3>Credential được mã hóa</h3><p>Khóa và dữ liệu nằm trên máy cài Gen-hub.</p></div>${I('lock')}</div><div class="divider"></div>${btn('Đổi mật khẩu owner', 'password', '', 'lock')}</section><div><section class="card cardpad"><h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code></section><section class="card cardpad" style="margin-top:22px"><h2>Bắt đầu sử dụng</h2><p class="footnote" style="margin-bottom:18px">Mở lại hướng dẫn thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}</section></div></div>` +
-    pinSettings() +
-    adminAssistantSettings()
+    `<div class="entity-layout"><aside class="card entity-list" aria-label="Nhóm cài đặt">${groups.map(([key, label]) => `<button class="entity-row ${group === key ? 'selected' : ''}" data-action="select:settings:${key}" ${group === key ? 'aria-current="true"' : ''}><strong>${label}</strong></button>`).join('')}</aside><section class="card entity-detail cardpad">${tabBar(tabs, tab)}<div role="tabpanel" id="detail-panel" aria-labelledby="detail-tab-${tab}">${content}</div></section></div>`
   );
 }
 function adminAssistantSettings() {
@@ -425,15 +613,15 @@ function add() {
   );
 }
 function mcp(id) {
-  const m = state.mcps.find(m => m.id === id);
-  modalContext = { kind: 'mcp', id };
-  show(
-    esc(m.name),
-    'Công bố tool tại đây; cấp cho agent trong Agent & quyền.',
-    `<div class="mcpdetailtop">${logo(m)}<div><h3>${esc(m.name)}</h3><p>${esc(m.description)}</p></div><span class="spacer"></span>${badge(m.status)}</div><div class="actions">${btn('Kết nối / xác thực', 'credential:' + id, 'small', 'link')}${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}${m.hasCredential ? btn('Ngắt kết nối', 'disconnect:' + id, 'danger small') : ''}</div>${m.lastError ? `<p class="errorline" style="margin-top:15px">${esc(m.lastError)}</p>` : ''}<div class="settingsrow"><div><h3>Cung cấp MCP</h3><p>${m.on ? 'MCP đang được bật' : 'Tạm dừng cho tất cả agent'}</p></div>${sw(m.on, 'toggle:' + id, 'Cung cấp MCP')}</div><p class="footnote">Đồng bộ lần gần nhất: ${date(m.syncedAt)}</p><div class="divider"></div><div class="toolgroup">${m.tools.map(t => `<div class="toolrow"><div><b>${esc(t.name)}</b><p>${esc(t.description)}</p></div><div class="inline"><span class="badge ${t.annotations?.readOnlyHint ? 'gray' : 'warn'}">${t.annotations?.readOnlyHint ? 'Đọc' : 'Ghi / khác'}</span>${sw(t.published, 'publish:' + id + ':' + t.name, 'Công bố ' + t.name)}</div></div>`).join('') || '<div class="empty">Kết nối rồi đồng bộ danh sách tool.</div>'}</div><div class="divider"></div>${btn('Gỡ MCP khỏi Hub', 'remove:' + id, 'danger small')}`,
-    btn('Đóng', 'close'),
-    true
-  );
+  return selectEntity('mcps', id);
+}
+function connectorInfo(m) {
+  const id = m.id;
+  return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(m.created)}</dd></div></dl><form id="connector-info" data-id="${esc(id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(m.name)}" maxlength="60" required></label><button class="btn primary" type="submit">Lưu thông tin</button></form><div class="divider"></div><div class="mcpdetailtop">${logo(m)}<div><h3>${esc(m.name)}</h3><p>${esc(m.description)}</p></div><span class="spacer"></span>${badge(m.status)}</div><div class="actions">${btn('Kết nối / xác thực', 'credential:' + id, 'small', 'link')}${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}${m.hasCredential ? btn('Ngắt kết nối', 'disconnect:' + id, 'danger small') : ''}</div>${m.lastError ? `<p class="errorline" style="margin-top:15px">${esc(m.lastError)}</p>` : ''}<div class="settingsrow"><div><h3>Cung cấp MCP</h3><p>${m.on ? 'MCP đang được bật' : 'Tạm dừng cho tất cả agent'}</p></div>${sw(m.on, 'toggle:' + id, 'Cung cấp MCP')}</div><p class="footnote">Đồng bộ lần gần nhất: ${date(m.syncedAt)}</p><div class="divider"></div>${btn('Gỡ MCP khỏi Hub', 'remove:' + id, 'danger small')}`;
+}
+function connectorTools(m) {
+  const id = m.id;
+  return `<div class="actions">${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}</div><div class="divider"></div><div class="toolgroup">${m.tools.map(t => `<div class="toolrow"><div><b>${esc(t.name)}</b><p>${esc(t.description)}</p></div><div class="inline"><span class="badge ${t.annotations?.readOnlyHint ? 'gray' : 'warn'}">${t.annotations?.readOnlyHint ? 'Đọc' : 'Ghi / khác'}</span>${sw(t.published, 'publish:' + id + ':' + t.name, 'Công bố ' + t.name)}</div></div>`).join('') || '<div class="empty">Kết nối rồi đồng bộ danh sách tool.</div>'}</div>`;
 }
 function connectionGuideHtml(provider, endpoint) {
   const guide = connectionGuide(provider, endpoint);
@@ -479,15 +667,11 @@ function grantRows(selected) {
   );
 }
 function agent(id) {
-  const a = state.agents.find(a => a.id === id);
-  modalContext = { kind: 'agent', id };
-  show(
-    esc(a.name),
-    'ID: ' + esc(a.id),
-    `<div class="inline" style="margin-bottom:22px">${badge(a.status)}<span class="muted">${a.effective} tool khả dụng</span></div><form id="grants"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(a.name)}" required maxlength="80"></label>${grantRows(a.permissions)}<div class="actions"><button class="btn primary" type="submit">Lưu quyền</button>${a.status === 'active' ? btn('Thu hồi agent', 'revoke:' + id, 'danger') : btn('Xóa agent', 'delete-agent:' + id, 'danger')}</div></form><div class="divider"></div><h3>Kiểm tra quyền đã lưu</h3><form id="test" style="margin-top:18px"><label class="field">Chọn tool<select name="tool">${state.mcps.flatMap(m => m.tools.map(t => `<option value="${esc(m.id + ':' + t.name)}">${esc(m.name)} / ${esc(t.name)}</option>`)).join('')}${state.vault.map(s => `<option value="vault:${esc(s.id)}">Vault / ${esc(s.name)}</option>`).join('')}</select></label><button class="btn" type="submit">Kiểm tra quyền</button><div id="test-result" style="margin-top:16px"></div></form>`,
-    btn('Đóng', 'close'),
-    true
-  );
+  return selectEntity('agents', id);
+}
+function agentPermissions(a) {
+  const id = a.id;
+  return `<div class="inline" style="margin-bottom:22px">${badge(a.status)}<span class="muted">${a.effective} tool khả dụng</span></div><form id="grants" data-id="${esc(id)}">${grantRows(a.permissions)}<div class="actions"><button class="btn primary" type="submit">Lưu quyền</button>${a.status === 'active' ? btn('Thu hồi agent', 'revoke:' + id, 'danger') : btn('Xóa agent', 'delete-agent:' + id, 'danger')}</div></form><div class="divider"></div><h3>Kiểm tra quyền đã lưu</h3><form id="test" data-id="${esc(id)}" style="margin-top:18px"><label class="field">Chọn tool<select name="tool">${state.mcps.flatMap(m => m.tools.map(t => `<option value="${esc(m.id + ':' + t.name)}">${esc(m.name)} / ${esc(t.name)}</option>`)).join('')}${state.vault.map(s => `<option value="vault:${esc(s.id)}">Vault / ${esc(s.name)}</option>`).join('')}</select></label><button class="btn" type="submit">Kiểm tra quyền</button><div id="test-result" style="margin-top:16px"></div></form>`;
 }
 function connect() {
   modalContext = { kind: 'connect' };
@@ -511,7 +695,10 @@ async function consent(flow) {
   );
 }
 function log(id, tab = 'input') {
-  const l = state.logs.find(l => String(l.id) === String(id));
+  const l = [...state.logs, ...[...activity.values()].flatMap(v => v.rows || [])].find(
+    l => String(l.id) === String(id)
+  );
+  if (!l) return toast('Hãy làm mới nhật ký rồi thử lại');
   modalContext = { kind: 'log', id, tab };
   const data =
     tab === 'input'
@@ -586,6 +773,17 @@ function download(name, data) {
 }
 async function act(action, args) {
   const id = args[0];
+  if (action === 'select') return selectEntity(id, args[1]);
+  if (action === 'detail-tab') {
+    detailTabs[route] = id;
+    render();
+    document.querySelector(`#detail-tab-${id}`)?.focus();
+    return;
+  }
+  if (action === 'activity-reload') {
+    activity.delete(route + ':' + selected[route]);
+    return render();
+  }
   if (action === 'vault-new') return vaultEditor();
   if (action === 'vault-edit') return vaultEditor(id);
   if (action === 'vault-reveal')
@@ -816,7 +1014,7 @@ document.addEventListener('submit', async e => {
       toast('Đã lưu PIN');
     }
     if (f.id === 'vault-save') {
-      const id = modalContext.id;
+      const id = f.dataset.id;
       const data = { name: b.name, ...(!id || b.secret ? { secret: b.secret } : {}) };
       if (!id)
         Object.assign(data, { sharing: b.sharing, agents: new FormData(f).getAll('agents') });
@@ -827,7 +1025,7 @@ document.addEventListener('submit', async e => {
       toast('Đã lưu secret');
     }
     if (f.id === 'vault-share') {
-      await api('vault/' + modalContext.id + '/grants', 'POST', {
+      await api('vault/' + f.dataset.id + '/grants', 'POST', {
         sharing: b.sharing,
         agents: new FormData(f).getAll('agents')
       });
@@ -852,23 +1050,33 @@ document.addEventListener('submit', async e => {
       credential(m.id);
     }
     if (f.id === 'credential') {
-      await api('mcps/' + modalContext.id + '/credential', 'POST', b);
+      const id = modalContext.id;
+      await api('mcps/' + id + '/credential', 'POST', b);
       await refresh();
-      mcp(modalContext.id);
+      mcp(id);
       toast('Kết nối thành công');
     }
     if (f.id === 'oauth') {
       const r = await api('mcps/' + modalContext.id + '/oauth', 'POST', b);
       location.href = r.url;
     }
+    if (f.id === 'agent-info') {
+      await api('agents/' + f.dataset.id, 'PATCH', b);
+      await refresh();
+      toast('Đã lưu thông tin agent');
+    }
+    if (f.id === 'connector-info') {
+      await api('mcps/' + f.dataset.id, 'PATCH', b);
+      await refresh();
+      toast('Đã lưu thông tin MCP');
+    }
     if (f.id === 'grants') {
-      await api('agents/' + modalContext.id, 'PATCH', {
-        name: b.name,
+      await api('agents/' + f.dataset.id, 'PATCH', {
         permissions: new FormData(f).getAll('permissions')
       });
       close();
       await refresh();
-      toast('Đã lưu tên và quyền');
+      toast('Đã lưu quyền');
     }
     if (f.id === 'manual-agent') {
       const r = await api('agents', 'POST', {
@@ -894,7 +1102,7 @@ document.addEventListener('submit', async e => {
     }
     if (f.id === 'test') {
       const [mcp, tool] = b.tool.split(':'),
-        r = await api('test', 'POST', { agent: modalContext.id, mcp, tool });
+        r = await api('test', 'POST', { agent: f.dataset.id, mcp, tool });
       $('#test-result').innerHTML =
         `<div class="info">${I(r.allowed ? 'check' : 'lock')}<div><h3>${r.allowed ? 'Cho phép' : 'Không khả dụng'}</h3><p>${esc(r.reason)}</p></div></div>`;
     }
@@ -933,8 +1141,9 @@ document.addEventListener('submit', async e => {
 function updateResults() {
   const el = $('#results');
   if (el)
-    el.innerHTML =
-      route === 'mcps' ? mcpResults() : route === 'agents' ? agentResults() : logTable(logFilter());
+    el.innerHTML = ['mcps', 'agents', 'vault'].includes(route)
+      ? entityResults(route)
+      : logTable(logFilter());
 }
 document.addEventListener('input', e => {
   if (e.target.name === 'url' && e.target.form?.id === 'remote')
@@ -944,7 +1153,31 @@ document.addEventListener('input', e => {
     updateResults();
   }
 });
+document.addEventListener('keydown', e => {
+  if (!e.target.matches('.detail-tabs [role=tab]')) return;
+  const tabs = [...e.target.parentElement.querySelectorAll('[role=tab]')];
+  const index = tabs.indexOf(e.target);
+  const next =
+    e.key === 'ArrowRight'
+      ? (index + 1) % tabs.length
+      : e.key === 'ArrowLeft'
+        ? (index + tabs.length - 1) % tabs.length
+        : e.key === 'Home'
+          ? 0
+          : e.key === 'End'
+            ? tabs.length - 1
+            : -1;
+  if (next < 0) return;
+  e.preventDefault();
+  tabs[next].click();
+});
 document.addEventListener('change', e => {
+  if (e.target.id === 'activity-hours') {
+    activityHours = Number(e.target.value);
+    activity = new Map();
+    render();
+    return;
+  }
   if (e.target.name === 'sharing') {
     e.target.form.querySelector('[data-sharing-agents]').hidden = e.target.value !== 'selected';
     return;
