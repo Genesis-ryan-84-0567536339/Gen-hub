@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import re
 import urllib.request
 from runtime import ROOT, CONF, DATA, atomic, compose, admin, verify_local, backup, run
 
@@ -35,14 +36,46 @@ def main():
         if admin(path, 'owner-exists').stdout.strip() != 'yes':
             raise RuntimeError('Thiếu owner; cần hoàn tất TUI.')
         print('✓ Owner sẵn sàng.'); return
-    if command not in ['restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update']:
-        print('Lệnh: status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | auto-update on/off | rollback | uninstall [--purge] [--cloudflare]'); return
+    if command not in ['restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token']:
+        print('Lệnh: status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare]'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
     import fcntl
     lock = open(CONF / 'install.lock', 'w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    if command == 'github-token':
+        try:
+            from runtime import manifest
+            token = input('GitHub token riêng cho kiểm tra cập nhật (để trống để gỡ): ').strip()
+            if token and not re.fullmatch(r'[A-Za-z0-9_.-]{1,1024}', token):
+                raise RuntimeError('Định dạng token không hợp lệ.')
+            env = CONF / 'update.env'
+            previous_token = env.read_text() if env.exists() else None
+            previous_compose = path.read_text()
+            try:
+                if token:
+                    atomic(env, 'GENHUB_GITHUB_TOKEN=' + token + '\n')
+                else:
+                    env.unlink(missing_ok=True)
+                release = ROOT / 'releases' / state['revision']
+                atomic(path, json.dumps(manifest(state, release, CONF, DATA), indent=2))
+                compose(path, 'up', '-d', '--no-build', '--force-recreate', '--wait', '--wait-timeout', '150', 'hub')
+                verify_local(path, state)
+            except BaseException:
+                if previous_token is None:
+                    env.unlink(missing_ok=True)
+                else:
+                    atomic(env, previous_token)
+                atomic(path, previous_compose)
+                compose(path, 'up', '-d', '--no-build', '--force-recreate', '--wait', '--wait-timeout', '150', 'hub')
+                raise
+            # CLI reads the same file; app recreation replaces its environment/cache.
+            (CONF / 'github-backoff.json').unlink(missing_ok=True)
+            print('✓ Đã lưu token cập nhật.' if token else '✓ Đã gỡ token cập nhật.')
+            return
+        finally:
+            lock.close()
     if command == 'auto-update':
         from lifecycle import configure_updates
         choice = sys.argv[2] if len(sys.argv) > 2 else ''

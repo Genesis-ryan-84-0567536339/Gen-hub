@@ -126,7 +126,7 @@ test('Issue #34: 30-minute caching avoids duplicate remote fetches unless force=
   const currentRev = '1111111111111111111111111111111111111111';
   let commitFetches = 0;
 
-  const mockFetch = async (url) => {
+  const mockFetch = async url => {
     if (url.includes('/commits/main')) {
       commitFetches++;
       return {
@@ -170,6 +170,7 @@ test('Issue #34: handles GitHub API rate limits and network errors gracefully', 
   const rateLimitFetch = async () => ({
     ok: false,
     status: 403,
+    headers: new Headers({ 'x-ratelimit-remaining': '0' }),
     json: async () => ({ message: 'API rate limit exceeded' })
   });
 
@@ -180,7 +181,10 @@ test('Issue #34: handles GitHub API rate limits and network errors gracefully', 
 
   const res = await x.call('/api/check-update', 'POST');
   assert.equal(res.status, 200, 'must not return 500 when rate limited');
-  assert.ok(res.data.error.includes('rate limit') || res.data.error.includes('Giới hạn'), 'must report rate limit error');
+  assert.ok(
+    res.data.error.includes('rate limit') || res.data.error.includes('Giới hạn'),
+    'must report rate limit error'
+  );
   assert.equal(res.data.hasUpdate, false);
 
   // Network error mock

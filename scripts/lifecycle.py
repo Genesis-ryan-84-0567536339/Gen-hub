@@ -8,6 +8,10 @@ import subprocess
 import tempfile
 import urllib.parse
 import urllib.request
+import urllib.error
+import time
+import datetime
+import email.utils
 from runtime import ROOT, CONF, DATA, DOCKER, atomic, run, compose
 
 REPO = 'Genesis-ryan-84-0567536339/Gen-hub'
@@ -17,13 +21,39 @@ WRAPPER = pathlib.Path('/usr/local/bin/gen-hub')
 
 
 def github(path):
+    backoff = CONF / 'github-backoff.json'
+    try:
+        retry_at = json.loads(backoff.read_text()).get('retry_at', 0)
+        if isinstance(retry_at, (int, float)) and retry_at > time.time():
+            raise RuntimeError('Giới hạn GitHub API tạm thời; thử lại từ ' + datetime.datetime.fromtimestamp(retry_at, datetime.timezone.utc).isoformat())
+    except (OSError, ValueError):
+        pass
     headers = {'User-Agent': 'Gen-hub-updater', 'Accept': 'application/vnd.github+json'}
     token = os.environ.get('GENHUB_GITHUB_TOKEN', '').strip()
+    if not token and (CONF / 'update.env').is_file():
+        for line in (CONF / 'update.env').read_text().splitlines():
+            if line.startswith('GENHUB_GITHUB_TOKEN='):
+                token = line.partition('=')[2].strip()
     if token:
         headers['Authorization'] = 'Bearer ' + token
     req = urllib.request.Request(API + path, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        h = error.headers
+        if error.code == 429 or (error.code == 403 and (h.get('x-ratelimit-remaining') == '0' or h.get('retry-after'))):
+            retry_at = time.time() + 60
+            try:
+                retry_at = max(retry_at, float(h.get('x-ratelimit-reset', 0)))
+                retry = h.get('retry-after', '')
+                if retry:
+                    retry_at = max(retry_at, time.time() + int(retry) if retry.isdigit() else email.utils.parsedate_to_datetime(retry).timestamp())
+            except (ValueError, TypeError, OverflowError):
+                pass
+            atomic(backoff, json.dumps({'retry_at': retry_at}))
+            raise RuntimeError('Giới hạn GitHub API tạm thời; thử lại từ ' + datetime.datetime.fromtimestamp(retry_at, datetime.timezone.utc).isoformat() + '. Auto-update sẽ kiểm tra lại ở chu kỳ kế tiếp.') from None
+        raise RuntimeError(f'GitHub API trả HTTP {error.code}; kiểm tra token/quyền hoặc kết nối.') from None
 
 
 def eligible_revision(state, automatic=False):
@@ -70,6 +100,7 @@ After=network-online.target docker.service
 Wants=network-online.target
 [Service]
 Type=oneshot
+EnvironmentFile=-{CONF}/update.env
 ExecStart={WRAPPER} update --auto
 TimeoutStartSec=20min
 UMask=0077

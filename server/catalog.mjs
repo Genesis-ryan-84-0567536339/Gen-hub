@@ -47,7 +47,15 @@ export const catalog = [
       tool(
         'list_issues',
         'Danh sách issue',
-        { owner: s('Chủ repo'), repo: s('Repo'), state: s('open, closed hoặc all') },
+        {
+          owner: s('Chủ repo'),
+          repo: s('Repo'),
+          state: s('open, closed hoặc all'),
+          page: { type: 'integer', minimum: 1 },
+          per_page: { type: 'integer', minimum: 1, maximum: 100 },
+          sort: s('created, updated hoặc comments'),
+          direction: s('asc hoặc desc')
+        },
         ['owner', 'repo'],
         false,
         ['repo', 'public_repo']

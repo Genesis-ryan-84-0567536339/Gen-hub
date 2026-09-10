@@ -267,7 +267,17 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
       if (name === 'get_file_contents')
         url =
           repo + '/contents/' + a.path.split('/').map(enc).join('/') + '?' + query({ ref: a.ref });
-      if (name === 'list_issues') url = repo + '/issues?' + query({ state: a.state || 'open' });
+      if (name === 'list_issues')
+        url =
+          repo +
+          '/issues?' +
+          query({
+            state: a.state || 'open',
+            page: a.page || 1,
+            per_page: a.per_page || 30,
+            sort: a.sort || 'created',
+            direction: a.direction || 'desc'
+          });
       if (name === 'create_issue') {
         url = repo + '/issues';
         method = 'POST';
