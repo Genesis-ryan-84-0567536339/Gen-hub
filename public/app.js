@@ -667,7 +667,9 @@ function systemUpdatesSettings() {
   const shortCur = shortSha(u.revision) || 'Môi trường phát triển';
   const shortLatest = shortSha(u.latestRevision);
   const curDateStr = u.updatedAt ? `${timeAgo(u.updatedAt)} (${date(u.updatedAt)})` : '—';
-  const checkedDateStr = u.checkedAt ? `${timeAgo(u.checkedAt)} (${date(u.checkedAt)})` : 'Chưa kiểm tra';
+  const checkedDateStr = u.checkedAt
+    ? `${timeAgo(u.checkedAt)} (${date(u.checkedAt)})`
+    : 'Chưa kiểm tra';
 
   let statusBadge = '';
   if (u.hasUpdate) {
@@ -704,15 +706,15 @@ function settings() {
         : group === 'updates'
           ? systemUpdatesSettings()
           : tab === 'endpoint'
-          ? `<h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code>`
-          : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
-              [
-                [7, '7 ngày'],
-                [30, '30 ngày'],
-                [90, '90 ngày']
-              ],
-              state.settings.retention
-            )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><h3>Bắt đầu sử dụng</h3><p class="footnote">Thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}`;
+            ? `<h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code>`
+            : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
+                [
+                  [7, '7 ngày'],
+                  [30, '30 ngày'],
+                  [90, '90 ngày']
+                ],
+                state.settings.retention
+              )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><h3>Bắt đầu sử dụng</h3><p class="footnote">Thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}`;
   return (
     head('Cài đặt', 'Thông tin Hub, truy cập và nhật ký.') +
     `<div class="entity-layout"><aside class="card entity-list" aria-label="Nhóm cài đặt">${groups.map(([key, label]) => `<button class="entity-row ${group === key ? 'selected' : ''}" data-action="select:settings:${key}" ${group === key ? 'aria-current="true"' : ''}><strong>${label}</strong></button>`).join('')}</aside><section class="card entity-detail cardpad">${tabBar(tabs, tab)}<div role="tabpanel" id="detail-panel" aria-labelledby="detail-tab-${tab}">${content}</div></section></div>`

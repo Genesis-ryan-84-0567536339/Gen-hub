@@ -24,7 +24,10 @@ function detectRevision() {
     if (installData.revision) return installData.revision.trim();
   } catch {}
   try {
-    const gitSha = execSync('git rev-parse HEAD', { timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] })
+    const gitSha = execSync('git rev-parse HEAD', {
+      timeout: 2000,
+      stdio: ['ignore', 'pipe', 'ignore']
+    })
       .toString()
       .trim();
     if (/^[0-9a-f]{40}$/.test(gitSha)) return gitSha;
@@ -805,7 +808,11 @@ export function createHub({
       if (method === 'POST') {
         rate('check-update:' + actor, 10, 60000);
         const result = await checkRemoteUpdate(true);
-        audit('system.check_update', {}, { hasUpdate: result.hasUpdate, latestRevision: result.latestRevision });
+        audit(
+          'system.check_update',
+          {},
+          { hasUpdate: result.hasUpdate, latestRevision: result.latestRevision }
+        );
         return respond(200, result);
       }
       if (method === 'GET') {

@@ -49,7 +49,9 @@ export function formatNotification(log, state = {}) {
     findMcp(l.mcp)?.name ||
     findMcp(input.mcp)?.name ||
     (l.mcp && l.mcp !== 'hub' && l.mcp !== 'vault'
-      ? (l.mcp.length > 12 ? l.mcp.slice(0, 8) + '…' : l.mcp)
+      ? l.mcp.length > 12
+        ? l.mcp.slice(0, 8) + '…'
+        : l.mcp
       : 'Hub');
 
   const ts = Date.parse(l.created) || Date.now();
@@ -443,9 +445,7 @@ export function getNotifications(logs = [], state = {}, lastRead = 0) {
 
   const unreadCount = notifications.filter(n => n.unread).length;
   const latestTimestamp =
-    notifications.length > 0
-      ? Math.max(...notifications.map(n => n.timestamp))
-      : 0;
+    notifications.length > 0 ? Math.max(...notifications.map(n => n.timestamp)) : 0;
 
   return {
     notifications,
