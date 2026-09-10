@@ -1,12 +1,13 @@
 import { jsonRequest, request, HubError } from './net.mjs';
 import { provider } from './catalog.mjs';
+import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs';
 const enc = encodeURIComponent;
 const query = o => {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== '') q.set(k, v);
   return q.toString();
 };
-export function connectorService(store) {
+export function connectorService(store, { mcpRequest = request } = {}) {
   const locks = new Map();
   async function credential(m) {
     let c = m.secret ? store.unseal(m.secret) : {};
@@ -177,7 +178,10 @@ export function connectorService(store) {
     return jsonRequest(url, { headers, method, body });
   }
   async function rpc(m, method, params = {}, session, notify = false) {
+    const endpoint = m.provider === 'github-mcp' ? githubEndpoint(m) : m.url;
     const c = await credential(m);
+    if (m.provider === 'github-mcp' && !c.token && !c.access_token)
+      throw new HubError('MCP chưa có credential', 401);
     const headers = {
       Accept: 'application/json, text/event-stream',
       'MCP-Protocol-Version': '2025-06-18',
@@ -187,7 +191,7 @@ export function connectorService(store) {
       ...(session ? { 'Mcp-Session-Id': session } : {})
     };
     const reqId = Date.now();
-    const r = await request(m.url, {
+    const r = await mcpRequest(endpoint, {
       method: 'POST',
       headers,
       body: { jsonrpc: '2.0', ...(notify ? {} : { id: reqId }), method, params },
@@ -231,7 +235,7 @@ export function connectorService(store) {
     } finally {
       if (session) {
         const c = await credential(m);
-        await request(m.url, {
+        await mcpRequest(m.provider === 'github-mcp' ? githubEndpoint(m) : m.url, {
           method: 'DELETE',
           headers: {
             'Mcp-Session-Id': session,
@@ -247,7 +251,7 @@ export function connectorService(store) {
     }
   }
   async function sync(m) {
-    if (m.provider !== 'remote') {
+    if (!isMcp(m)) {
       const p = provider(m.provider);
       await call(
         m,
@@ -270,7 +274,7 @@ export function connectorService(store) {
         if (!Array.isArray(r.result?.tools)) throw new HubError('MCP thiếu danh sách tools', 502);
         result.push(...r.result.tools);
         cursor = r.result.nextCursor;
-        if (!cursor) return result;
+        if (!cursor) return m.provider === 'github-mcp' ? githubTools(result) : result;
         if (result.length > 2000) break;
       }
       throw new HubError('Danh sách tool vượt giới hạn đồng bộ', 502);
@@ -279,12 +283,18 @@ export function connectorService(store) {
   return {
     credential,
     sync,
-    call: async (m, t, a) =>
-      m.provider === 'remote'
-        ? withSession(
-            m,
-            async session => (await rpc(m, 'tools/call', { name: t, arguments: a }, session)).result
-          )
-        : { content: [{ type: 'text', text: JSON.stringify(await call(m, t, a)) }], isError: false }
+    call: async (m, t, a) => {
+      if (isMcp(m)) {
+        const params = m.provider === 'github-mcp' ? githubCall(t, a) : { name: t, arguments: a };
+        return withSession(
+          m,
+          async session => (await rpc(m, 'tools/call', params, session)).result
+        );
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(await call(m, t, a)) }],
+        isError: false
+      };
+    }
   };
 }

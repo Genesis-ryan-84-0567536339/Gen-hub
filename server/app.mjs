@@ -7,6 +7,7 @@ import { openStore, id, digest, passwordHash, passwordCheck, redact } from './st
 import { HubError, assertSchema, jsonRequest, request } from './net.mjs';
 import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
+import { GITHUB_MCP_URL, githubEndpoint, githubPublished } from './github-mcp.mjs';
 import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
@@ -168,7 +169,13 @@ export function createHub({
       throw new HubError('Kết nối đã thay đổi; vui lòng thử lại', 409);
     latest.tools = tools.map(t => ({
       ...t,
-      published: old.find(x => x.name === t.name)?.published ?? t.annotations?.readOnlyHint === true
+      published:
+        m.provider === 'github-mcp'
+          ? githubPublished(
+              t,
+              old.find(x => x.name === t.name)
+            )
+          : (old.find(x => x.name === t.name)?.published ?? t.annotations?.readOnlyHint === true)
     }));
     latest.status = 'connected';
     latest.lastError = null;
@@ -422,6 +429,10 @@ export function createHub({
         const url = new URL(m.url);
         if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
           throw new HubError('Địa chỉ không hợp lệ');
+      }
+      if (m.provider === 'github-mcp') {
+        m.url = b.url || GITHUB_MCP_URL;
+        githubEndpoint(m);
       }
       store.put('mcp', mid, m);
       audit('mcp.add', { name: m.name, provider: m.provider }, { id: mid }, mid);

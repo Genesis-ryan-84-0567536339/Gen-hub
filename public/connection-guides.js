@@ -1,4 +1,20 @@
 const guides = {
+  'github-mcp': {
+    title: 'GitHub MCP (pilot)',
+    recommendation:
+      'Kết nối MCP chính thức bằng Personal Access Token; giữ connector GitHub REST hiện có.',
+    links: [
+      ['Tạo fine-grained token', 'https://github.com/settings/personal-access-tokens/new'],
+      ['GitHub MCP chính thức', 'https://github.com/github/github-mcp-server']
+    ],
+    steps: [
+      'Chọn repo và hạn dùng cho PAT; cấp quyền theo thao tác cần thực hiện.',
+      'Dán PAT vào Access token. Hub gửi Bearer token tới https://api.githubcopilot.com/mcp/ và đồng bộ tool.',
+      'Owner công bố từng tool rồi cấp quyền cho agent. Tạo issue, đóng issue và thay nhãn là ba quyền riêng.',
+      'github_issue_label thay toàn bộ nhãn: gửi cả nhãn cần giữ; [] xóa hết nhãn.'
+    ],
+    note: 'Mọi tool mới đều chờ owner công bố. Pilot này chưa có đăng nhập OAuth; chưa thay thế REST.'
+  },
   github: {
     title: 'GitHub',
     recommendation: 'Dùng Personal Access Token để bắt đầu nhanh.',
