@@ -19,7 +19,8 @@ test('Issue #51: Collapsible connector groups and quick action grant buttons (al
       annotations: { readOnlyHint: i % 2 === 0 } // 23 read-only, 23 write
     });
   }
-  const mcpGh = (await x.call('/api/mcps', 'POST', { provider: 'github-mcp', name: 'GitHub MCP' })).data;
+  const mcpGh = (await x.call('/api/mcps', 'POST', { provider: 'github-mcp', name: 'GitHub MCP' }))
+    .data;
   const mcpGhRecord = x.hub.store.get('mcp', mcpGh.id);
   mcpGhRecord.status = 'connected';
   mcpGhRecord.tools = ghTools;
@@ -108,8 +109,16 @@ test('Issue #51: Collapsible connector groups and quick action grant buttons (al
   const ghGroup = page.locator(`#grants details.toolgroup[data-mcp="${mcpGh.id}"]`);
   const slackGroup = page.locator(`#grants details.toolgroup[data-mcp="${mcpSlack.id}"]`);
 
-  assert.equal(await ghGroup.getAttribute('open'), null, 'GitHub MCP group must be collapsed initially');
-  assert.equal(await slackGroup.getAttribute('open'), null, 'Slack group must be collapsed initially');
+  assert.equal(
+    await ghGroup.getAttribute('open'),
+    null,
+    'GitHub MCP group must be collapsed initially'
+  );
+  assert.equal(
+    await slackGroup.getAttribute('open'),
+    null,
+    'Slack group must be collapsed initially'
+  );
 
   // Check initial badges on summary
   const ghBadge = ghGroup.locator('.grant-count');
@@ -154,7 +163,11 @@ test('Issue #51: Collapsible connector groups and quick action grant buttons (al
   // Manually check 2 checkboxes and verify dynamic badge update
   await ghGroup.locator('input[name="permissions"]').nth(0).check();
   await ghGroup.locator('input[name="permissions"]').nth(1).check();
-  assert.equal(await ghBadge.innerText(), '2/46 tool đã cấp', 'Badge updates to 2/46 on individual check');
+  assert.equal(
+    await ghBadge.innerText(),
+    '2/46 tool đã cấp',
+    'Badge updates to 2/46 on individual check'
+  );
 
   // Test global toolbar
   const globalToolbar = page.locator('#grants .grant-toolbar');
