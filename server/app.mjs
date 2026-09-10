@@ -410,7 +410,7 @@ export function createHub({
     if (resource === 'mcps' && method === 'POST' && !mid) {
       const template = provider(b.provider);
       if (!template && b.provider !== 'remote') throw new HubError('Dịch vụ không hợp lệ');
-      const mid = randomBytes(12).toString('hex'),
+      const mid = id('mcp'),
         m = {
           id: mid,
           name: text(b.name || template?.name, 60),
@@ -493,7 +493,7 @@ export function createHub({
       }
     }
     if (resource === 'agents' && method === 'POST' && !mid) {
-      const aid = id();
+      const aid = id('agent');
       store.put('agent', aid, {
         id: aid,
         name: text(b.name, 80),
@@ -504,7 +504,7 @@ export function createHub({
         permissions: validateGrants(b.permissions || []),
         created: new Date().toISOString()
       });
-      const raw = id() + id();
+      const raw = id('token') + id();
       store.put('token', digest(raw), {
         id: digest(raw),
         agent: aid,

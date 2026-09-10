@@ -6,7 +6,7 @@ try {
   // Verify existing ciphertext before writing any probe: a different 32-byte key is still the wrong key.
   for (const mcp of store.list('mcp')) if (mcp.secret) store.unseal(mcp.secret);
   store.logs(1);
-  const probe = id();
+  const probe = id('doctor');
   store.put('doctor', probe, { secret: store.seal({ value: probe }) });
   if (store.unseal(store.get('doctor', probe).secret).value !== probe)
     throw Error('Credential encryption failed');

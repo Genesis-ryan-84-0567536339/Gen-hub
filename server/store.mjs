@@ -9,7 +9,13 @@ import {
   scryptSync,
   timingSafeEqual
 } from 'node:crypto';
-export const id = () => randomBytes(18).toString('base64url');
+export const id = type => {
+  let rand = randomBytes(18).toString('base64url');
+  if (type && rand.startsWith('_')) rand = '-' + rand.slice(1);
+  while (rand.includes('__')) rand = rand.replace('__', '-_');
+  return (type ? `${type}_` : '') + rand;
+};
+export const prefixedId = id;
 export const digest = v => createHash('sha256').update(v).digest('hex');
 export const passwordHash = p => {
   const salt = randomBytes(16).toString('hex');
