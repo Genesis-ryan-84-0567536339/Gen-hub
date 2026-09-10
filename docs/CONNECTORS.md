@@ -6,7 +6,7 @@ Mỗi bản cài dùng tài khoản và ứng dụng OAuth do owner sở hữu. 
 |---|---|---|
 | Google Drive | OAuth web app, bật Drive API; scope Drive; đăng ký callback | list_files, get_file (metadata), read_file (tệp văn bản), export_file (Docs/CSV), create_file (văn bản) |
 | GitHub | OAuth app hoặc PAT có quyền repo phù hợp | search_repositories, get_file_contents, list_issues, create_issue, create_pull_request |
-| GitHub MCP (pilot) | PAT qua Bearer tới endpoint https://api.githubcopilot.com/mcp/ | Đồng bộ từ upstream MCP; issue_write được bọc an toàn thành github_issue_create, github_issue_close, github_issue_label; tool mới chờ owner bật |
+| GitHub MCP (pilot) | PAT qua Bearer tới endpoint https://api.githubcopilot.com/mcp/ | Đồng bộ từ upstream MCP; issue_write được bọc an toàn thành github_issue_create, github_issue_close, github_issue_label; tích hợp github_check_status đọc trạng thái CI/GitHub Actions qua REST; tool mới chờ owner bật |
 | Slack | OAuth app hoặc bot token; channels:read, channels:history, chat:write; bot tham gia kênh | list_channels, read_history, post_message |
 | Telegram | BotFather bot token | get_me, get_updates, send_message |
 | Discord | Bot token, mời bot vào guild, quyền view/read/send kênh | get_me, list_guilds, get_channel_messages, create_message |
@@ -19,12 +19,20 @@ Telegram get_updates không dùng cùng webhook. Chỉ cập nhật offset khi m
 
 MCP tùy chỉnh: checkbox cho phép mạng riêng là quyết định của owner về việc truy cập localhost/LAN trên máy cài Hub. Mặc định chặn mạng riêng và các endpoint metadata. Không tự theo HTTP redirect để tránh gửi credential sang host khác. Phản hồi tối đa 4 MiB, timeout 30 giây; không tự retry write để tránh tác dụng phụ lặp.
 
+## Tool đọc trạng thái CI `github_check_status` (GitHub MCP)
+
+Connector `github-mcp` bổ sung tool đọc trạng thái CI / GitHub Actions trực tiếp qua REST API công khai của GitHub:
+- **API sử dụng**: `GET https://api.github.com/repos/{owner}/{repo}/commits/{ref}/check-runs` dùng đúng Bearer PAT token của connector đang cấu hình.
+- **Tham số đầu vào**: `owner` (chủ sở hữu repo), `repo` (tên repository), `ref` (commit SHA hoặc tên branch). Tất cả đều là chuỗi bắt buộc, không được để trống.
+- **Dữ liệu trả về**: Rút gọn về mảng các đối tượng `{ name, status, conclusion }` cho từng check-run, loại bỏ toàn bộ dữ liệu thừa (URL, log, chi tiết metadata) nhằm giảm thiểu kích thước phản hồi và tránh rò rỉ thông tin không cần thiết vào audit log.
+- **Đặc tính**: Tool chỉ đọc (`readOnlyHint: true`, `destructiveHint: false`), độc lập với công cụ ghi `issue_write`, và mặc định nhận trạng thái quyền `Khả dụng` tương tự các tool GitHub MCP khác.
+
 ## Kiểm tra quyền theo tool và đồng bộ không giới hạn (#32)
 
 - **Quét đủ tool**: Gen-hub đồng bộ danh sách tool MCP với phân trang đầy đủ (tối đa 500 trang / 10.000 tool thay vì cắt ngắn tùy tiện), đảm bảo lấy trọn vẹn danh mục từ upstream MCP server.
 - **Chủ động kiểm tra quyền token**: Khi đồng bộ (`connector_sync`), Gen-hub kiểm tra token với provider để đối chiếu quyền cần thiết cho từng tool:
   - `GitHub`: Đọc header `X-OAuth-Scopes` từ GitHub API. Nếu token thiếu scope (ví dụ chỉ có `read:user` mà thiếu `repo`), đánh dấu tool thiếu quyền cụ thể ("Thiếu quyền: cần scope repo"). Nếu dùng fine-grained PAT không trả header scope, đánh dấu trạng thái "không xác định được".
-  - `GitHub MCP (pilot)`: Endpoint MCP chính thức (`https://api.githubcopilot.com/mcp/`) lọc động danh mục tool theo token và không trả header `X-OAuth-Scopes`. Các tool lấy về thành công qua phiên MCP hợp lệ được đánh dấu `Khả dụng`. Trường hợp token có khai báo scope hoặc header `X-OAuth-Scopes`, Hub đối chiếu scope tương ứng.
+  - `GitHub MCP (pilot)`: Endpoint MCP chính thức (`https://api.githubcopilot.com/mcp/`) lọc động danh mục tool theo token và không trả header `X-OAuth-Scopes`. Các tool lấy về thành công qua phiên MCP hợp lệ (bao gồm tool wrapper và `github_check_status`) được đánh dấu `Khả dụng`. Trường hợp token có khai báo scope hoặc header `X-OAuth-Scopes`, Hub đối chiếu scope tương ứng.
   - `Google Drive`: Đối chiếu scope OAuth/token đã cấp (`drive` vs `drive.readonly`). Đánh dấu rõ các tool ghi văn bản khi token chỉ có quyền đọc.
   - `Slack`: Thăm dò scope qua `auth.test` và header `X-OAuth-Scopes`; báo rõ nếu thiếu các scope như `channels:read`, `channels:history`, hoặc `chat:write`.
   - `Telegram`: Đánh dấu khả dụng khi bot token hợp lệ qua `getMe`.

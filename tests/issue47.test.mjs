@@ -151,8 +151,8 @@ test('Issue #47: connectorService.sync assigns "ok" permission to all GitHub MCP
   };
 
   const tools = await service.sync(m);
-  // Upstream had 3 tools: 1 issue_write (expanded into 3 wrappers) + 2 regular = 5 tools
-  assert.equal(tools.length, 5);
+  // Upstream had 3 tools: 1 issue_write (expanded into 3 wrappers) + 2 regular + 1 check_status = 6 tools
+  assert.equal(tools.length, 6);
   for (const tool of tools) {
     assert.equal(
       tool.permission?.status,
@@ -253,7 +253,7 @@ test('Issue #47: Hub routes sync persists "ok" tool permissions for GitHub MCP i
   assert.equal(tokenRes.status, 200);
 
   // Verify all returned tools have permission.status === 'ok'
-  assert.equal(tokenRes.data.tools.length, 4);
+  assert.equal(tokenRes.data.tools.length, 5);
   for (const t of tokenRes.data.tools) {
     assert.equal(t.permission?.status, 'ok');
     assert.equal(t.permission?.reason, 'Khả dụng');
@@ -264,7 +264,7 @@ test('Issue #47: Hub routes sync persists "ok" tool permissions for GitHub MCP i
   assert.equal(stateRes.status, 200);
   const mcpInState = stateRes.data.mcps.find(m => m.id === mid);
   assert.ok(mcpInState);
-  assert.equal(mcpInState.tools.length, 4);
+  assert.equal(mcpInState.tools.length, 5);
   for (const t of mcpInState.tools) {
     assert.equal(t.permission?.status, 'ok');
     assert.equal(t.permission?.reason, 'Khả dụng');
