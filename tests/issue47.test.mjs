@@ -113,7 +113,11 @@ test('Issue #47: connectorService.sync assigns "ok" permission to all GitHub MCP
         json: {
           jsonrpc: '2.0',
           id: b.id,
-          result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'copilot' } }
+          result: {
+            protocolVersion: '2025-06-18',
+            capabilities: {},
+            serverInfo: { name: 'copilot' }
+          }
         }
       };
     }
