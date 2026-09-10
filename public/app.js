@@ -31,7 +31,8 @@ const paths = {
   menu: 'M4 6h16M4 12h16M4 18h16',
   logout: 'M9 4H4v16h5m5-14 6 6-6 6m-6-6h12',
   file: 'M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6',
-  bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0'
+  bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
+  chevron: 'm6 9 6 6 6-6'
 };
 const I = n =>
   `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[n] || paths.plug}"/></svg>`;
@@ -837,24 +838,82 @@ function credential(id) {
     btn('Đóng', 'close')
   );
 }
+function updateGrantCounts(container = document) {
+  const groups = container.querySelectorAll('details.toolgroup, .toolgroup');
+  for (const g of groups) {
+    const mcpId = g.dataset.mcp;
+    if (!mcpId) continue;
+    const allBoxes = g.querySelectorAll('input[name="permissions"]');
+    const checkedBoxes = g.querySelectorAll('input[name="permissions"]:checked');
+    const badge = g.querySelector('.grant-count');
+    if (badge) {
+      badge.textContent = `${checkedBoxes.length}/${allBoxes.length} tool đã cấp`;
+    }
+  }
+}
+function setGrantSelection(mcpId, mode) {
+  const form =
+    document.querySelector('#modal[open] form') ||
+    document.querySelector('#grants, #manual-agent, #consent') ||
+    document;
+  const selector =
+    mcpId && mcpId !== 'all'
+      ? `input[name="permissions"][data-mcp="${mcpId}"]`
+      : `input[name="permissions"]`;
+  const checkboxes = form.querySelectorAll(selector);
+
+  for (const chk of checkboxes) {
+    if (chk.disabled) continue;
+    if (mode === 'all') {
+      chk.checked = true;
+    } else if (mode === 'none') {
+      chk.checked = false;
+    } else if (mode === 'basic') {
+      chk.checked = chk.dataset.readonly === 'true';
+    }
+  }
+  updateGrantCounts(form);
+}
 function grantRows(selected) {
-  return (
-    state.mcps
-      .map(
-        m =>
-          `<div class="toolgroup"><div class="toolgrouphead"><div class="inline">${logo(m)}<div><h3>${esc(m.name)}</h3><p class="sub">${m.on ? '' : 'MCP tạm dừng · '}${m.status === 'connected' ? 'Đã kết nối' : 'Kết nối chưa sẵn sàng'}</p></div></div></div>${
-            m.tools
-              .filter(t => t.published || selected.includes(m.id + ':' + t.name))
-              .map(
-                t =>
-                  `<label class="toolrow"><div><b>${esc(t.name)}</b><p title="${esc(t.description || '')}">${esc(t.description)}${!t.published ? ' · Chưa công bố' : ''}</p></div><div class="inline">${toolPermissionBadge(t.permission)}<input type="checkbox" name="permissions" value="${esc(m.id + ':' + t.name)}" ${selected.includes(m.id + ':' + t.name) ? 'checked' : ''} ${!t.published ? 'disabled' : ''}></div></label>`
-              )
-              .join('') || '<p class="footnote" style="padding:15px">Chưa công bố tool.</p>'
-          }</div>`
-      )
-      .join('') + vaultGrantRows(selected) ||
-    '<div class="info">Thêm MCP hoặc secret trước khi cấp quyền.</div>'
+  if (!state.mcps.length && !state.vault.length) {
+    return '<div class="info">Thêm MCP hoặc secret trước khi cấp quyền.</div>';
+  }
+  const totalMcpTools = state.mcps.reduce(
+    (sum, m) =>
+      sum + m.tools.filter(t => t.published || selected.includes(m.id + ':' + t.name)).length,
+    0
   );
+  const globalToolbar =
+    totalMcpTools > 0
+      ? `<div class="grant-toolbar"><div class="footnote" style="font-weight:500;margin:0">Thao tác nhanh cho tất cả connector:</div><div class="actions" style="gap:6px"><button type="button" class="btn small" data-action="grant-all:all">Cấp quyền toàn bộ</button><button type="button" class="btn small" data-action="grant-basic:all">Cấp quyền cơ bản</button><button type="button" class="btn small" data-action="grant-none:all">Thu hồi toàn bộ</button><button type="button" class="textbutton" data-action="grant-toggle-expand" style="margin-left:6px">Mở / Thu gọn tất cả</button></div></div>`
+      : '';
+
+  const mcpGroups = state.mcps
+    .map(m => {
+      const visibleTools = m.tools.filter(
+        t => t.published || selected.includes(m.id + ':' + t.name)
+      );
+      const totalCount = visibleTools.length;
+      const grantedCount = visibleTools.filter(t => selected.includes(m.id + ':' + t.name)).length;
+      const actionsHtml =
+        totalCount > 0
+          ? `<div class="grant-actions"><button type="button" class="btn small" data-action="grant-all:${esc(m.id)}">Cấp quyền toàn bộ</button><button type="button" class="btn small" data-action="grant-basic:${esc(m.id)}">Cấp quyền cơ bản</button><button type="button" class="btn small" data-action="grant-none:${esc(m.id)}">Thu hồi toàn bộ</button></div>`
+          : '';
+      const toolRowsHtml =
+        totalCount > 0
+          ? visibleTools
+              .map(t => {
+                const isReadOnly = t.annotations?.readOnlyHint === true;
+                return `<label class="toolrow"><div><b>${esc(t.name)}</b><p title="${esc(t.description || '')}">${esc(t.description)}${!t.published ? ' · Chưa công bố' : ''}</p></div><div class="inline">${toolPermissionBadge(t.permission)}<input type="checkbox" name="permissions" value="${esc(m.id + ':' + t.name)}" data-mcp="${esc(m.id)}" data-readonly="${isReadOnly ? 'true' : 'false'}" ${selected.includes(m.id + ':' + t.name) ? 'checked' : ''} ${!t.published ? 'disabled' : ''}></div></label>`;
+              })
+              .join('')
+          : '<p class="footnote" style="padding:15px">Chưa công bố tool.</p>';
+
+      return `<details class="toolgroup" data-mcp="${esc(m.id)}"><summary class="toolgrouphead"><div class="inline">${logo(m)}<div><h3>${esc(m.name)}</h3><p class="sub">${m.on ? '' : 'MCP tạm dừng · '}${m.status === 'connected' ? 'Đã kết nối' : 'Kết nối chưa sẵn sàng'}</p></div></div><div class="inline"><span class="badge gray grant-count" data-mcp="${esc(m.id)}">${grantedCount}/${totalCount} tool đã cấp</span><span class="chevron" aria-hidden="true">${I('chevron')}</span></div></summary><div class="toolgroupbody">${actionsHtml}${toolRowsHtml}</div></details>`;
+    })
+    .join('');
+
+  return globalToolbar + mcpGroups + vaultGrantRows(selected);
 }
 function agent(id) {
   return selectEntity('agents', id);
@@ -987,6 +1046,28 @@ async function act(action, args) {
   if (action === 'activity-reload') {
     activity.delete(route + ':' + selected[route]);
     return render();
+  }
+  if (action === 'grant-all') {
+    setGrantSelection(args[0] || 'all', 'all');
+    return;
+  }
+  if (action === 'grant-basic') {
+    setGrantSelection(args[0] || 'all', 'basic');
+    return;
+  }
+  if (action === 'grant-none') {
+    setGrantSelection(args[0] || 'all', 'none');
+    return;
+  }
+  if (action === 'grant-toggle-expand') {
+    const form =
+      document.querySelector('#modal[open] form') ||
+      document.querySelector('#grants, #manual-agent, #consent') ||
+      document;
+    const detailsList = Array.from(form.querySelectorAll('details.toolgroup'));
+    const anyClosed = detailsList.some(d => !d.open);
+    for (const d of detailsList) d.open = anyClosed;
+    return;
   }
   if (action === 'vault-new') return vaultEditor();
   if (action === 'vault-edit') return vaultEditor(id);
@@ -1250,6 +1331,11 @@ document.addEventListener('click', async e => {
     toast(err.message);
   } finally {
     el.disabled = false;
+  }
+});
+document.addEventListener('change', e => {
+  if (e.target.matches('input[name="permissions"]')) {
+    updateGrantCounts(e.target.closest('form') || document);
   }
 });
 document.addEventListener('submit', async e => {
