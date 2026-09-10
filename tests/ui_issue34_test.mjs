@@ -147,6 +147,10 @@ test('Issue #34 UI: dashboard update banner, Settings update panel, and manual c
     panelText.includes('aaaa111'),
     'Detail panel must contain shortened current revision sha'
   );
+  const codeTitle = await page
+    .locator('#detail-panel dt:has-text("Phiên bản đang chạy") + dd code')
+    .getAttribute('title');
+  assert.equal(codeTitle, currentRev);
   assert.ok(
     panelText.includes('Kiểm tra cập nhật ngay'),
     'Panel must have button to check for updates'
