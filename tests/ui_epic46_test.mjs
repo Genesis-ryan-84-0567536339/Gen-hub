@@ -19,7 +19,8 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
     },
     {
       name: 'add_review_comment',
-      description: "Add review comment to the requester's latest pending pull request review. A pending review needs to already exist to call this (check with the user if not sure).",
+      description:
+        "Add review comment to the requester's latest pending pull request review. A pending review needs to already exist to call this (check with the user if not sure).",
       inputSchema: { type: 'object', properties: {} },
       permission: { status: 'ok' },
       published: true,
@@ -27,7 +28,8 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
     },
     {
       name: 'cancel_workflow_run',
-      description: 'Cancels a workflow run for a repository. Requires admin or write permission to the repository.',
+      description:
+        'Cancels a workflow run for a repository. Requires admin or write permission to the repository.',
       inputSchema: { type: 'object', properties: {} },
       permission: { status: 'ok' },
       published: false,
@@ -35,7 +37,8 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
     },
     {
       name: 'create_branch',
-      description: 'Create a new git branch in the specified repository from an existing reference or the default branch.',
+      description:
+        'Create a new git branch in the specified repository from an existing reference or the default branch.',
       inputSchema: { type: 'object', properties: {} },
       permission: { status: 'ok' },
       published: false,
@@ -43,7 +46,8 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
     },
     {
       name: 'create_commit',
-      description: 'Creates a new commit with the specified changes. If parent commit is not specified, HEAD is used. If multiple branches exist, changes are made to the current or specified branch.',
+      description:
+        'Creates a new commit with the specified changes. If parent commit is not specified, HEAD is used. If multiple branches exist, changes are made to the current or specified branch.',
       inputSchema: { type: 'object', properties: {} },
       permission: { status: 'ok' },
       published: false,
@@ -51,7 +55,8 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
     },
     {
       name: 'create_pull_request',
-      description: 'Creates a new pull request in a repository from the specified head branch into the base branch.',
+      description:
+        'Creates a new pull request in a repository from the specified head branch into the base branch.',
       inputSchema: { type: 'object', properties: {} },
       permission: { status: 'ok' },
       published: false,
@@ -59,7 +64,8 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
     },
     {
       name: 'get_file_contents',
-      description: 'Gets the contents of a file or directory from a repository. For file contents, returns base64 encoded content for binary files or text for text files.',
+      description:
+        'Gets the contents of a file or directory from a repository. For file contents, returns base64 encoded content for binary files or text for text files.',
       inputSchema: { type: 'object', properties: {} },
       permission: { status: 'ok' },
       published: true,
@@ -67,7 +73,8 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
     },
     {
       name: 'search_code',
-      description: 'Search for code in repositories. You can search for terms in file contents or paths using GitHub search syntax.',
+      description:
+        'Search for code in repositories. You can search for terms in file contents or paths using GitHub search syntax.',
       inputSchema: { type: 'object', properties: {} },
       permission: { status: 'ok' },
       published: true,
@@ -137,8 +144,13 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
   // Verify tool description has title attribute matching full text
   const reviewCommentDesc = page.locator('.toolrow:has(b:text-is("add_review_comment")) p');
   const descTitle = await reviewCommentDesc.getAttribute('title');
-  const expectedDesc = "Add review comment to the requester's latest pending pull request review. A pending review needs to already exist to call this (check with the user if not sure).";
-  assert.equal(descTitle, expectedDesc, 'Title attribute must contain the full unabridged description');
+  const expectedDesc =
+    "Add review comment to the requester's latest pending pull request review. A pending review needs to already exist to call this (check with the user if not sure).";
+  assert.equal(
+    descTitle,
+    expectedDesc,
+    'Title attribute must contain the full unabridged description'
+  );
 
   // 3. Test responsive viewports: 1440x900, 1280x800, 1024x768, 840x700, 600x800, 375x667
   const viewports = [
@@ -177,7 +189,9 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
           const swRect = sw.getBoundingClientRect();
           if (swRect.right > detailRect.right + 1.5) {
             pushedOutSwitches++;
-            issues.push(`Row ${idx} switch right=${swRect.right} > detailRight=${detailRect.right}`);
+            issues.push(
+              `Row ${idx} switch right=${swRect.right} > detailRight=${detailRect.right}`
+            );
           }
         }
         if (actions) {
@@ -201,18 +215,45 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
       };
     });
 
-    assert.equal(audit.detailHasOverflow, false, `[${vp.name}] #entity-detail must not horizontally overflow`);
-    assert.equal(audit.cardpadHasOverflow, false, `[${vp.name}] .cardpad must not horizontally overflow`);
-    assert.equal(audit.toolgroupHasOverflow, false, `[${vp.name}] .toolgroup must not horizontally overflow`);
-    assert.equal(audit.overflowRows, 0, `[${vp.name}] No toolrow should overflow: ${audit.issues.join('; ')}`);
-    assert.equal(audit.pushedOutSwitches, 0, `[${vp.name}] No switch should be pushed out: ${audit.issues.join('; ')}`);
-    assert.equal(audit.squishedActionWidths, 0, `[${vp.name}] Actions container must not be squished: ${audit.issues.join('; ')}`);
+    assert.equal(
+      audit.detailHasOverflow,
+      false,
+      `[${vp.name}] #entity-detail must not horizontally overflow`
+    );
+    assert.equal(
+      audit.cardpadHasOverflow,
+      false,
+      `[${vp.name}] .cardpad must not horizontally overflow`
+    );
+    assert.equal(
+      audit.toolgroupHasOverflow,
+      false,
+      `[${vp.name}] .toolgroup must not horizontally overflow`
+    );
+    assert.equal(
+      audit.overflowRows,
+      0,
+      `[${vp.name}] No toolrow should overflow: ${audit.issues.join('; ')}`
+    );
+    assert.equal(
+      audit.pushedOutSwitches,
+      0,
+      `[${vp.name}] No switch should be pushed out: ${audit.issues.join('; ')}`
+    );
+    assert.equal(
+      audit.squishedActionWidths,
+      0,
+      `[${vp.name}] Actions container must not be squished: ${audit.issues.join('; ')}`
+    );
   }
 
   // 4. Verify line-clamp and style metrics on desktop
   await page.setViewportSize({ width: 1280, height: 800 });
   const rowStyles = await page.evaluate(() => {
-    const row = Array.from(document.querySelectorAll('.toolrow')).find(r => r.querySelector('b')?.textContent === 'add_review_comment') || document.querySelector('.toolrow');
+    const row =
+      Array.from(document.querySelectorAll('.toolrow')).find(
+        r => r.querySelector('b')?.textContent === 'add_review_comment'
+      ) || document.querySelector('.toolrow');
     const c1 = row.children[0];
     const c2 = row.children[1];
     const p = c1.querySelector('p');
@@ -267,8 +308,16 @@ test('Issue #46: GitHub MCP 46 tools responsive layout, no horizontal overflow, 
     return { detailOverflow: detail.scrollWidth > detail.clientWidth + 1.5, rowOverflow: overflow };
   });
 
-  assert.equal(agentTabAudit.detailOverflow, false, 'Agent detail panel must not overflow horizontally');
+  assert.equal(
+    agentTabAudit.detailOverflow,
+    false,
+    'Agent detail panel must not overflow horizontally'
+  );
   assert.equal(agentTabAudit.rowOverflow, 0, 'No tool row in agent permissions should overflow');
 
-  assert.equal(errors.length, 0, 'No JavaScript errors occurred during entire test: ' + errors.join('; '));
+  assert.equal(
+    errors.length,
+    0,
+    'No JavaScript errors occurred during entire test: ' + errors.join('; ')
+  );
 });
