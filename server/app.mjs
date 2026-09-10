@@ -9,6 +9,7 @@ import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
 import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
+import { vaultService } from './vault.mjs';
 const pub = fileURLToPath(new URL('../public/', import.meta.url));
 const cleanMcp = ({ secret, ...m }) => ({ ...m, hasCredential: !!secret });
 const text = (v, max = 200) =>
@@ -33,6 +34,7 @@ export function createHub({
     throw Error('PUBLIC_URL must be an origin');
   origin = base.origin;
   const store = openStore(dir),
+    vault = vaultService(store),
     auth = authService(store, origin),
     up = connector || connectorService(store),
     limits = new Map();
@@ -53,11 +55,29 @@ export function createHub({
     m?.status === 'connected' &&
     t?.published &&
     a.permissions.includes(m.id + ':' + t.name);
+  function requirePin(pin, actor, operation, target) {
+    try {
+      const hash = store.get('security', 'pin')?.hash;
+      if (!hash) throw new HubError('Owner cần đặt PIN trong Cài đặt trước khi thực hiện', 403);
+      // One budget across web, admin tokens and targets; changing token cannot reset it.
+      rate('destructive-pin', 5, 15 * 60000);
+      if (typeof pin !== 'string' || !/^[0-9]{4,12}$/.test(pin) || !passwordCheck(pin, hash))
+        throw new HubError('PIN không đúng', 403);
+      limits.delete('destructive-pin');
+    } catch (e) {
+      store.audit(actor, 'hub', 'security.pin_check', 'denied', { operation, target }, {});
+      throw e;
+    }
+  }
   const validateGrants = permissions => {
     if (!Array.isArray(permissions) || permissions.length > 2000)
       throw new HubError('Danh sách quyền không hợp lệ');
     for (const p of permissions) {
       if (typeof p !== 'string') throw new HubError('Quyền không hợp lệ');
+      if (p.startsWith('vault:')) {
+        if (!store.get('vault', p.slice(6))) throw new HubError('Secret không tồn tại');
+        continue;
+      }
       const [mid, name] = p.split(':');
       if (!store.get('mcp', mid)?.tools.some(t => t.name === name && t.published))
         throw new HubError('Tool chưa được công bố: ' + p);
@@ -201,6 +221,7 @@ export function createHub({
             .filter(t => allowed(a, m, t))
             .map(({ published, ...t }) => ({ ...t, name: m.id + '__' + t.name }))
         )
+        .concat(vault.tools(a))
         .sort((x, y) => x.name.localeCompare(y.name));
       return result({ tools });
     }
@@ -209,6 +230,28 @@ export function createHub({
       name = b.params?.name,
       args = b.params?.arguments ?? {};
     if (typeof name !== 'string') return rpcError(-32602, 'Missing tool name');
+    if (name.startsWith('vault__')) {
+      const sid = name.slice(7);
+      if (!vault.canRead(a, sid)) {
+        store.audit(a.id, 'vault', 'vault.read', 'denied', { id: sid }, {});
+        return rpcError(-32602, 'Tool không khả dụng hoặc chưa được cấp quyền');
+      }
+      try {
+        assertSchema({ properties: {}, additionalProperties: false }, args);
+        const output = vault.read(sid, a.id);
+        store.put('agent', a.id, { ...a, last: new Date().toISOString() });
+        return result({
+          content: [{ type: 'text', text: JSON.stringify(output) }],
+          isError: false
+        });
+      } catch {
+        store.audit(a.id, 'vault', 'vault.call', 'error', { id: sid }, {});
+        return result({
+          content: [{ type: 'text', text: 'Không thể đọc secret; kiểm tra tham số và nhật ký.' }],
+          isError: true
+        });
+      }
+    }
     const idx = name.indexOf('__'),
       mid = name.slice(0, idx),
       tn = name.slice(idx + 2),
@@ -291,10 +334,14 @@ export function createHub({
       const mcps = store.list('mcp').map(cleanMcp),
         agents = store.list('agent').map(a => ({
           ...a,
-          effective: mcps.reduce((n, m) => n + m.tools.filter(t => allowed(a, m, t)).length, 0)
+          effective:
+            mcps.reduce((n, m) => n + m.tools.filter(t => allowed(a, m, t)).length, 0) +
+            vault.tools(a).length
         }));
       return respond(200, {
         mcps,
+        vault: vault.list(),
+        security: { pinConfigured: !!store.get('security', 'pin')?.hash },
         agents,
         logs: store.logs(200).map(redact),
         settings: store.get('settings', 'main') || {
@@ -308,6 +355,20 @@ export function createHub({
         adminAssistant: assistant.status(),
         owner: store.get('owner', 'main').username
       });
+    }
+    if (resource === 'vault') {
+      if (!mid && method === 'GET') return respond(200, vault.list());
+      if (!mid && method === 'POST') return respond(201, vault.create(b, actor));
+      if (mid && !action && method === 'PATCH') return respond(200, vault.update(mid, b, actor));
+      if (mid && !action && method === 'DELETE') {
+        requirePin(b.pin, actor, 'vault.remove', mid);
+        return respond(200, vault.remove(mid, actor));
+      }
+      if (mid && action === 'read' && method === 'POST')
+        return respond(200, vault.read(mid, actor));
+      if (mid && action === 'grants' && method === 'POST')
+        return respond(200, vault.share(mid, b, actor));
+      throw new HubError('Không tìm thấy API', 404);
     }
     if (resource === 'settings' && method === 'PATCH') {
       const old = store.get('settings', 'main') || {};
@@ -362,6 +423,7 @@ export function createHub({
     }
     if (resource === 'mcps' && m) {
       if (method === 'DELETE' && !action) {
+        requirePin(b.pin, actor, 'mcp.remove', mid);
         store.del('mcp', mid);
         for (const a of store.list('agent')) {
           a.permissions = a.permissions.filter(p => !p.startsWith(mid + ':'));
@@ -404,6 +466,7 @@ export function createHub({
         return respond(200, result);
       }
       if (action === 'disconnect' && method === 'POST') {
+        requirePin(b.pin, actor, 'connection.disconnect', mid);
         delete m.secret;
         m.credentialVersion = (m.credentialVersion || 0) + 1;
         m.status = 'disconnected';
@@ -454,6 +517,7 @@ export function createHub({
       const a = store.get('agent', mid);
       if (!a) throw new HubError('Không tìm thấy agent', 404);
       if (a.status !== 'revoked') throw new HubError('Thu hồi agent trước khi xóa', 409);
+      requirePin(b.pin, actor, 'agent.remove', mid);
       store.tx(() => {
         for (const type of ['token', 'code'])
           for (const record of store.list(type))
@@ -485,8 +549,8 @@ export function createHub({
         m = store.get('mcp', b.mcp),
         t = m?.tools.find(t => t.name === b.tool);
       return respond(200, {
-        allowed: !!allowed(a, m, t),
-        reason: allowed(a, m, t)
+        allowed: b.mcp === 'vault' ? !!vault.canRead(a, b.tool) : !!allowed(a, m, t),
+        reason: (b.mcp === 'vault' ? vault.canRead(a, b.tool) : allowed(a, m, t))
           ? 'Agent được cấp quyền và tool khả dụng'
           : 'Agent chưa được cấp, MCP tạm dừng, kết nối lỗi hoặc tool chưa công bố'
       });
@@ -631,6 +695,22 @@ export function createHub({
         const write = !['GET', 'HEAD'].includes(req.method),
           s = auth.owner(req, write);
         const b = write ? await body(req) : {};
+        // PIN setup/reset is web-only and always needs the actual owner password.
+        if (p === '/api/security/pin' && req.method === 'POST') {
+          rate('pin-setup:owner', 5, 15 * 60000);
+          if (
+            typeof b.password !== 'string' ||
+            b.password.length > 1024 ||
+            !passwordCheck(b.password, store.get('owner', 'main').password)
+          )
+            throw new HubError('Mật khẩu owner không đúng', 403);
+          if (typeof b.pin !== 'string' || !/^[0-9]{4,12}$/.test(b.pin))
+            throw new HubError('PIN cần 4–12 chữ số');
+          store.put('security', 'pin', { hash: passwordHash(b.pin) });
+          limits.delete('destructive-pin');
+          audit('security.pin_set', {});
+          return send(res, 200, { pinConfigured: true });
+        }
         if (p === '/api/admin-assistant') {
           if (req.method === 'GET') return send(res, 200, assistant.status());
           if (req.method === 'POST') {

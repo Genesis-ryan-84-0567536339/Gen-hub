@@ -27,6 +27,9 @@ Chốt với Ryan ngày 2026-09-08. Đích: Hub tự sở hữu; repo Gen-hub l�
 - Tools/list chỉ liệt kê tool khả dụng, tên namespace ổn định theo MCP ID.
 - Agent có ID riêng hiển thị thường trực; owner đặt tên khi duyệt OAuth hoặc sửa sau đó. Chỉ xóa agent đã thu hồi, xóa token/code còn lại và giữ audit theo retention.
 - Password chỉ hash; credential mã hóa bằng key trên máy. Không log secret.
+- Vault (#22) lưu secret độc lập bằng `store.seal()`; chỉ owner/web hoặc admin dispatcher được ghi. Grant `vault:<id>` nằm trong cùng `agent.permissions`, kiểm tra ID tồn tại, không wildcard. MCP thường chỉ công bố tool đọc `vault__<id>` nếu agent active và có đúng grant; không liệt kê secret chưa cấp. Đây là cơ chế owner chủ động chia sẻ giá trị, không cho phép đọc credential connector.
+- Vault mặc định riêng tư. Tạo/sửa quyền agent và consent dùng chung checkbox Vault. Chia sẻ “tất cả” chỉ cấp snapshot agent active tại lúc lưu, audit `vault.share_all`; không tự cấp cho agent tương lai. Xóa secret gỡ grant trong cùng transaction, giữ audit. Metadata không chứa ciphertext/giá trị; đọc tường minh ghi ID/actor/kết quả, tuyệt đối không audit giá trị.
+- PIN (#25) scrypt, không mặc định, không plaintext; đặt/đổi chỉ bằng web owner + CSRF + password step-up. Cùng server gate cho web/admin ở xóa connector, agent đã revoked, secret và disconnect credential. Fail closed nếu thiếu/sai/chưa đặt PIN; một rate budget dùng chung, 5 lần sai trong cửa sổ 15 phút (in-memory). Không có tool admin đặt PIN. PIN dùng lại không tương đương xác nhận con người từng lần; không dùng nó làm bằng chứng owner vừa phê duyệt trong thiết kế chat #24.
 - Quyền/credential/log/tài khoản tồn tại qua restart.
 - Installer chạy lại không tạo tunnel trùng, không thay thế DNS bên ngoài, không tạo lại owner.
 - Personal không publish host port; VPS chỉ publish Caddy 80/443.
