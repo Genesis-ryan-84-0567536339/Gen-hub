@@ -156,7 +156,10 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
   async function doRequest(url, options) {
     const r = await serviceRequest(url, options);
     if (r.status < 200 || r.status >= 300)
-      throw new HubError(`Dịch vụ trả HTTP ${r.status}`, r.status === 401 ? 401 : r.status === 403 ? 403 : 502);
+      throw new HubError(
+        `Dịch vụ trả HTTP ${r.status}`,
+        r.status === 401 ? 401 : r.status === 403 ? 403 : 502
+      );
     if (r.json?.ok === false || r.json?.error) {
       const isMissingScope = r.json?.error === 'missing_scope';
       const errText = isMissingScope

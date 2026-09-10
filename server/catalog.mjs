@@ -111,31 +111,33 @@ export const catalog = [
         },
         [],
         false,
-        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
+        [
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/drive.readonly',
+          'https://www.googleapis.com/auth/drive.file'
+        ]
       ),
-      tool(
-        'get_file',
-        'Đọc metadata của tệp',
-        { file_id: s('ID tệp') },
-        ['file_id'],
-        false,
-        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
-      ),
-      tool(
-        'read_file',
-        'Đọc nội dung tệp văn bản',
-        { file_id: s('ID tệp') },
-        ['file_id'],
-        false,
-        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
-      ),
+      tool('get_file', 'Đọc metadata của tệp', { file_id: s('ID tệp') }, ['file_id'], false, [
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file'
+      ]),
+      tool('read_file', 'Đọc nội dung tệp văn bản', { file_id: s('ID tệp') }, ['file_id'], false, [
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/drive.file'
+      ]),
       tool(
         'export_file',
         'Xuất Google Docs thành văn bản',
         { file_id: s('ID tệp'), mime_type: s('text/plain hoặc text/csv') },
         ['file_id'],
         false,
-        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
+        [
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/drive.readonly',
+          'https://www.googleapis.com/auth/drive.file'
+        ]
       ),
       tool(
         'create_file',
