@@ -128,6 +128,11 @@ test('admin tools reuse owner operations, preserve agent policy and attribute su
     call: async () => ({ content: [{ type: 'text', text: 'ok' }] })
   });
   const { token, id } = await create(x);
+  assert.equal(
+    (await x.call('/api/security/pin', 'POST', { password: 'owner-password-123', pin: '8492' }))
+      .status,
+    200
+  );
   const m = await invoke(x, token, 'connector_add', {
     provider: 'remote',
     name: 'Test',
@@ -144,7 +149,7 @@ test('admin tools reuse owner operations, preserve agent policy and attribute su
     true
   );
   await invoke(x, token, 'agent_update', { id: agent.id, name: 'renamed', status: 'revoked' });
-  await invoke(x, token, 'agent_remove', { id: agent.id });
+  await invoke(x, token, 'agent_remove', { id: agent.id, pin: '8492' });
   await invoke(x, token, 'settings_update', { name: 'Managed by assistant', retention: 7 });
   assert.equal((await x.call('/api/state')).data.settings.name, 'Managed by assistant');
   const bad = await rpc(x, token, 'tools/call', {
@@ -154,8 +159,8 @@ test('admin tools reuse owner operations, preserve agent policy and attribute su
   assert.equal(bad.data.result.isError, true);
   await invoke(x, token, 'hub_state');
   await invoke(x, token, 'audit_list');
-  await invoke(x, token, 'connector_disconnect', { id: m.id });
-  await invoke(x, token, 'connector_remove', { id: m.id });
+  await invoke(x, token, 'connector_disconnect', { id: m.id, pin: '8492' });
+  await invoke(x, token, 'connector_remove', { id: m.id, pin: '8492' });
   const logs = (await x.call('/api/logs')).data;
   assert(logs.some(l => l.actor === 'admin-assistant:' + id && l.tool === 'mcp.add'));
   assert(logs.some(l => l.actor === 'admin-assistant:' + id && l.status === 'error'));

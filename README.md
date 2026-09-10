@@ -70,6 +70,25 @@ Token có quyền thao tác console (connector, agent, audit, cài đặt) và k
 
 Trong **Agent & quyền**, ID giúp phân biệt các client trùng tên. Owner có thể sửa tên, thu hồi rồi xóa agent khỏi danh sách; nhật ký liên quan được giữ theo thời gian lưu đã cấu hình.
 
+## Kho bí mật (Vault)
+
+1. Mở **Kho bí mật → Thêm secret**, nhập tên và giá trị (tối đa 64 KiB).
+2. Mặc định **Riêng tư**. Có thể chọn từng agent hoặc chủ động chọn **Cấp cho tất cả agent đang hoạt động**. Lựa chọn “tất cả” chỉ áp dụng tại lúc lưu, không tự cấp cho agent tạo sau này.
+3. Trong **Agent & quyền**, màn hình tạo token, duyệt OAuth và sửa quyền đều có checkbox cho từng secret. Agent chỉ thấy tool `vault__<secret-id>` đã được cấp và gọi với arguments `{}` để nhận giá trị. Không có quyền wildcard hay tool ghi Vault cho agent thường.
+4. **Quản lý** cho phép đổi tên, thay giá trị, thay danh sách đọc, xem hoặc xóa. Lưu chia sẻ thay thế danh sách đọc của secret đó; quyền MCP và các secret khác giữ nguyên. Muốn xem giá trị phải bấm xác nhận; hộp thoại tự đóng sau 60 giây.
+
+Vault dành cho secret độc lập mà owner **chủ động cho agent nhận giá trị thật**. Credential connector vẫn chỉ dùng bên trong Hub, không có đường đọc từ Vault. Mọi lượt đọc ghi actor/ID/thời gian/kết quả, không ghi giá trị; state và danh sách chỉ trả metadata. Giá trị dùng chung AES-256-GCM/master.key, tồn tại qua restart và nằm trong backup dữ liệu hiện có. Thu hồi quyền chặn lượt đọc mới, không xóa được bản sao mà agent đã nhận. Bản backup cũ vẫn có thể chứa giá trị cũ.
+
+Trợ lý quản trị có các tool `vault_list`, `vault_create`, `vault_update`, `vault_read`, `vault_share`, `vault_remove`. Chúng dùng chung API quản trị; `vault_read` là thao tác đọc tường minh, không bị đưa tự động vào `hub_state` hay audit.
+
+## PIN xác nhận thao tác xóa
+
+Mở **Cài đặt → PIN xác nhận thao tác xóa**, nhập mật khẩu owner để đặt PIN riêng gồm 4–12 chữ số. Không có PIN mặc định; chỉ lưu hash scrypt. Quên PIN thì đặt lại tại cùng chỗ bằng mật khẩu owner.
+
+Backend yêu cầu PIN cho cả web và `/mcp/admin` khi xóa connector, xóa agent đã thu hồi, xóa secret hoặc ngắt kết nối (xóa credential). Client quản trị phải gửi thêm `pin` cho `connector_remove`, `agent_remove`, `vault_remove`, `connector_disconnect`. Thiếu/sai PIN hoặc chưa đặt PIN thì không thay đổi dữ liệu. Sau 5 lần thử sai liên tiếp trong cửa sổ 15 phút, lượt thử tiếp theo bị chặn đến hết cửa sổ; giới hạn dùng chung giữa web, token và đối tượng. Bộ đếm nằm trong tiến trình, khởi động lại Hub sẽ đặt lại. PIN không được ghi vào audit.
+
+Đặt/đổi PIN chỉ qua phiên web owner có CSRF và mật khẩu thật, không có tool admin tự đổi PIN. Đổi mật khẩu giữ bước xác nhận mật khẩu hiện tại. PIN là xác nhận bằng một bí mật dùng lại, không chứng minh owner vừa bấm duyệt mỗi lần: trợ lý đã biết PIN có thể dùng lại; không lưu PIN vào prompt hay Vault cấp cho trợ lý nếu muốn giữ bước nhập tay.
+
 ## Tự cập nhật từ repo Gen-hub
 
 **Mặc định bật sau khi cài thành công.** Máy kiểm tra `Gen-hub/main` mỗi giờ, lệch ngẫu nhiên tối đa 10 phút. Chỉ cập nhật commit có workflow CI trên `main` đã thành công; tải source theo đúng SHA và dùng image digest trong repo. Không tự cập nhật image `latest` riêng lẻ.

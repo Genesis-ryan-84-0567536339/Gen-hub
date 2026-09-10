@@ -40,6 +40,7 @@ const names = {
   overview: 'Tổng quan',
   mcps: 'MCP & kết nối',
   agents: 'Agent & quyền',
+  vault: 'Kho bí mật',
   audit: 'Nhật ký',
   settings: 'Cài đặt'
 };
@@ -47,12 +48,17 @@ let state = null,
   csrf = '',
   route = location.hash.slice(1) || 'overview',
   modalContext = {},
+  modalVersion = 0,
   filter = '',
   statusFilter = 'all',
   agentFilter = 'all',
   mcpFilter = 'all',
   timeFilter = 'all';
 const modal = $('#modal');
+modal.addEventListener('cancel', e => {
+  e.preventDefault();
+  close();
+});
 const date = v =>
   v ? new Date(v).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' }) : 'Chưa hoạt động';
 function badge(status) {
@@ -100,6 +106,7 @@ function toast(message) {
   window.toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 4500);
 }
 function login(error = '') {
+  close();
   $('#app').innerHTML =
     `<main class="loginwrap"><div class="loginbrand"><span class="brandmark">g</span>gen-hub</div><section class="card cardpad"><h1>Chào mừng trở lại</h1><p class="subtitle">Đăng nhập để quản lý không gian công cụ.</p><form id="login" style="margin-top:28px"><label class="field">Tài khoản owner<input class="input" name="username" autocomplete="username" required autofocus></label><label class="field">Mật khẩu<input class="input" name="password" type="password" autocomplete="current-password" required></label><p class="errorline" id="login-error">${esc(error)}</p><button class="btn primary" type="submit" style="width:100%">Đăng nhập</button></form><p class="footnote">Tài khoản được tạo trong bước cài đặt trên terminal.</p></section></main>`;
 }
@@ -131,11 +138,11 @@ function render() {
     )
       .map(
         (k, i) =>
-          `<a href="#${k}" class="${r === k ? 'active' : ''}" ${r === k ? 'aria-current="page"' : ''}>${I(['grid', 'plug', 'bot', 'activity', 'settings'][i])}${names[k]}</a>`
+          `<a href="#${k}" class="${r === k ? 'active' : ''}" ${r === k ? 'aria-current="page"' : ''}>${I(['grid', 'plug', 'bot', 'lock', 'activity', 'settings'][i])}${names[k]}</a>`
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub v0.1.0</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub v0.1.0</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
 }
 function overview() {
@@ -286,6 +293,64 @@ function logTable(rows) {
     ? `<div class="tablewrap"><table><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Công cụ / Thao tác</th><th>Kết quả</th><th>Xử lý</th><th></th></tr></thead><tbody>${rows.map(l => `<tr><td>${date(l.created)}</td><td>${esc(l.actor === 'owner' ? state.owner : state.agents.find(a => a.id === l.actor)?.name || l.actor)}</td><td><div class="mono">${esc(l.tool)}</div><div class="sub">${esc(state.mcps.find(m => m.id === l.mcp)?.name || 'Hub')} · #${l.id}</div></td><td>${badge(l.status)}</td><td class="mono">${l.latency} ms</td><td>${btn('Chi tiết', 'log:' + l.id, 'small')}</td></tr>`).join('')}</tbody></table></div>`
     : '<div class="empty"><h3>Chưa có nhật ký phù hợp</h3><p>Thay đổi bộ lọc hoặc bắt đầu sử dụng Hub.</p></div>';
 }
+function vaultGrantRows(selected) {
+  if (!state.vault.length) return '';
+  return `<div class="toolgroup"><div class="toolgrouphead"><h3>Kho bí mật · quyền đọc từng secret</h3><p class="footnote">Agent được cấp sẽ nhận giá trị thật. Chỉ chọn secret agent cần.</p></div>${state.vault.map(s => `<label class="toolrow"><div><b>${esc(s.name)}</b><p class="mono">${esc(s.id)}</p></div><input type="checkbox" name="permissions" value="vault:${esc(s.id)}" ${selected.includes('vault:' + s.id) ? 'checked' : ''}></label>`).join('')}</div>`;
+}
+function vaultPage() {
+  return (
+    head(
+      'Kho bí mật',
+      'Lưu secret độc lập và cấp quyền đọc cho từng agent.',
+      btn('Thêm secret', 'vault-new', 'primary', 'plus')
+    ) +
+    '<div class="info">Secret mới mặc định riêng tư. Agent được cấp quyền sẽ nhận giá trị thật; credential connector vẫn được giữ riêng tại Hub.</div>' +
+    `<section class="card" style="margin-top:24px">${
+      state.vault.length
+        ? `<div class="tablewrap"><table><thead><tr><th>Secret</th><th>Agent đang được cấp</th><th>Cập nhật</th><th></th></tr></thead><tbody>${state.vault
+            .map(s => {
+              const count = state.agents.filter(
+                a => a.status === 'active' && a.permissions.includes('vault:' + s.id)
+              ).length;
+              return `<tr data-vault-id="${esc(s.id)}"><td><b>${esc(s.name)}</b><div class="sub mono">${esc(s.id)}</div></td><td>${count ? count + ' agent' : 'Riêng tư'}</td><td>${date(s.updated)}</td><td>${btn('Quản lý', 'vault-edit:' + s.id, 'small')}</td></tr>`;
+            })
+            .join('')}</tbody></table></div>`
+        : '<div class="empty"><h3>Chưa có secret</h3><p>Thêm API key hoặc token, rồi chọn agent được đọc.</p></div>'
+    }</section>`
+  );
+}
+function sharingFields(selected = []) {
+  return `<label class="field">Chia sẻ<select name="sharing">${options(
+    [
+      ['private', 'Riêng tư — không agent nào'],
+      ['selected', 'Chọn từng agent'],
+      ['all-active', 'Cấp cho tất cả agent đang hoạt động']
+    ],
+    selected.length ? 'selected' : 'private'
+  )}</select></label><div data-sharing-agents ${selected.length ? '' : 'hidden'}>${
+    state.agents
+      .filter(a => a.status === 'active')
+      .map(
+        a =>
+          `<label class="toolrow"><div><b>${esc(a.name)}</b><p class="mono">#${esc(shortAgentId(a))}</p></div><input type="checkbox" name="agents" value="${esc(a.id)}" ${selected.includes(a.id) ? 'checked' : ''}></label>`
+      )
+      .join('') || '<p class="footnote">Chưa có agent hoạt động.</p>'
+  }</div><p class="footnote">“Tất cả” chỉ cấp cho agent hiện có tại lúc lưu; agent mới sau này vẫn cần được cấp riêng. Lưu chia sẻ thay thế danh sách đọc của secret này.</p>`;
+}
+function vaultEditor(id) {
+  const s = state.vault.find(s => s.id === id);
+  modalContext = { kind: 'vault', id };
+  show(
+    s ? esc(s.name) : 'Thêm secret',
+    s ? 'ID: ' + esc(id) : 'Giá trị được mã hóa tại Hub.',
+    `<form id="vault-save"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(s?.name || '')}" maxlength="80" required></label><label class="field">${s ? 'Giá trị mới (để trống để giữ nguyên)' : 'Giá trị secret'}<textarea class="input mono" name="secret" rows="3" maxlength="65536" autocomplete="off" spellcheck="false" ${s ? '' : 'required'}></textarea></label>${s ? '' : sharingFields()}<button class="btn primary" type="submit">${s ? 'Lưu thay đổi' : 'Tạo secret'}</button></form>${s ? `<div class="divider"></div><h3>Quyền đọc</h3><form id="vault-share">${sharingFields(state.agents.filter(a => a.status === 'active' && a.permissions.includes('vault:' + id)).map(a => a.id))}<button class="btn" type="submit">Lưu chia sẻ</button></form><div class="divider"></div><div class="actions">${btn('Xem giá trị…', 'vault-reveal:' + id)}${btn('Xóa secret', 'vault-delete:' + id, 'danger')}</div>` : ''}`,
+    btn('Đóng', 'close'),
+    true
+  );
+}
+function pinSettings() {
+  return `<section class="card cardpad" style="margin-top:24px"><h2>PIN xác nhận thao tác xóa</h2><p class="footnote">${state.security.pinConfigured ? 'Đã đặt PIN.' : 'Chưa đặt PIN.'} Dùng khi xóa agent, MCP, secret hoặc ngắt kết nối. Năm lần nhập sai liên tiếp sẽ khóa thử PIN trong 15 phút.</p>${btn(state.security.pinConfigured ? 'Đổi / đặt lại PIN' : 'Đặt PIN', 'pin-setup', '', 'lock')}</section>`;
+}
 function settings() {
   return (
     head('Cài đặt', 'Thông tin Hub, truy cập và nhật ký.') +
@@ -297,6 +362,7 @@ function settings() {
       ],
       state.settings.retention
     )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><div class="settingsrow"><div><h3>Agent mới cần được duyệt</h3><p>Quyền do owner cấp tại Hub.</p></div><span class="badge">Luôn bật</span></div><div class="settingsrow"><div><h3>Credential được mã hóa</h3><p>Khóa và dữ liệu nằm trên máy cài Gen-hub.</p></div>${I('lock')}</div><div class="divider"></div>${btn('Đổi mật khẩu owner', 'password', '', 'lock')}</section><div><section class="card cardpad"><h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code></section><section class="card cardpad" style="margin-top:22px"><h2>Bắt đầu sử dụng</h2><p class="footnote" style="margin-bottom:18px">Mở lại hướng dẫn thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}</section></div></div>` +
+    pinSettings() +
     adminAssistantSettings()
   );
 }
@@ -305,11 +371,15 @@ function adminAssistantSettings() {
   return `<section class="card cardpad" style="margin-top:24px"><h2>Trợ lý AI quản trị riêng</h2><p class="footnote">Quyền quản trị console như owner. Token không tự hết hạn; chỉ cấp cho trợ lý cá nhân và thu hồi tại đây khi cần.</p><div class="codecopy"><code>${esc(a.endpoint || state.origin + '/mcp/admin')}</code></div>${a.active ? `<p>Đang hoạt động · #${esc(a.id.slice(-8))}</p><p class="footnote">Tạo: ${date(a.created)} · Dùng gần nhất: ${date(a.lastUsed)}</p>${btn('Thu hồi token trợ lý', 'admin-revoke', 'danger')}` : `<p class="footnote">Chưa có token hoạt động. Bạn cần nhập lại mật khẩu owner để tạo; token chỉ hiển thị một lần.</p>${btn('Tạo token trợ lý', 'admin-create', 'primary')}`}</section>`;
 }
 function show(title, sub, body, footer = '', sheet = false) {
+  modalVersion++;
+  clearTimeout(window.vaultRevealTimer);
   modal.className = sheet ? 'sheet' : '';
   modal.innerHTML = `<div class="modalhead"><div><h2>${title}</h2><p>${sub}</p></div><button class="iconbutton" data-action="close" aria-label="Đóng">${I('close')}</button></div><div class="modalbody">${body}</div>${footer ? `<div class="modalfooter">${footer}</div>` : ''}`;
   if (!modal.open) modal.showModal();
 }
 function close() {
+  modalVersion++;
+  clearTimeout(window.vaultRevealTimer);
   modal.close();
   modal.innerHTML = '';
   modalContext = {};
@@ -404,7 +474,8 @@ function grantRows(selected) {
               .join('') || '<p class="footnote" style="padding:15px">Chưa công bố tool.</p>'
           }</div>`
       )
-      .join('') || '<div class="info">Thêm MCP và công bố tool trước khi cấp quyền.</div>'
+      .join('') + vaultGrantRows(selected) ||
+    '<div class="info">Thêm MCP hoặc secret trước khi cấp quyền.</div>'
   );
 }
 function agent(id) {
@@ -413,7 +484,7 @@ function agent(id) {
   show(
     esc(a.name),
     'ID: ' + esc(a.id),
-    `<div class="inline" style="margin-bottom:22px">${badge(a.status)}<span class="muted">${a.effective} tool khả dụng</span></div><form id="grants"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(a.name)}" required maxlength="80"></label>${grantRows(a.permissions)}<div class="actions"><button class="btn primary" type="submit">Lưu quyền</button>${a.status === 'active' ? btn('Thu hồi agent', 'revoke:' + id, 'danger') : btn('Xóa agent', 'delete-agent:' + id, 'danger')}</div></form><div class="divider"></div><h3>Kiểm tra quyền đã lưu</h3><form id="test" style="margin-top:18px"><label class="field">Chọn tool<select name="tool">${state.mcps.flatMap(m => m.tools.map(t => `<option value="${esc(m.id + ':' + t.name)}">${esc(m.name)} / ${esc(t.name)}</option>`)).join('')}</select></label><button class="btn" type="submit">Kiểm tra quyền</button><div id="test-result" style="margin-top:16px"></div></form>`,
+    `<div class="inline" style="margin-bottom:22px">${badge(a.status)}<span class="muted">${a.effective} tool khả dụng</span></div><form id="grants"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(a.name)}" required maxlength="80"></label>${grantRows(a.permissions)}<div class="actions"><button class="btn primary" type="submit">Lưu quyền</button>${a.status === 'active' ? btn('Thu hồi agent', 'revoke:' + id, 'danger') : btn('Xóa agent', 'delete-agent:' + id, 'danger')}</div></form><div class="divider"></div><h3>Kiểm tra quyền đã lưu</h3><form id="test" style="margin-top:18px"><label class="field">Chọn tool<select name="tool">${state.mcps.flatMap(m => m.tools.map(t => `<option value="${esc(m.id + ':' + t.name)}">${esc(m.name)} / ${esc(t.name)}</option>`)).join('')}${state.vault.map(s => `<option value="vault:${esc(s.id)}">Vault / ${esc(s.name)}</option>`).join('')}</select></label><button class="btn" type="submit">Kiểm tra quyền</button><div id="test-result" style="margin-top:16px"></div></form>`,
     btn('Đóng', 'close'),
     true
   );
@@ -474,10 +545,20 @@ function log(id, tab = 'input') {
   );
 }
 function confirmation(title, detail, action) {
+  const needsPin = /^(do-remove|do-delete-agent|do-disconnect|do-vault-delete):/.test(action);
+  if (needsPin && !state.security.pinConfigured) {
+    show(
+      'Đặt PIN trước khi tiếp tục',
+      'PIN bảo vệ thao tác xóa dữ liệu.',
+      '<p>Vào Cài đặt để đặt PIN riêng bằng mật khẩu owner, sau đó thử lại thao tác.</p>',
+      btn('Cài đặt PIN', 'pin-setup', 'primary')
+    );
+    return;
+  }
   show(
     title,
     'Thao tác sẽ áp dụng ngay trên Hub.',
-    `<p>${detail}</p>`,
+    `<p>${detail}</p>${needsPin ? '<label class="field">PIN xác nhận<input id="confirm-pin" class="input" type="password" inputmode="numeric" minlength="4" maxlength="12" autocomplete="off" required></label>' : ''}`,
     btn('Hủy', 'close') + btn('Xác nhận', action, 'danger')
   );
 }
@@ -505,6 +586,59 @@ function download(name, data) {
 }
 async function act(action, args) {
   const id = args[0];
+  if (action === 'vault-new') return vaultEditor();
+  if (action === 'vault-edit') return vaultEditor(id);
+  if (action === 'vault-reveal')
+    return confirmation(
+      'Hiển thị giá trị secret?',
+      'Giá trị thật sẽ xuất hiện trong hộp thoại tối đa 60 giây. Lượt đọc được ghi nhật ký.',
+      'do-vault-reveal:' + id
+    );
+  if (action === 'do-vault-reveal') {
+    const version = modalVersion;
+    const r = await api('vault/' + id + '/read', 'POST');
+    if (version !== modalVersion || !modal.open) return;
+    modalContext = {};
+    show(
+      'Giá trị secret',
+      'Tự đóng sau 60 giây. Lượt đọc đã được ghi nhật ký.',
+      `<textarea id="vault-value" class="input mono" readonly rows="4">${esc(r.secret)}</textarea>`,
+      btn('Sao chép', 'vault-copy') + btn('Ẩn ngay', 'close')
+    );
+    window.vaultRevealTimer = setTimeout(close, 60000);
+    return;
+  }
+  if (action === 'vault-copy') {
+    const field = $('#vault-value');
+    try {
+      await navigator.clipboard.writeText(field.value);
+      toast('Đã sao chép');
+    } catch {
+      field.select();
+      toast('Chọn và sao chép giá trị bằng bàn phím');
+    }
+    return;
+  }
+  if (action === 'vault-delete')
+    return confirmation(
+      'Xóa secret?',
+      'Xóa giá trị và mọi quyền đọc liên quan; giữ nhật ký. Không thể thu hồi các bản sao agent đã đọc trước đó.',
+      'do-vault-delete:' + id
+    );
+  if (action === 'do-vault-delete') {
+    await api('vault/' + id, 'DELETE', { pin: $('#confirm-pin')?.value });
+    close();
+    return refresh();
+  }
+  if (action === 'pin-setup') {
+    show(
+      'Đặt PIN xác nhận',
+      'Nhập mật khẩu owner để đặt hoặc khôi phục PIN riêng.',
+      `<form id="pin-setup"><label class="field">Mật khẩu owner<input class="input" type="password" name="password" autocomplete="current-password" required></label><label class="field">PIN mới (4–12 chữ số)<input class="input" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="new-password" required></label><label class="field">Nhập lại PIN<input class="input" type="password" name="repeat" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="new-password" required></label><button type="submit" class="btn primary">Lưu PIN</button></form>`,
+      btn('Hủy', 'close')
+    );
+    return;
+  }
   if (action === 'close') return close();
   if (action === 'menu') {
     document.querySelector('.sidebar').classList.toggle('open');
@@ -577,7 +711,7 @@ async function act(action, args) {
       'do-disconnect:' + id
     );
   if (action === 'do-disconnect') {
-    await api('mcps/' + id + '/disconnect', 'POST');
+    await api('mcps/' + id + '/disconnect', 'POST', { pin: $('#confirm-pin')?.value });
     await refresh();
     mcp(id);
     return;
@@ -589,7 +723,7 @@ async function act(action, args) {
       'do-remove:' + id
     );
   if (action === 'do-remove') {
-    await api('mcps/' + id, 'DELETE');
+    await api('mcps/' + id, 'DELETE', { pin: $('#confirm-pin')?.value });
     close();
     return refresh();
   }
@@ -613,7 +747,7 @@ async function act(action, args) {
       'do-delete-agent:' + id
     );
   if (action === 'do-delete-agent') {
-    await api('agents/' + id, 'DELETE');
+    await api('agents/' + id, 'DELETE', { pin: $('#confirm-pin')?.value });
     close();
     return refresh();
   }
@@ -673,6 +807,34 @@ document.addEventListener('submit', async e => {
     button = f.querySelector('[type=submit]');
   if (button) button.disabled = true;
   try {
+    if (f.id === 'pin-setup') {
+      if (b.pin !== b.repeat) throw Error('PIN nhập lại không khớp');
+      await api('security/pin', 'POST', { password: b.password, pin: b.pin });
+      f.reset();
+      close();
+      await refresh();
+      toast('Đã lưu PIN');
+    }
+    if (f.id === 'vault-save') {
+      const id = modalContext.id;
+      const data = { name: b.name, ...(!id || b.secret ? { secret: b.secret } : {}) };
+      if (!id)
+        Object.assign(data, { sharing: b.sharing, agents: new FormData(f).getAll('agents') });
+      await api('vault' + (id ? '/' + id : ''), id ? 'PATCH' : 'POST', data);
+      f.reset();
+      close();
+      await refresh();
+      toast('Đã lưu secret');
+    }
+    if (f.id === 'vault-share') {
+      await api('vault/' + modalContext.id + '/grants', 'POST', {
+        sharing: b.sharing,
+        agents: new FormData(f).getAll('agents')
+      });
+      close();
+      await refresh();
+      toast('Đã lưu quyền đọc secret');
+    }
     if (f.id === 'login') {
       const r = await api('login', 'POST', b);
       csrf = r.csrf;
@@ -783,6 +945,10 @@ document.addEventListener('input', e => {
   }
 });
 document.addEventListener('change', e => {
+  if (e.target.name === 'sharing') {
+    e.target.form.querySelector('[data-sharing-agents]').hidden = e.target.value !== 'selected';
+    return;
+  }
   if (e.target.id === 'statusfilter') statusFilter = e.target.value;
   else if (e.target.id === 'agentfilter') agentFilter = e.target.value;
   else if (e.target.id === 'mcpfilter') mcpFilter = e.target.value;

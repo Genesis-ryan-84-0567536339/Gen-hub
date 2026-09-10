@@ -54,11 +54,11 @@ const routes = [
   ),
   tool(
     'connector_remove',
-    'Gỡ connector và quyền liên quan; giữ audit.',
+    'Gỡ connector và quyền liên quan; cần PIN owner, giữ audit.',
     'DELETE',
     a => 'mcps/' + a.id,
-    { id: string },
-    ['id']
+    { id: string, pin: string },
+    ['id', 'pin']
   ),
   tool(
     'connector_set_token',
@@ -78,11 +78,11 @@ const routes = [
   ),
   tool(
     'connector_disconnect',
-    'Ngắt kết nối và xóa credential dịch vụ.',
+    'Ngắt kết nối và xóa credential dịch vụ; cần PIN owner.',
     'POST',
     a => 'mcps/' + a.id + '/disconnect',
-    { id: string },
-    ['id']
+    { id: string, pin: string },
+    ['id', 'pin']
   ),
   tool(
     'agent_create',
@@ -102,11 +102,11 @@ const routes = [
   ),
   tool(
     'agent_remove',
-    'Xóa agent đã thu hồi; giữ audit.',
+    'Xóa agent đã thu hồi; cần PIN owner, giữ audit.',
     'DELETE',
     a => 'agents/' + a.id,
-    { id: string },
-    ['id']
+    { id: string, pin: string },
+    ['id', 'pin']
   ),
   tool(
     'agent_request',
@@ -149,6 +149,56 @@ const routes = [
     { agent: string, mcp: string, tool: string },
     ['agent', 'mcp', 'tool'],
     true
+  ),
+  tool(
+    'vault_list',
+    'Liệt kê metadata secret; không trả giá trị.',
+    'GET',
+    () => 'vault',
+    {},
+    [],
+    true
+  ),
+  tool(
+    'vault_create',
+    'Tạo secret; mặc định riêng tư. sharing: private, selected hoặc all-active (chỉ agent hiện có).',
+    'POST',
+    () => 'vault',
+    { name: string, secret: string, sharing: string, agents: strings },
+    ['name', 'secret']
+  ),
+  tool(
+    'vault_update',
+    'Đổi tên hoặc thay giá trị secret; không hiển thị lại giá trị.',
+    'PATCH',
+    a => 'vault/' + a.id,
+    { id: string, name: string, secret: string },
+    ['id']
+  ),
+  tool(
+    'vault_read',
+    'Đọc rõ ràng một secret theo ID; mỗi lượt đều ghi audit không chứa giá trị.',
+    'POST',
+    a => 'vault/' + a.id + '/read',
+    { id: string },
+    ['id'],
+    true
+  ),
+  tool(
+    'vault_share',
+    'Thay danh sách agent đọc secret: private, selected hoặc all-active. Không tự cấp cho agent tương lai.',
+    'POST',
+    a => 'vault/' + a.id + '/grants',
+    { id: string, sharing: string, agents: strings },
+    ['id', 'sharing']
+  ),
+  tool(
+    'vault_remove',
+    'Xóa secret và grant liên quan; cần PIN owner, giữ audit.',
+    'DELETE',
+    a => 'vault/' + a.id,
+    { id: string, pin: string },
+    ['id', 'pin']
   ),
   tool(
     'owner_password_change',

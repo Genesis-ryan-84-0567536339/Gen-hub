@@ -6,6 +6,11 @@ import { connectionGuide } from '../public/connection-guides.js';
 
 test('owner names OAuth agents, renames them and deletes only revoked agents while retaining audit', async t => {
   const x = await fixture(t);
+  assert.equal(
+    (await x.call('/api/security/pin', 'POST', { password: 'owner-password-123', pin: '8492' }))
+      .status,
+    200
+  );
   const client = (
     await x.call('/oauth/register', 'POST', {
       client_name: 'Duplicate client',
@@ -57,7 +62,7 @@ test('owner names OAuth agents, renames them and deletes only revoked agents whi
     403
   );
   await x.call('/api/agents/' + a.id, 'PATCH', { status: 'revoked' });
-  assert.equal((await x.call('/api/agents/' + a.id, 'DELETE')).status, 200);
+  assert.equal((await x.call('/api/agents/' + a.id, 'DELETE', { pin: '8492' })).status, 200);
   assert.equal((await x.call('/api/agents/' + a.id, 'PATCH', { status: 'active' })).status, 404);
   assert.equal(
     (
