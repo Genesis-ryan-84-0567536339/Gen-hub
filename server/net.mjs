@@ -127,13 +127,18 @@ export async function request(
 export async function jsonRequest(url, options) {
   const r = await request(url, options);
   if (r.status < 200 || r.status >= 300)
-    throw new HubError(`Dịch vụ trả HTTP ${r.status}`, r.status === 401 ? 401 : 502);
-  if (r.json?.ok === false || r.json?.error)
     throw new HubError(
-      'Dịch vụ từ chối: ' +
-        String(r.json.error?.message || r.json.error || r.json.description).slice(0, 300),
-      502
+      `Dịch vụ trả HTTP ${r.status}`,
+      r.status === 401 ? 401 : r.status === 403 ? 403 : 502
     );
+  if (r.json?.ok === false || r.json?.error) {
+    const isMissingScope = r.json?.error === 'missing_scope';
+    const errText = isMissingScope
+      ? `Dịch vụ từ chối: thiếu scope ${r.json.needed || ''}`.trim()
+      : 'Dịch vụ từ chối: ' +
+        String(r.json.error?.message || r.json.error || r.json.description).slice(0, 300);
+    throw new HubError(errText, isMissingScope ? 403 : 502);
+  }
   return r.json ?? { text: r.text };
 }
 export function assertSchema(schema, args) {

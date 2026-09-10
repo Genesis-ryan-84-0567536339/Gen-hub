@@ -701,9 +701,18 @@ function connectorInfo(m) {
   const id = m.id;
   return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(m.created)}</dd></div></dl><form id="connector-info" data-id="${esc(id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(m.name)}" maxlength="60" required></label><button class="btn primary" type="submit">Lưu thông tin</button></form><div class="divider"></div><div class="mcpdetailtop">${logo(m)}<div><h3>${esc(m.name)}</h3><p>${esc(m.description)}</p></div><span class="spacer"></span>${badge(m.status)}</div><div class="actions">${btn('Kết nối / xác thực', 'credential:' + id, 'small', 'link')}${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}${m.hasCredential ? btn('Ngắt kết nối', 'disconnect:' + id, 'danger small') : ''}</div>${m.lastError ? `<p class="errorline" style="margin-top:15px">${esc(m.lastError)}</p>` : ''}<div class="settingsrow"><div><h3>Cung cấp MCP</h3><p>${m.on ? 'MCP đang được bật' : 'Tạm dừng cho tất cả agent'}</p></div>${sw(m.on, 'toggle:' + id, 'Cung cấp MCP')}</div><p class="footnote">Đồng bộ lần gần nhất: ${date(m.syncedAt)}</p><div class="divider"></div>${btn('Gỡ MCP khỏi Hub', 'remove:' + id, 'danger small')}`;
 }
+function toolPermissionBadge(p) {
+  if (!p || p.status === 'ok') {
+    return `<span class="badge" title="Khả dụng">Khả dụng</span>`;
+  }
+  if (p.status === 'missing') {
+    return `<span class="badge warn" title="${esc(p.reason || 'Thiếu quyền')}">${esc(p.reason || 'Thiếu quyền')}</span>`;
+  }
+  return `<span class="badge gray" title="${esc(p.reason || 'Không xác định được')}">Không xác định</span>`;
+}
 function connectorTools(m) {
   const id = m.id;
-  return `<div class="actions">${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}</div><div class="divider"></div><div class="toolgroup">${m.tools.map(t => `<div class="toolrow"><div><b>${esc(t.name)}</b><p>${esc(t.description)}</p></div><div class="inline"><span class="badge ${t.annotations?.readOnlyHint ? 'gray' : 'warn'}">${t.annotations?.readOnlyHint ? 'Đọc' : 'Ghi / khác'}</span>${sw(t.published, 'publish:' + id + ':' + t.name, 'Công bố ' + t.name)}</div></div>`).join('') || '<div class="empty">Kết nối rồi đồng bộ danh sách tool.</div>'}</div>`;
+  return `<div class="actions">${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}</div><div class="divider"></div><div class="toolgroup">${m.tools.map(t => `<div class="toolrow"><div><b>${esc(t.name)}</b><p>${esc(t.description)}</p></div><div class="inline">${toolPermissionBadge(t.permission)}<span class="badge ${t.annotations?.readOnlyHint ? 'gray' : 'warn'}">${t.annotations?.readOnlyHint ? 'Đọc' : 'Ghi / khác'}</span>${sw(t.published, 'publish:' + id + ':' + t.name, 'Công bố ' + t.name)}</div></div>`).join('') || '<div class="empty">Kết nối rồi đồng bộ danh sách tool.</div>'}</div>`;
 }
 function connectionGuideHtml(provider, endpoint) {
   const guide = connectionGuide(provider, endpoint);
@@ -739,7 +748,7 @@ function grantRows(selected) {
               .filter(t => t.published || selected.includes(m.id + ':' + t.name))
               .map(
                 t =>
-                  `<label class="toolrow"><div><b>${esc(t.name)}</b><p>${esc(t.description)}${!t.published ? ' · Chưa công bố' : ''}</p></div><input type="checkbox" name="permissions" value="${esc(m.id + ':' + t.name)}" ${selected.includes(m.id + ':' + t.name) ? 'checked' : ''} ${!t.published ? 'disabled' : ''}></label>`
+                  `<label class="toolrow"><div><b>${esc(t.name)}</b><p>${esc(t.description)}${!t.published ? ' · Chưa công bố' : ''}</p></div><div class="inline">${toolPermissionBadge(t.permission)}<input type="checkbox" name="permissions" value="${esc(m.id + ':' + t.name)}" ${selected.includes(m.id + ':' + t.name) ? 'checked' : ''} ${!t.published ? 'disabled' : ''}></div></label>`
               )
               .join('') || '<p class="footnote" style="padding:15px">Chưa công bố tool.</p>'
           }</div>`

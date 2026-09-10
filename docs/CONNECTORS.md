@@ -19,6 +19,21 @@ Telegram get_updates không dùng cùng webhook. Chỉ cập nhật offset khi m
 
 MCP tùy chỉnh: checkbox cho phép mạng riêng là quyết định của owner về việc truy cập localhost/LAN trên máy cài Hub. Mặc định chặn mạng riêng và các endpoint metadata. Không tự theo HTTP redirect để tránh gửi credential sang host khác. Phản hồi tối đa 4 MiB, timeout 30 giây; không tự retry write để tránh tác dụng phụ lặp.
 
+## Kiểm tra quyền theo tool và đồng bộ không giới hạn (#32)
+
+- **Quét đủ tool**: Gen-hub đồng bộ danh sách tool MCP với phân trang đầy đủ (tối đa 500 trang / 10.000 tool thay vì cắt ngắn tùy tiện), đảm bảo lấy trọn vẹn danh mục từ upstream MCP server.
+- **Chủ động kiểm tra quyền token**: Khi đồng bộ (`connector_sync`), Gen-hub kiểm tra token với provider để đối chiếu quyền cần thiết cho từng tool:
+  - `GitHub`: Đọc header `X-OAuth-Scopes` từ GitHub API. Nếu token thiếu scope (ví dụ chỉ có `read:user` mà thiếu `repo`), đánh dấu tool thiếu quyền cụ thể ("Thiếu quyền: cần scope repo"). Nếu dùng fine-grained PAT không trả header scope, đánh dấu trạng thái "không xác định được".
+  - `Google Drive`: Đối chiếu scope OAuth/token đã cấp (`drive` vs `drive.readonly`). Đánh dấu rõ các tool ghi văn bản khi token chỉ có quyền đọc.
+  - `Slack`: Thăm dò scope qua `auth.test` và header `X-OAuth-Scopes`; báo rõ nếu thiếu các scope như `channels:read`, `channels:history`, hoặc `chat:write`.
+  - `Telegram`: Đánh dấu khả dụng khi bot token hợp lệ qua `getMe`.
+  - `Discord / Figma / Remote MCP`: Đánh dấu trạng thái "không xác định được" nếu nhà cung cấp không hỗ trợ introspect scope qua header token.
+- **Trạng thái hiển thị trên giao diện**: Mỗi tool trên trang chi tiết connector và form cấp quyền agent hiển thị 1 trong 3 trạng thái:
+  - `Khả dụng` (badge xanh)
+  - `Thiếu quyền: cần scope X` (badge cam / cảnh báo)
+  - `Không xác định` (badge xám)
+- **Phân biệt lỗi rõ ràng**: Khi gọi tool bị từ chối quyền hoặc thiếu scope (HTTP 403 hoặc lỗi `missing_scope`), Hub trả HTTP 403 và thông báo rõ quyền bị thiếu thay vì báo lỗi chung.
+
 ## Nguồn chuẩn dùng khi triển khai
 
 - MCP transport: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports
