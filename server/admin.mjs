@@ -28,7 +28,11 @@ try {
     if (!path) throw Error('Thiếu đường dẫn');
     store.db.exec("VACUUM INTO '" + path.replaceAll("'", "''") + "'");
     console.log('Đã sao lưu cơ sở dữ liệu; cần giữ master.key cùng bản sao lưu.');
-  } else throw Error('Lệnh: owner-exists, create-owner, reset-password, backup');
+  } else if (cmd === 'migrate-ids') {
+    const { migrateIds } = await import('./migrate-ids.mjs');
+    const result = migrateIds(store);
+    console.log(JSON.stringify(result, null, 2));
+  } else throw Error('Lệnh: owner-exists, create-owner, reset-password, backup, migrate-ids');
 } catch (e) {
   console.error(e.message);
   process.exitCode = 1;

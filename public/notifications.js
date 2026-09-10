@@ -401,6 +401,22 @@ export function formatNotification(log, state = {}) {
     };
   }
 
+  if (tool === 'system.id_migration') {
+    const total = output.total ?? 0;
+    return {
+      id: l.id,
+      created: l.created,
+      timestamp: ts,
+      title: 'Chuyển đổi ID chuẩn',
+      message: `Đã chuyển đổi ${total} bản ghi sang định dạng ID chuẩn có tiền tố.`,
+      level: 'info',
+      icon: 'shield',
+      target: '#overview',
+      actor: actorName,
+      status
+    };
+  }
+
   // 5. Tool calls by external agents or general tools
   if (status === 'error' || status === 'denied') {
     const isDenied = status === 'denied';

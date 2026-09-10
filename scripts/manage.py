@@ -36,8 +36,8 @@ def main():
         if admin(path, 'owner-exists').stdout.strip() != 'yes':
             raise RuntimeError('Thiếu owner; cần hoàn tất TUI.')
         print('✓ Owner sẵn sàng.'); return
-    if command not in ['restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token']:
-        print('Lệnh: status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare]'); return
+    if command not in ['restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
+        print('Lệnh: status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
@@ -97,6 +97,15 @@ def main():
             raise RuntimeError('Mật khẩu không khớp.')
         admin(path, 'reset-password', {'password': password})
         print('✓ Mật khẩu đã đổi; các phiên owner cũ đã bị thu hồi.'); return
+    if command == 'migrate-ids':
+        res = admin(path, 'migrate-ids')
+        if res.stdout:
+            sys.stdout.write(res.stdout)
+        if res.stderr:
+            sys.stderr.write(res.stderr)
+        if res.returncode != 0:
+            sys.exit(res.returncode)
+        return
     if command == 'backup':
         target = pathlib.Path(sys.argv[2] if len(sys.argv) > 2 else '/root/gen-hub-backup-' + time.strftime('%Y%m%d-%H%M%S') + '.tar.gz').resolve()
         backup(path, target); return
