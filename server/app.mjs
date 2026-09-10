@@ -106,6 +106,14 @@ export function createHub({
   const GITHUB_ACTIONS_URL =
     'https://api.github.com/repos/' + GITHUB_REPO + '/actions/workflows/ci.yml/runs';
   const UPDATE_CHECK_TTL = 30 * 60 * 1000;
+  const githubHeaders = () => {
+    const token = (process.env.GENHUB_GITHUB_TOKEN || '').trim();
+    return {
+      'User-Agent': 'Gen-hub-app',
+      Accept: 'application/vnd.github+json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {})
+    };
+  };
 
   let updateCheckPromise = null;
 
@@ -131,10 +139,7 @@ export function createHub({
 
       try {
         const commitRes = await effectiveFetch(GITHUB_COMMITS_URL, {
-          headers: {
-            'User-Agent': 'Gen-hub-app',
-            'Accept': 'application/vnd.github+json'
-          },
+          headers: githubHeaders(),
           signal: AbortSignal.timeout(10000)
         });
 
@@ -155,10 +160,7 @@ export function createHub({
                 const runsRes = await effectiveFetch(
                   GITHUB_ACTIONS_URL + '?head_sha=' + latestRevision + '&event=push&per_page=5',
                   {
-                    headers: {
-                      'User-Agent': 'Gen-hub-app',
-                      'Accept': 'application/vnd.github+json'
-                    },
+                    headers: githubHeaders(),
                     signal: AbortSignal.timeout(6000)
                   }
                 );

@@ -17,7 +17,11 @@ WRAPPER = pathlib.Path('/usr/local/bin/gen-hub')
 
 
 def github(path):
-    req = urllib.request.Request(API + path, headers={'User-Agent': 'Gen-hub-updater', 'Accept': 'application/vnd.github+json'})
+    headers = {'User-Agent': 'Gen-hub-updater', 'Accept': 'application/vnd.github+json'}
+    token = os.environ.get('GENHUB_GITHUB_TOKEN', '').strip()
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    req = urllib.request.Request(API + path, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as response:
         return json.load(response)
 
