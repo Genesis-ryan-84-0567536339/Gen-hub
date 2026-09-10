@@ -1,4 +1,4 @@
-import { id } from './store.mjs';
+import { uniqueId } from './store.mjs';
 import { HubError } from './net.mjs';
 
 export const vaultGrant = sid => 'vault:' + sid;
@@ -77,7 +77,7 @@ export function vaultService(store) {
     return store.tx(() => {
       const now = new Date().toISOString();
       const record = {
-        id: id('vault'),
+        id: uniqueId(store, 'vault', 'vault'),
         name: name(b.name),
         notes: optionalNotes(b.notes),
         secret: seal(b.secret),

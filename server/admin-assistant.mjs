@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { id, digest, passwordCheck, redact } from './store.mjs';
+import { id, secret, digest, passwordCheck, redact } from './store.mjs';
 import { HubError, assertSchema } from './net.mjs';
 
 const string = { type: 'string' };
@@ -249,7 +249,7 @@ export function adminAssistant(store, origin, execute) {
     return store.tx(() => {
       if (store.get(kind, 'main')?.hash)
         throw new HubError('Thu hồi token hiện tại trước khi tạo token mới', 409);
-      const token = 'gh_admin_' + id() + id();
+      const token = 'gh_admin_' + secret() + secret();
       const record = {
         id: id('admin'),
         hash: digest(token),

@@ -62,6 +62,14 @@ SQLite `VACUUM INTO` tạo snapshot nhất quán khi Hub đang chạy; lưu cùn
 
 Khôi phục trên cùng revision: dừng container Hub bằng `sudo docker compose -p gen-hub -f /etc/gen-hub/compose.json stop hub`; giải nén archive tin cậy vào thư mục root-only tạm; thay `hub.db` và `master.key` trong `/var/lib/gen-hub`, dọn WAL/SHM cũ chỉ sau khi đã dừng Hub. Đặt owner genhub:genhub, thư mục 0700/file 0600; chạy `sudo gen-hub restart` rồi `sudo gen-hub doctor`. Không đặt database mới cạnh WAL cũ. Khi chuyển máy cần khôi phục cấu hình phù hợp và DNS/tunnel; không tự ghi đè domain của ứng dụng khác.
 
+## Chuyển đổi ID cũ (Migration)
+
+```bash
+sudo gen-hub migrate-ids
+```
+
+Lệnh chạy một lần để chuyển đổi các ID cũ tạo trước bản chuẩn hóa #40 (không có tiền tố) sang định dạng chuẩn (`agent_...`, `vault_...`, `mcp_...`, `client_...`, `flow_...`, `admin_...`). Thực thi nguyên tử trong một transaction `store.tx()`, đồng thời cập nhật mọi liên kết chéo (`agent.permissions`, `token.agent`, `code.agent`, v.v.) mà không làm thay đổi giá trị token bí mật của client. Giữ nguyên toàn bộ lịch sử audit cũ và bổ sung một bản ghi `system.id_migration` lưu lại bảng ánh xạ.
+
 ## Gỡ
 
 `sudo gen-hub uninstall` hỏi xác nhận, chạy Compose down để gỡ container/network của Gen-hub. Giữ data, key, config, source, images, backup, Docker và Cloudflare tunnel/DNS. Không dùng `down -v` hoặc `system prune`; không gỡ container ứng dụng khác. `sudo gen-hub uninstall --purge` xóa luôn data/key/cert/config/source/backup nội bộ, yêu cầu nhập DELETE kèm domain. Thêm `--cloudflare` để xóa tài nguyên Cloudflare đúng installation sau khi nhập API token; kiểm tra tên tunnel và các hostname/DNS trước khi xóa. Giữ Docker và image nền dùng chung. Backup cần giữ phải nằm ngoài thư mục Gen-hub. Lệnh gỡ tắt timer tự cập nhật.

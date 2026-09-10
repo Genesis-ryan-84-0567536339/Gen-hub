@@ -5,7 +5,15 @@ import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
-import { openStore, id, digest, passwordHash, passwordCheck, redact } from './store.mjs';
+import {
+  openStore,
+  secret,
+  uniqueId,
+  digest,
+  passwordHash,
+  passwordCheck,
+  redact
+} from './store.mjs';
 import { HubError, assertSchema, jsonRequest, request } from './net.mjs';
 import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
@@ -356,7 +364,7 @@ export function createHub({
   }
   async function startOAuth(m, b, s) {
     const c = oauthCredential(m, b),
-      state = id() + id(),
+      state = secret() + secret(),
       verifier = randomBytes(32).toString('base64url');
     store.put('oauthstate', digest(state), {
       id: digest(state),
@@ -640,7 +648,7 @@ export function createHub({
     if (resource === 'mcps' && method === 'POST' && !mid) {
       const template = provider(b.provider);
       if (!template && b.provider !== 'remote') throw new HubError('Dịch vụ không hợp lệ');
-      const mid = id('mcp'),
+      const mid = uniqueId(store, 'mcp', 'mcp'),
         m = {
           id: mid,
           name: text(b.name || template?.name, 60),
@@ -723,7 +731,7 @@ export function createHub({
       }
     }
     if (resource === 'agents' && method === 'POST' && !mid) {
-      const aid = id('agent');
+      const aid = uniqueId(store, 'agent', 'agent');
       store.put('agent', aid, {
         id: aid,
         name: text(b.name, 80),
@@ -734,7 +742,7 @@ export function createHub({
         permissions: validateGrants(b.permissions || []),
         created: new Date().toISOString()
       });
-      const raw = id('token') + id();
+      const raw = secret('token') + secret();
       store.put('token', digest(raw), {
         id: digest(raw),
         agent: aid,

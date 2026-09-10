@@ -1,4 +1,4 @@
-import { id, digest, passwordCheck } from './store.mjs';
+import { secret, uniqueId, digest, passwordCheck } from './store.mjs';
 import { createHash } from 'node:crypto';
 import { HubError } from './net.mjs';
 export function authService(store, origin) {
@@ -31,14 +31,14 @@ export function authService(store, origin) {
       username !== o.username
     )
       throw new HubError('Tên đăng nhập hoặc mật khẩu không đúng', 401);
-    const raw = id() + id(),
-      s = { id: digest(raw), csrf: id(), expires: Date.now() + 12 * 3600000 };
+    const raw = secret() + secret(),
+      s = { id: digest(raw), csrf: secret(), expires: Date.now() + 12 * 3600000 };
     store.put('session', s.id, s);
     return { cookie: cookie(raw, 43200), csrf: s.csrf };
   }
   function issue(agent, client, resource) {
-    const access = id('token') + id(),
-      refresh = id('refresh') + id();
+    const access = secret('token') + secret(),
+      refresh = secret('refresh') + secret();
     const t = {
       id: digest(access),
       agent,
@@ -100,7 +100,7 @@ export function authService(store, origin) {
     }
     if (b.token_endpoint_auth_method && !['none'].includes(b.token_endpoint_auth_method))
       throw new HubError('Dùng token_endpoint_auth_method=none và PKCE');
-    const cid = id('client');
+    const cid = uniqueId(store, 'client', 'client');
     const c = {
       id: cid,
       client_id: cid,
@@ -126,7 +126,7 @@ export function authService(store, origin) {
       (q.scope && q.scope !== 'mcp')
     )
       throw new HubError('Yêu cầu code + PKCE S256 + resource MCP hợp lệ');
-    const fid = id('flow');
+    const fid = secret('flow');
     store.put('flow', fid, {
       ...q,
       id: fid,
@@ -164,8 +164,8 @@ export function authService(store, origin) {
         }
         isAdmin = true;
       }
-      const agentId = id('agent'),
-        code = id('code') + id();
+      const agentId = uniqueId(store, 'agent', 'agent'),
+        code = secret('code') + secret();
       const agentRecord = {
         id: agentId,
         name: name || f.name,

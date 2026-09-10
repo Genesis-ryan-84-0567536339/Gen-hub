@@ -4,21 +4,29 @@ import { createHash } from 'node:crypto';
 import { id, prefixedId, openStore } from '../server/store.mjs';
 import { fixture } from './helpers.mjs';
 
-test('Issue #40: id() and prefixedId() generate type-prefixed IDs with high entropy and no double underscores', () => {
+test('Issue #40: id() and prefixedId() generate type-prefixed IDs with 5 random digits', () => {
   assert.equal(typeof id(), 'string');
-  assert.equal(id().length, 24);
+  assert.equal(id().length, 5);
+  assert(/^\d{5}$/.test(id()));
   assert.equal(prefixedId, id);
 
-  for (const type of ['agent', 'vault', 'mcp', 'flow', 'token', 'client', 'code', 'admin', 'doctor']) {
+  for (const type of [
+    'agent',
+    'vault',
+    'mcp',
+    'flow',
+    'token',
+    'client',
+    'code',
+    'admin',
+    'doctor'
+  ]) {
     for (let i = 0; i < 50; i++) {
       const generated = id(type);
+      assert(generated.startsWith(type + '-'), `Expected ${generated} to start with ${type}-`);
+      assert.equal(generated.length, type.length + 1 + 5);
       assert(
-        generated.startsWith(type + '_'),
-        `Expected ${generated} to start with ${type}_`
-      );
-      assert.equal(generated.length, type.length + 1 + 24);
-      assert(
-        /^[a-z]+_[A-Za-z0-9_-]{24}$/.test(generated),
+        new RegExp(`^${type}-[0-9]{5}$`).test(generated),
         `Generated ID ${generated} should match standard prefixed format`
       );
       // Double underscore must never occur anywhere in the ID
@@ -39,7 +47,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(mcpRes.status, 201);
   const mid = mcpRes.data.id;
-  assert.match(mid, /^mcp_[A-Za-z0-9_-]{24}$/);
+  assert.match(mid, /^mcp-[0-9]{5}$/);
 
   // 2. Vault secret creation
   const vaultRes = await x.call('/api/vault', 'POST', {
@@ -49,7 +57,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(vaultRes.status, 201);
   const vid = vaultRes.data.id;
-  assert.match(vid, /^vault_[A-Za-z0-9_-]{24}$/);
+  assert.match(vid, /^vault-[0-9]{5}$/);
 
   // 3. Agent creation
   const agentRes = await x.call('/api/agents', 'POST', {
@@ -58,7 +66,8 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(agentRes.status, 201);
   const aid = agentRes.data.id;
-  assert.match(aid, /^agent_[A-Za-z0-9_-]{24}$/);
+  assert.match(aid, /^agent-[0-9]{5}$/);
+  // Bearer secrets must stay high-entropy, never the short display-ID digit format.
   assert.match(agentRes.data.token, /^token_[A-Za-z0-9_-]{48}$/);
 
   // 4. OAuth Client Registration
@@ -69,7 +78,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(clientRes.status, 201);
   const cid = clientRes.data.client_id;
-  assert.match(cid, /^client_[A-Za-z0-9_-]{24}$/);
+  assert.match(cid, /^client-[0-9]{5}$/);
 
   // 5. OAuth Flow Authorization
   const verifier = 'v'.repeat(43);
@@ -115,7 +124,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
     password: 'owner-password-123'
   });
   assert.equal(adminRes.status, 201);
-  assert.match(adminRes.data.id, /^admin_[A-Za-z0-9_-]{24}$/);
+  assert.match(adminRes.data.id, /^admin-[0-9]{5}$/);
   assert.match(adminRes.data.token, /^gh_admin_[A-Za-z0-9_-]{48}$/);
 
   // Verify all entity IDs pass admin tool id validation regex /^[A-Za-z0-9_-]{1,100}$/
@@ -142,7 +151,14 @@ test('Issue #40: legacy un-prefixed IDs remain 100% operational without data mig
     description: 'Legacy service',
     on: true,
     status: 'connected',
-    tools: [{ name: 'read', description: 'Read data', published: true, inputSchema: { type: 'object', properties: {} } }],
+    tools: [
+      {
+        name: 'read',
+        description: 'Read data',
+        published: true,
+        inputSchema: { type: 'object', properties: {} }
+      }
+    ],
     auth: 'none',
     url: 'https://legacy.example.com',
     allowPrivate: false,
