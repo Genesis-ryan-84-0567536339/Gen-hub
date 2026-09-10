@@ -39,6 +39,10 @@ class GiteaTest(unittest.TestCase):
             self.assertEqual(service['environment']['GITEA__server__ROOT_URL'], 'https://hub.example.com/gitea/')
             self.assertEqual(service['environment']['GITEA__security__INSTALL_LOCK'], 'true')
             self.assertEqual(service['environment']['GITEA__service__DISABLE_REGISTRATION'], 'true')
+            self.assertEqual(service['environment']['GITEA__session__SESSION_LIFE_TIME'], '2592000')
+            self.assertEqual(service['environment']['GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION'], 'true')
+            self.assertEqual(service['environment']['GITEA__oauth2_client__ACCOUNT_LINKING'], 'disabled')
+            self.assertEqual(service['environment']['GITEA__oauth2_client__USERNAME'], 'preferred_username')
             for forbidden in ['ports', 'secrets', 'env_file', 'privileged']:
                 self.assertNotIn(forbidden, service)
             for forbidden in ['master.key', 'update.env', 'docker.sock', '/var/lib/gen-hub']:
@@ -82,6 +86,42 @@ class GiteaTest(unittest.TestCase):
             gitea.bootstrap('/compose', state, lambda: None)
         terminal.assert_not_called()
         self.assertTrue(state['gitea_bootstrapped'])
+
+    def test_sync_sso_provisions_and_updates_oauth_auth_source(self):
+        state = self.state()
+        oidc_payload = json.dumps({
+            'client_id': 'genhub-gitea',
+            'client_secret': 'test-secret-value-123',
+            'discovery_url': 'https://hub.example.com/oidc/owner/.well-known/openid-configuration'
+        })
+        calls = []
+        def compose_add(*args, **kwargs):
+            calls.append(args)
+            if 'auth' in args and 'list' in args:
+                return result('ID Name Type Enabled\n')
+            return result()
+        with patch('runtime.admin', return_value=result(oidc_payload)), patch.object(gitea, 'compose', side_effect=compose_add):
+            gitea.sync_sso('/compose', state, required=True)
+        add_call = next(c for c in calls if 'add-oauth' in c)
+        self.assertIn('--key', add_call)
+        self.assertIn('genhub-gitea', add_call)
+        self.assertIn('test-secret-value-123', add_call)
+        self.assertIn('https://hub.example.com/oidc/owner/.well-known/openid-configuration', add_call)
+        self.assertIn('--admin-group', add_call)
+        self.assertIn('genhub-owner', add_call)
+
+        update_calls = []
+        def compose_update(*args, **kwargs):
+            update_calls.append(args)
+            if 'auth' in args and 'list' in args:
+                return result('ID\tName\tType\tEnabled\n42\tgenhub-owner\tOAuth2\ttrue\n')
+            return result()
+        with patch('runtime.admin', return_value=result(oidc_payload)), patch.object(gitea, 'compose', side_effect=compose_update):
+            gitea.sync_sso('/compose', state, required=True)
+        up_call = next(c for c in update_calls if 'update-oauth' in c)
+        self.assertIn('--id', up_call)
+        self.assertIn('42', up_call)
+        self.assertIn('test-secret-value-123', up_call)
 
     def test_noninteractive_legacy_update_reports_required_bootstrap_without_credentials(self):
         state = self.state()
@@ -198,7 +238,7 @@ class GiteaTest(unittest.TestCase):
             self.assertIn('gitea', installed['services'])
             bootstrap_call.assert_called_once()
             self.assertEqual(sum('up' in call.args for call in compose.call_args_list), 1)
-            self.assertTrue(all(call.args[1] == 'owner-exists' for call in owner.call_args_list))
+            self.assertTrue(all(call.args[1] in ['owner-exists', 'gitea-oidc'] for call in owner.call_args_list))
 
     def test_restart_and_uninstall_include_gitea_without_deleting_volumes(self):
         for command in ['restart', 'uninstall']:
