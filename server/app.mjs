@@ -763,6 +763,7 @@ export function createHub({
         '/app.js': 'app.js',
         '/connection-guides.js': 'connection-guides.js',
         '/audit-stats.js': 'audit-stats.js',
+        '/notifications.js': 'notifications.js',
         '/styles.css': 'styles.css'
       };
       if (!files[p]) throw new HubError('Không tìm thấy trang', 404);

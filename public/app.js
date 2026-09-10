@@ -1,5 +1,6 @@
 import { auditStats } from './audit-stats.js';
 import { connectionGuide } from './connection-guides.js';
+import { getNotifications, timeAgo } from './notifications.js';
 ('use strict');
 const $ = s => document.querySelector(s),
   esc = v =>
@@ -29,7 +30,8 @@ const paths = {
   info: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 7v7m0-10v.1',
   menu: 'M4 6h16M4 12h16M4 18h16',
   logout: 'M9 4H4v16h5m5-14 6 6-6 6m-6-6h12',
-  file: 'M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6'
+  file: 'M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6',
+  bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0'
 };
 const I = n =>
   `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[n] || paths.plug}"/></svg>`;
@@ -59,6 +61,59 @@ const selected = { agents: null, mcps: null, vault: null, settings: 'general' };
 const detailTabs = { agents: 'info', mcps: 'info', vault: 'info', settings: 'info' };
 let activity = new Map(),
   activityHours = 168;
+let notifOpen = false,
+  notifSnapshotTime = 0;
+const notifStorageKey = () => 'genhub_notifs_read_' + (state?.owner || 'owner');
+const getNotifLastRead = () => {
+  try {
+    const v = localStorage.getItem(notifStorageKey());
+    return v ? parseInt(v, 10) : 0;
+  } catch {
+    return 0;
+  }
+};
+const setNotifLastRead = (ts = Date.now()) => {
+  try {
+    localStorage.setItem(notifStorageKey(), String(ts));
+  } catch {}
+};
+function renderNotifDropdown() {
+  const lastRead = notifSnapshotTime || getNotifLastRead();
+  const { notifications, unreadCount } = getNotifications(state?.logs, state, lastRead);
+  const recent = notifications.slice(0, 20);
+
+  return `<div class="notif-dropdown" role="region" aria-label="Danh sách thông báo">
+    <div class="notif-head">
+      <h3>${I('bell')}Thông báo ${unreadCount > 0 ? `<span class="badge warn">${unreadCount} mới</span>` : ''}</h3>
+      ${unreadCount > 0 ? `<button type="button" class="textbutton" data-action="mark-notifs-read">Đánh dấu đã đọc</button>` : ''}
+    </div>
+    <div class="notif-list" role="list">
+      ${
+        recent.length
+          ? recent
+              .map(
+                n =>
+                  `<a href="${esc(n.target)}" class="notif-item ${n.unread ? 'unread' : ''}" data-action="click-notif:${esc(n.target)}" role="listitem">
+                    <div class="notif-icon-wrap ${esc(n.level)}">${I(n.icon)}</div>
+                    <div class="notif-content">
+                      <div class="notif-top">
+                        <span class="notif-title">${esc(n.title)}</span>
+                        <span class="notif-time">${esc(timeAgo(n.timestamp))}</span>
+                      </div>
+                      <div class="notif-body">${esc(n.message)}</div>
+                    </div>
+                    ${n.unread ? '<span class="notif-unread-dot" title="Chưa đọc"></span>' : ''}
+                  </a>`
+              )
+              .join('')
+          : `<div class="notif-empty"><p>Chưa có biến động hoặc hoạt động nào.</p></div>`
+      }
+    </div>
+    <div class="notif-foot">
+      <a href="#audit" data-action="click-notif:#audit">Xem toàn bộ trong Nhật ký →</a>
+    </div>
+  </div>`;
+}
 const modal = $('#modal');
 modal.addEventListener('cancel', e => {
   e.preventDefault();
@@ -138,6 +193,7 @@ function head(title, sub, actions = '') {
 function render() {
   if (!state) return;
   const r = names[route] ? route : 'overview';
+  const { unreadCount } = getNotifications(state.logs, state, getNotifLastRead());
   $('#app').innerHTML =
     `<div class="mobileoverlay" data-action="menu"></div><aside class="sidebar"><a class="brand" href="#overview"><span class="brandmark">g</span>gen-hub</a><div class="workspace"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div><b>${esc(state.settings.name)}</b><small>Không gian cá nhân</small></div></div><div class="navlabel">Không gian quản lý</div><nav class="nav">${Object.keys(
       names
@@ -148,7 +204,7 @@ function render() {
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub v0.1.0</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub v0.1.0</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
 }
@@ -975,6 +1031,27 @@ async function act(action, args) {
     await refresh();
     return toast('Đã thu hồi token trợ lý quản trị');
   }
+  if (action === 'toggle-notifs') {
+    notifOpen = !notifOpen;
+    if (notifOpen) {
+      notifSnapshotTime = getNotifLastRead();
+      setNotifLastRead(Date.now());
+    }
+    render();
+    return;
+  }
+  if (action === 'mark-notifs-read') {
+    setNotifLastRead(Date.now());
+    notifSnapshotTime = Date.now();
+    render();
+    return;
+  }
+  if (action === 'click-notif') {
+    notifOpen = false;
+    const target = args.join(':');
+    if (target) location.hash = target;
+    return;
+  }
   if (action === 'password') {
     show(
       'Đổi mật khẩu owner',
@@ -986,6 +1063,10 @@ async function act(action, args) {
   }
 }
 document.addEventListener('click', async e => {
+  if (notifOpen && !e.target.closest('.notif-wrapper')) {
+    notifOpen = false;
+    render();
+  }
   const el = e.target.closest('[data-action]');
   if (!el || el.disabled) return;
   el.disabled = true;
@@ -1154,6 +1235,11 @@ document.addEventListener('input', e => {
   }
 });
 document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && notifOpen) {
+    notifOpen = false;
+    render();
+    return;
+  }
   if (!e.target.matches('.detail-tabs [role=tab]')) return;
   const tabs = [...e.target.parentElement.querySelectorAll('[role=tab]')];
   const index = tabs.indexOf(e.target);
