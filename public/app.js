@@ -308,6 +308,38 @@ function render() {
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
 }
+function smallPie(title, entries, unit) {
+  const colors = [
+    '#28754f',
+    '#467fba',
+    '#b87324',
+    '#9164b0',
+    '#bd5266',
+    '#27878b',
+    '#6d7333',
+    '#77614c'
+  ];
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  if (!total)
+    return `<div class="pie-mini"><h4>${esc(title)}</h4><p class="footnote">Chưa có dữ liệu.</p></div>`;
+  let frac = 0;
+  const slices = entries
+    .map(([label, value], i) => {
+      const f = value / total,
+        d = pieArc(100, 100, 80, 48, frac, frac + f),
+        pct = (f * 100).toFixed(1);
+      frac += f;
+      return `<path class="pie-slice" d="${d}" fill="${colors[i % colors.length]}" stroke="#fff" stroke-width="2"><title>${esc(label + ': ' + value.toLocaleString('vi-VN') + ' ' + unit + ' (' + pct + '%)')}</title></path>`;
+    })
+    .join('');
+  const legend = entries
+    .map(([label, value], i) => {
+      const pct = ((value / total) * 100).toFixed(1);
+      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${colors[i % colors.length]}"></i>${esc(label)}</span><span class="pie-legend-value"><strong>${value.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
+    })
+    .join('');
+  return `<div class="pie-mini"><h4>${esc(title)}</h4><svg class="pie-chart" viewBox="0 0 200 200" role="img" aria-label="${esc(title)}"><g>${slices}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${total.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">${esc(unit)}</text></svg><div class="pie-legend">${legend}</div></div>`;
+}
 function overview() {
   const logs = state.logs,
     day = v =>
@@ -320,16 +352,28 @@ function overview() {
         s + (m.on && m.status === 'connected' ? m.tools.filter(t => t.published).length : 0),
       0
     );
-  const buckets = Array.from({ length: 12 }, (_, i) => {
-    const start = Date.now() - (12 - i) * 3600000;
-    return logs.filter(
-      l =>
-        l.actor !== 'owner' &&
-        Date.parse(l.created) >= start &&
-        Date.parse(l.created) < start + 3600000
-    ).length;
-  });
-  const max = Math.max(1, ...buckets);
+  const stats12h = auditStats(logs, 12, Date.now());
+  const byKey = new Map();
+  for (const b of stats12h.buckets)
+    for (const [key, row] of b.tools) {
+      const r = byKey.get(key) || { count: 0, bytes: 0 };
+      r.count += row.count;
+      r.bytes += row.input + row.output;
+      byKey.set(key, r);
+    }
+  const mcpName = id => (id === 'vault' ? 'Vault' : state.mcps.find(m => m.id === id)?.name || id);
+  const byMcpCalls = new Map(),
+    byMcpBytes = new Map(),
+    byToolCalls = new Map();
+  for (const [key, row] of byKey) {
+    const [mid, ...rest] = key.split(' / '),
+      mName = mcpName(mid),
+      tName = mName + ' / ' + rest.join(' / ');
+    byMcpCalls.set(mName, (byMcpCalls.get(mName) || 0) + row.count);
+    byMcpBytes.set(mName, (byMcpBytes.get(mName) || 0) + row.bytes);
+    byToolCalls.set(tName, (byToolCalls.get(tName) || 0) + row.count);
+  }
+  const sortDesc = m => [...m.entries()].sort((a, b) => b[1] - a[1]);
   return (
     head(
       'Tổng quan',
@@ -351,7 +395,7 @@ function overview() {
       )
       .join(
         ''
-      )}</section><div class="dashboardgrid"><section class="card"><div class="cardhead"><h2>Hoạt động công cụ</h2><span class="badge gray">12 giờ gần đây</span></div><div class="cardpad"><div class="charttop"><strong>${calls.length ? Math.round((calls.filter(l => l.status === 'success').length / calls.length) * 100) + '%' : '—'}<small>thành công</small></strong></div><div class="chart"><div class="bars">${buckets.map((n, i) => `<div class="bar" style="height:${n ? Math.max(3, (n / max) * 100) : 1}%" title="${12 - i} giờ trước: ${n} lượt gọi"></div>`).join('')}</div></div><div class="charttimes"><span>12 giờ trước</span><span>Hiện tại</span></div>${!calls.length ? '<p class="footnote">Chưa có lượt gọi công cụ hôm nay.</p>' : ''}</div></section><section class="card endpointcard"><div class="cardhead"><h2>Một endpoint cho mọi agent</h2>${I('link')}</div><div class="cardpad"><p class="subtitle" style="margin-bottom:25px">Composite MCP có xác thực và phân quyền riêng.</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Chỉ các tool bạn cấp mới được agent nhìn thấy và sử dụng.</p><div style="margin-top:25px">${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</div></div></section></div><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
+      )}</section><div class="dashboardgrid"><section class="card"><div class="cardhead"><h2>Hoạt động công cụ</h2><span class="badge gray">12 giờ gần đây</span></div><div class="cardpad"><div class="pie-row">${smallPie('MCP theo lượt gọi', sortDesc(byMcpCalls), 'lượt')}${smallPie('Tool theo lượt gọi', sortDesc(byToolCalls), 'lượt')}${smallPie('MCP theo dung lượng', sortDesc(byMcpBytes), 'byte')}</div>${!byKey.size ? '<p class="footnote">Chưa có lượt gọi công cụ trong 12 giờ qua.</p>' : '<p class="footnote">Dung lượng tính theo byte JSON input/output đã redact (không phải token LLM).</p>'}</div></section><section class="card endpointcard"><div class="cardhead"><h2>Một endpoint cho mọi agent</h2>${I('link')}</div><div class="cardpad"><p class="subtitle" style="margin-bottom:25px">Composite MCP có xác thực và phân quyền riêng.</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Chỉ các tool bạn cấp mới được agent nhìn thấy và sử dụng.</p><div style="margin-top:25px">${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</div></div></section></div><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
       state.mcps
         .filter(m => m.status !== 'connected')
         .map(
