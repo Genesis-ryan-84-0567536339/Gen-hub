@@ -393,7 +393,7 @@ function entityResults(kind) {
   const list = rows
     .map(
       row =>
-        `<button class="entity-row ${row.id === selected[kind] ? 'selected' : ''}" data-action="select:${kind}:${esc(row.id)}" ${row.id === selected[kind] ? 'aria-current="true"' : ''}><strong>${esc(row.name)}</strong><span class="mono">${kind === 'agents' ? '#' + esc(shortAgentId(row)) : esc(row.id)}</span><span>${kind === 'vault' ? date(row.updated) : badge(row.status)}</span></button>`
+        `<button class="entity-row ${row.id === selected[kind] ? 'selected' : ''}" data-action="select:${kind}:${esc(row.id)}" ${row.id === selected[kind] ? 'aria-current="true"' : ''}><strong>${esc(row.name)}${kind === 'agents' && row.isAdmin ? ' <span class="badge warn" style="font-size:10px;padding:2px 5px">Admin</span>' : ''}</strong><span class="mono">${kind === 'agents' ? '#' + esc(shortAgentId(row)) : esc(row.id)}</span><span>${kind === 'vault' ? date(row.updated) : badge(row.status)}</span></button>`
     )
     .join('');
   return `<div class="entity-layout"><aside class="card entity-list" aria-label="Danh sách ${names[kind]}"><div class="cardhead"><h2>${rows.length} mục</h2></div>${list || '<p class="empty">Không có mục phù hợp.</p>'}</aside><section class="card entity-detail" id="entity-detail" aria-label="Chi tiết mục đang chọn">${entityDetail(kind)}</section></div>`;
@@ -423,13 +423,13 @@ function entityDetail(kind) {
           ? connectorInfo(row)
           : connectorTools(row)
         : vaultDetail(row, current);
-  return `<div class="cardhead"><div><h2>${esc(row.name)}</h2><p class="mono">${esc(row.id)}</p></div></div><div class="cardpad">${tabBar(tabs, current)}<div role="tabpanel" id="detail-panel" aria-labelledby="detail-tab-${current}">${content}</div></div>`;
+  return `<div class="cardhead"><div><h2>${esc(row.name)}${kind === 'agents' && row.isAdmin ? ' <span class="badge warn">Trợ lý quản trị</span>' : ''}</h2><p class="mono">${esc(row.id)}</p></div></div><div class="cardpad">${tabBar(tabs, current)}<div role="tabpanel" id="detail-panel" aria-labelledby="detail-tab-${current}">${content}</div></div>`;
 }
 function tabBar(tabs, current) {
   return `<div class="tabs detail-tabs" role="tablist" aria-label="Chi tiết">${tabs.map(([key, label]) => `<button type="button" role="tab" id="detail-tab-${key}" aria-controls="detail-panel" aria-selected="${current === key}" tabindex="${current === key ? 0 : -1}" class="tab ${current === key ? 'active' : ''}" data-action="detail-tab:${key}">${label}</button>`).join('')}</div>`;
 }
 function agentInfo(a) {
-  return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(a.id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(a.created)}</dd></div><div><dt>Trạng thái</dt><dd>${badge(a.status)}</dd></div><div><dt>Lần gọi gần nhất</dt><dd>${date(a.last)}</dd></div></dl><form id="agent-info" data-id="${esc(a.id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(a.name)}" required maxlength="80"></label><label class="field">Mô tả (tùy chọn)<textarea class="input" name="description" rows="3" maxlength="2000">${esc(a.description || '')}</textarea></label><label class="field">Instruction bootstrap riêng (tùy chọn)<textarea class="input" name="instructions" rows="7" maxlength="16000" placeholder="Chỉ sử dụng các công cụ được owner cấp quyền.">${esc(a.instructions || '')}</textarea><small>Agent này nhận hướng dẫn trong response initialize khi kết nối /mcp. Để trống để dùng hướng dẫn mặc định.</small></label><button class="btn primary" type="submit">Lưu thông tin</button></form>`;
+  return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(a.id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(a.created)}</dd></div><div><dt>Trạng thái</dt><dd>${badge(a.status)}</dd></div><div><dt>Lần gọi gần nhất</dt><dd>${date(a.last)}</dd></div><div><dt>Vai trò</dt><dd>${a.isAdmin ? '<span class="badge warn">Trợ lý quản trị (Admin Assistant)</span>' : '<span class="badge gray">Agent thường</span>'}</dd></div><div><dt>Client</dt><dd>${esc(a.client || 'OAuth')}</dd></div></dl><form id="agent-info" data-id="${esc(a.id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(a.name)}" required maxlength="80"></label><label class="field">Mô tả (tùy chọn)<textarea class="input" name="description" rows="3" maxlength="2000">${esc(a.description || '')}</textarea></label><label class="field">Instruction bootstrap riêng (tùy chọn)<textarea class="input" name="instructions" rows="7" maxlength="16000" placeholder="Chỉ sử dụng các công cụ được owner cấp quyền.">${esc(a.instructions || '')}</textarea><small>Agent này nhận hướng dẫn trong response initialize khi kết nối /mcp. Để trống để dùng hướng dẫn mặc định.</small></label><button class="btn primary" type="submit">Lưu thông tin</button></form>`;
 }
 function vaultDetail(s, tab) {
   if (tab === 'sharing')
@@ -722,7 +722,8 @@ function settings() {
 }
 function adminAssistantSettings() {
   const a = state.adminAssistant || {};
-  return `<section class="card cardpad" style="margin-top:24px"><h2>Trợ lý AI quản trị riêng</h2><p class="footnote">Quyền quản trị console như owner. Token không tự hết hạn; chỉ cấp cho trợ lý cá nhân và thu hồi tại đây khi cần.</p><div class="codecopy"><code>${esc(a.endpoint || state.origin + '/mcp/admin')}</code></div>${a.active ? `<p>Đang hoạt động · #${esc(a.id.slice(-8))}</p><p class="footnote">Tạo: ${date(a.created)} · Dùng gần nhất: ${date(a.lastUsed)}</p>${btn('Thu hồi token trợ lý', 'admin-revoke', 'danger')}` : `<p class="footnote">Chưa có token hoạt động. Bạn cần nhập lại mật khẩu owner để tạo; token chỉ hiển thị một lần.</p>${btn('Tạo token trợ lý', 'admin-create', 'primary')}`}</section>`;
+  const adminAgents = (state.agents || []).filter(ag => ag.isAdmin && ag.status === 'active');
+  return `<section class="card cardpad" style="margin-top:24px"><h2>Trợ lý AI quản trị</h2><p class="footnote">Quyền quản trị toàn bộ Hub như owner. Để kết nối trợ lý (như Claude Code hoặc agent MCP), thêm endpoint bên dưới vào client; khi duyệt trên trình duyệt, tick "Cấp quyền Trợ lý quản trị" và nhập mật khẩu owner để xác nhận.</p><div class="codecopy"><code>${esc(a.endpoint || state.origin + '/mcp/admin')}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><div class="divider"></div><h3>Agent quản trị đang hoạt động (${adminAgents.length})</h3>${adminAgents.length ? `<div class="entity-list" style="margin-top:12px">${adminAgents.map(ag => `<div class="listrow"><div><b>${esc(ag.name)}</b> <span class="mono">#${esc(shortAgentId(ag))}</span><p class="footnote">Tạo: ${date(ag.created)} · Dùng gần nhất: ${date(ag.last)}</p></div><div class="actions">${btn('Quản lý agent', 'select:agents:' + ag.id, 'small')}</div></div>`).join('')}</div>` : '<p class="footnote">Chưa có agent nào được cấp quyền quản trị qua OAuth.</p>'}${a.active && !adminAgents.length ? `<div class="divider"></div><p>Token quản trị riêng cũ: Đang hoạt động · #${esc(a.id ? a.id.slice(-8) : '')}</p>${btn('Thu hồi token trợ lý', 'admin-revoke', 'danger')}` : ''}</section>`;
 }
 function show(title, sub, body, footer = '', sheet = false) {
   modalVersion++;
@@ -846,7 +847,10 @@ function agent(id) {
 }
 function agentPermissions(a) {
   const id = a.id;
-  return `<div class="inline" style="margin-bottom:22px">${badge(a.status)}<span class="muted">${a.effective} tool khả dụng</span></div><form id="grants" data-id="${esc(id)}">${grantRows(a.permissions)}<div class="actions"><button class="btn primary" type="submit">Lưu quyền</button>${a.status === 'active' ? btn('Thu hồi agent', 'revoke:' + id, 'danger') : btn('Xóa agent', 'delete-agent:' + id, 'danger')}</div></form><div class="divider"></div><h3>Kiểm tra quyền đã lưu</h3><form id="test" data-id="${esc(id)}" style="margin-top:18px"><label class="field">Chọn tool<select name="tool">${state.mcps.flatMap(m => m.tools.map(t => `<option value="${esc(m.id + ':' + t.name)}">${esc(m.name)} / ${esc(t.name)}</option>`)).join('')}${state.vault.map(s => `<option value="vault:${esc(s.id)}">Vault / ${esc(s.name)}</option>`).join('')}</select></label><button class="btn" type="submit">Kiểm tra quyền</button><div id="test-result" style="margin-top:16px"></div></form>`;
+  const adminNotice = a.isAdmin
+    ? `<div class="info" style="margin-bottom:18px">${I('shield')}<div><b>Trợ lý quản trị</b><p>Agent này có toàn quyền quản trị Gen-hub qua endpoint <code>${esc(state.endpoint)}/admin</code>. Quyền tool bên dưới chỉ áp dụng khi agent gọi endpoint <code>${esc(state.endpoint)}</code> thông thường.</p></div></div>`
+    : '';
+  return `${adminNotice}<div class="inline" style="margin-bottom:22px">${badge(a.status)}<span class="muted">${a.effective} tool khả dụng</span></div><form id="grants" data-id="${esc(id)}">${grantRows(a.permissions)}<div class="actions"><button class="btn primary" type="submit">Lưu quyền</button>${a.status === 'active' ? btn('Thu hồi agent', 'revoke:' + id, 'danger') : btn('Xóa agent', 'delete-agent:' + id, 'danger')}</div></form><div class="divider"></div><h3>Kiểm tra quyền đã lưu</h3><form id="test" data-id="${esc(id)}" style="margin-top:18px"><label class="field">Chọn tool<select name="tool">${state.mcps.flatMap(m => m.tools.map(t => `<option value="${esc(m.id + ':' + t.name)}">${esc(m.name)} / ${esc(t.name)}</option>`)).join('')}${state.vault.map(s => `<option value="vault:${esc(s.id)}">Vault / ${esc(s.name)}</option>`).join('')}</select></label><button class="btn" type="submit">Kiểm tra quyền</button><div id="test-result" style="margin-top:16px"></div></form>`;
 }
 function connect() {
   modalContext = { kind: 'connect' };
@@ -861,13 +865,24 @@ function connect() {
 async function consent(flow) {
   const f = await api('flows/' + flow);
   modalContext = { kind: 'consent', id: flow };
+  const isAdminFlow = f.resource?.endsWith('/mcp/admin');
   show(
     'Duyệt kết nối agent',
     esc(f.name),
-    `<div class="info">${I('shield')}Client yêu cầu sử dụng Gen-hub. Chỉ chọn tool bạn muốn cấp.</div><p class="footnote" style="margin-bottom:20px">Sau khi duyệt, quay về: ${esc(f.redirect_uri)}</p><form id="consent"><label class="field">Tên gợi nhớ cho agent<input class="input" name="name" value="${esc(f.name)}" maxlength="80" placeholder="Ví dụ: Claude trên laptop"></label><p class="footnote">Tên gợi ý do client tự khai báo; bạn có thể sửa. Mỗi agent còn có ID riêng trong danh sách.</p>${grantRows([])}<div class="actions">${btn('Từ chối', 'deny:' + flow, 'danger')}<button class="btn primary" type="submit">Duyệt & cấp quyền</button></div></form>`,
+    `<div class="info">${I('shield')}Client yêu cầu sử dụng Gen-hub. Chỉ chọn tool bạn muốn cấp.</div><p class="footnote" style="margin-bottom:20px">Sau khi duyệt, quay về: ${esc(f.redirect_uri)}</p><form id="consent"><label class="field">Tên gợi nhớ cho agent<input class="input" name="name" value="${esc(f.name)}" maxlength="80" placeholder="Ví dụ: Claude trên laptop"></label><p class="footnote">Tên gợi ý do client tự khai báo; bạn có thể sửa. Mỗi agent còn có ID riêng trong danh sách.</p><div class="card cardpad" style="margin:20px 0;border:1px solid var(--line);background:var(--bg)"><div style="display:flex;align-items:center;gap:12px"><input type="checkbox" id="consent-admin" name="is_admin" value="true" ${isAdminFlow ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--amber)"><div><label for="consent-admin" style="font-weight:600;cursor:pointer;color:var(--ink)">Cấp quyền Trợ lý quản trị (Admin Assistant)</label><p class="footnote" style="margin-top:3px">Cho phép agent quản trị toàn bộ Gen-hub qua endpoint /mcp/admin. Bắt buộc nhập lại mật khẩu owner để xác nhận.</p></div></div><div id="consent-admin-password-block" style="${isAdminFlow ? '' : 'display:none;'}margin-top:16px;padding-top:16px;border-top:1px solid var(--line)"><label class="field" style="margin-bottom:0">Mật khẩu owner (bắt buộc khi cấp quyền quản trị)<input class="input" type="password" name="admin_password" autocomplete="current-password" placeholder="Nhập mật khẩu owner để xác nhận"></label></div></div>${grantRows([])}<div class="actions">${btn('Từ chối', 'deny:' + flow, 'danger')}<button class="btn primary" type="submit">Duyệt & cấp quyền</button></div></form>`,
     '',
     true
   );
+  const chk = $('#consent-admin');
+  const pwdBlock = $('#consent-admin-password-block');
+  if (chk && pwdBlock) {
+    chk.addEventListener('change', () => {
+      pwdBlock.style.display = chk.checked ? 'block' : 'none';
+      if (chk.checked) {
+        pwdBlock.querySelector('input')?.focus();
+      }
+    });
+  }
 }
 function log(id, tab = 'input') {
   const l = [...state.logs, ...[...activity.values()].flatMap(v => v.rows || [])].find(
@@ -1322,10 +1337,19 @@ document.addEventListener('submit', async e => {
       );
     }
     if (f.id === 'consent') {
+      const formData = new FormData(f);
+      const isAdmin = formData.get('is_admin') === 'true';
+      const password = formData.get('admin_password');
+      if (isAdmin && !password) {
+        toast('Vui lòng nhập mật khẩu owner để cấp quyền quản trị');
+        return;
+      }
       const r = await api('flows/' + modalContext.id, 'POST', {
         approve: true,
         name: b.name,
-        permissions: new FormData(f).getAll('permissions')
+        permissions: formData.getAll('permissions'),
+        isAdmin,
+        password: isAdmin ? password : undefined
       });
       location.href = r.redirect;
     }

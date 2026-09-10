@@ -229,12 +229,14 @@ export function adminAssistant(store, origin, execute) {
   const kind = 'admin-assistant';
   function status() {
     const record = store.get(kind, 'main');
+    const adminAgents = store.list('agent').filter(a => a.isAdmin && a.status === 'active');
     return {
       endpoint: origin + '/mcp/admin',
-      active: !!record?.hash,
-      id: record?.id || null,
-      created: record?.created || null,
-      lastUsed: record?.lastUsed || null
+      active: !!record?.hash || adminAgents.length > 0,
+      id: record?.id || adminAgents[0]?.id || null,
+      created: record?.created || adminAgents[0]?.created || null,
+      lastUsed: record?.lastUsed || adminAgents[0]?.last || null,
+      adminCount: adminAgents.length
     };
   }
   function create(password) {
@@ -277,17 +279,38 @@ export function adminAssistant(store, origin, execute) {
   }
   function authenticate(req) {
     const raw = req.headers.authorization?.match(/^Bearer (\S+)$/i)?.[1];
+    if (!raw || raw.length > 256)
+      throw new HubError('Token trợ lý quản trị không hợp lệ hoặc đã thu hồi', 401);
+
+    const key = digest(raw);
+
+    // 1. Check OAuth access token for an active agent with isAdmin === true
+    const tokenRecord = store.get('token', key);
+    if (tokenRecord) {
+      if (tokenRecord.type !== 'access' || tokenRecord.expires < Date.now())
+        throw new HubError('Token trợ lý quản trị đã hết hạn hoặc không hợp lệ', 401);
+      const agent = store.get('agent', tokenRecord.agent);
+      if (!agent || agent.status !== 'active')
+        throw new HubError('Agent đã bị thu hồi hoặc không hoạt động', 401);
+      if (agent.isAdmin !== true)
+        throw new HubError('Token trợ lý quản trị không hợp lệ hoặc đã thu hồi', 401);
+      agent.last = new Date().toISOString();
+      store.put('agent', agent.id, agent);
+      return 'admin-assistant:' + agent.id;
+    }
+
+    // 2. Check legacy static admin token
     const record = store.get(kind, 'main');
     if (
-      !raw ||
-      raw.length > 256 ||
-      !record?.hash ||
-      !timingSafeEqual(Buffer.from(digest(raw)), Buffer.from(record.hash))
-    )
-      throw new HubError('Token trợ lý quản trị không hợp lệ hoặc đã thu hồi', 401);
-    record.lastUsed = new Date().toISOString();
-    store.put(kind, 'main', record);
-    return 'admin-assistant:' + record.id;
+      record?.hash &&
+      timingSafeEqual(Buffer.from(key), Buffer.from(record.hash))
+    ) {
+      record.lastUsed = new Date().toISOString();
+      store.put(kind, 'main', record);
+      return 'admin-assistant:' + record.id;
+    }
+
+    throw new HubError('Token trợ lý quản trị không hợp lệ hoặc đã thu hồi', 401);
   }
   let running = 0;
   async function rpc(req, b, actor) {

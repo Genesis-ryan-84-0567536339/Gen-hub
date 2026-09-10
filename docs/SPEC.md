@@ -17,9 +17,9 @@ Chốt với Ryan ngày 2026-09-08. Đích: Hub tự sở hữu; repo Gen-hub l�
 
 ## Bất biến
 
-- Trợ lý quản trị cá nhân (Issue #15) dùng `/mcp/admin` và loại token riêng, tách khỏi `/mcp` và OAuth agent thường. Owner phải nhập lại mật khẩu khi tạo, chỉ một token hoạt động, chỉ hiện một lần, lưu hash và không tự hết hạn. Owner thu hồi trong Cài đặt; token này không đăng nhập web hoặc tự cấp token quản trị mới.
+- Trợ lý quản trị cá nhân (Issue #15, #21) dùng `/mcp/admin`, tách biệt hoàn toàn khỏi `/mcp` của agent thường. Quyền quản trị được cấp qua luồng duyệt kết nối OAuth (consent modal) khi owner đánh dấu "Cấp quyền Trợ lý quản trị" và bắt buộc nhập lại mật khẩu owner (step-up) ngay tại modal. Quyền quản trị được lưu trữ dưới cờ boolean độc lập `isAdmin: true` trên bản ghi agent, hoàn toàn không đi qua mảng `agent.permissions` hay hàm `validateGrants`/`allowed()` của MCP thường. Dispatcher `/mcp` thường không bao giờ đọc `isAdmin` hay cung cấp tool quản trị. Agent thường hoặc tấn công leo thang qua `permissions` không thể chiếm quyền quản trị. Ngoài ra vẫn tương thích ngược với token quản trị tĩnh tạo trong Cài đặt.
 - Tool quản trị dùng chung dispatcher với web API, trong phạm vi console. OAuth dịch vụ vẫn cần owner thao tác trong trình duyệt; đổi mật khẩu vẫn cần mật khẩu hiện tại. Không có shell, sửa mã nguồn, deploy hoặc truy cập filesystem.
-- Audit trợ lý ghi actor `admin-assistant:<id>` riêng; đọc log chỉ ghi số lượng/ID để tránh lặp lại payload audit vô hạn. Credential và mật khẩu bị che trước khi ghi.
+- Audit trợ lý ghi actor `admin-assistant:<id>` (với OAuth agent là `admin-assistant:<agent.id>`); đọc log chỉ ghi số lượng/ID để tránh lặp lại payload audit vô hạn. Credential và mật khẩu bị che trước khi ghi.
 
 - Cho phép gọi = agent active AND MCP enabled AND kết nối connected AND tool published AND agent có grant.
 - Kiểm tra quyền ngay trước khi gửi lệnh upstream; thu hồi chặn lượt gọi mới. Lượt gọi đã gửi ra dịch vụ không thể đảm bảo thu hồi ngược.

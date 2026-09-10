@@ -763,7 +763,12 @@ export function createHub({
     if (resource === 'flows' && mid) {
       const f = auth.flow(mid);
       if (method === 'GET')
-        return respond(200, { id: f.id, name: f.name, redirect_uri: f.redirect_uri });
+        return respond(200, {
+          id: f.id,
+          name: f.name,
+          redirect_uri: f.redirect_uri,
+          resource: f.resource
+        });
       if (method === 'POST')
         return respond(200, {
           redirect: auth.consent(
@@ -773,7 +778,11 @@ export function createHub({
             b.approve === true && b.name !== undefined && b.name !== ''
               ? text(b.name, 80)
               : undefined,
-            actor
+            actor,
+            {
+              isAdmin: b.isAdmin === true,
+              password: typeof b.password === 'string' ? b.password : ''
+            }
           )
         });
     }
@@ -943,9 +952,11 @@ export function createHub({
         } catch (e) {
           return send(
             res,
-            401,
+            e.status || 401,
             { error: e.message },
-            { 'WWW-Authenticate': 'Bearer realm="gen-hub-admin"' }
+            {
+              'WWW-Authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp", realm="gen-hub-admin"`
+            }
           );
         }
         rate(actor, 120);

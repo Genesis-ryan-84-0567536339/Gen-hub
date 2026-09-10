@@ -140,7 +140,7 @@ export function authService(store, origin) {
     if (!f || f.expires < Date.now()) throw new HubError('Yêu cầu kết nối đã hết hạn');
     return f;
   }
-  function consent(fid, permissions, approve, name, actor = 'owner') {
+  function consent(fid, permissions, approve, name, actor = 'owner', options = {}) {
     return store.tx(() => {
       const f = flow(fid);
       store.del('flow', fid);
@@ -150,9 +150,23 @@ export function authService(store, origin) {
         redirect.searchParams.set('error', 'access_denied');
         return redirect.href;
       }
+      let isAdmin = false;
+      if (options.isAdmin === true) {
+        const ownerRecord = store.get('owner', 'main');
+        const pwd = typeof options.password === 'string' ? options.password : '';
+        if (
+          !pwd ||
+          pwd.length > 1024 ||
+          !ownerRecord?.password ||
+          !passwordCheck(pwd, ownerRecord.password)
+        ) {
+          throw new HubError('Mật khẩu owner không đúng khi cấp quyền quản trị', 403);
+        }
+        isAdmin = true;
+      }
       const agentId = id('agent'),
         code = id('code') + id();
-      store.put('agent', agentId, {
+      const agentRecord = {
         id: agentId,
         name: name || f.name,
         client: f.client_id,
@@ -160,7 +174,9 @@ export function authService(store, origin) {
         permissions,
         created: new Date().toISOString(),
         last: null
-      });
+      };
+      if (isAdmin) agentRecord.isAdmin = true;
+      store.put('agent', agentId, agentRecord);
       store.put('code', digest(code), {
         ...f,
         id: digest(code),
@@ -173,8 +189,8 @@ export function authService(store, origin) {
         'hub',
         'agent.authorize',
         'success',
-        { agent: agentId, name: name || f.name, permissions },
-        { approved: true }
+        { agent: agentId, name: name || f.name, permissions, isAdmin },
+        { approved: true, isAdmin }
       );
       return redirect.href;
     });
