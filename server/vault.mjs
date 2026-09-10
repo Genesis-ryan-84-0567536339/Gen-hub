@@ -4,7 +4,13 @@ import { HubError } from './net.mjs';
 export const vaultGrant = sid => 'vault:' + sid;
 export const vaultTool = sid => 'vault__' + sid;
 export function vaultService(store) {
-  const metadata = ({ id, name, created, updated }) => ({ id, name, created, updated });
+  const metadata = ({ id, name, notes, created, updated }) => ({
+    id,
+    name,
+    notes: typeof notes === 'string' ? notes : '',
+    created,
+    updated
+  });
   const list = () => store.list('vault').map(metadata);
   const get = sid => {
     const record = store.get('vault', sid);
@@ -18,6 +24,12 @@ export function vaultService(store) {
   const name = value => {
     if (typeof value !== 'string' || !value.trim() || value.length > 80)
       throw new HubError('Tên secret cần 1–80 ký tự');
+    return value.trim();
+  };
+  const optionalNotes = (value, max = 2000) => {
+    if (value === undefined) return '';
+    if (typeof value !== 'string' || value.length > max)
+      throw new HubError(`Ghi chú cần là chuỗi tối đa ${max} ký tự`);
     return value.trim();
   };
   const seal = value => {
@@ -67,6 +79,7 @@ export function vaultService(store) {
       const record = {
         id: id(),
         name: name(b.name),
+        notes: optionalNotes(b.notes),
         secret: seal(b.secret),
         created: now,
         updated: now
@@ -80,6 +93,7 @@ export function vaultService(store) {
   function update(sid, b, actor) {
     const record = get(sid);
     if (b.name !== undefined) record.name = name(b.name);
+    if (b.notes !== undefined) record.notes = optionalNotes(b.notes);
     if (b.secret !== undefined) record.secret = seal(b.secret);
     record.updated = new Date().toISOString();
     store.put('vault', sid, record);

@@ -267,7 +267,7 @@ function selectEntity(kind, id) {
 }
 function entityResults(kind) {
   const rows = state[kind].filter(row =>
-    (row.name + ' ' + row.id).toLowerCase().includes(filter.toLowerCase())
+    (row.name + ' ' + (row.notes || '') + ' ' + row.id).toLowerCase().includes(filter.toLowerCase())
   );
   if (!rows.some(row => row.id === selected[kind])) {
     selected[kind] = rows[0]?.id || null;
@@ -317,7 +317,7 @@ function agentInfo(a) {
 function vaultDetail(s, tab) {
   if (tab === 'sharing')
     return `<form id="vault-share" data-id="${esc(s.id)}">${sharingFields(state.agents.filter(a => a.status === 'active' && a.permissions.includes('vault:' + s.id)).map(a => a.id))}<button class="btn primary" type="submit">Lưu quyền đọc</button></form>`;
-  return `<dl class="detailgrid"><div><dt>Ngày tạo</dt><dd>${date(s.created)}</dd></div><div><dt>Cập nhật</dt><dd>${date(s.updated)}</dd></div></dl><form id="vault-save" data-id="${esc(s.id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(s.name)}" maxlength="80" required></label><label class="field">Giá trị mới (để trống để giữ nguyên)<textarea class="input mono" name="secret" rows="3" maxlength="65536" autocomplete="off" spellcheck="false"></textarea></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><div class="actions">${btn('Xem giá trị…', 'vault-reveal:' + s.id)}${btn('Xóa secret', 'vault-delete:' + s.id, 'danger')}</div>`;
+  return `<dl class="detailgrid"><div><dt>Ngày tạo</dt><dd>${date(s.created)}</dd></div><div><dt>Cập nhật</dt><dd>${date(s.updated)}</dd></div></dl><form id="vault-save" data-id="${esc(s.id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(s.name)}" maxlength="80" required></label><label class="field">Ghi chú (tùy chọn)<textarea class="input" name="notes" rows="2" maxlength="2000" placeholder="Mô tả mục đích, hạn dùng, ghi chú nội bộ…">${esc(s.notes || '')}</textarea></label><label class="field">Giá trị mới (để trống để giữ nguyên)<textarea class="input mono" name="secret" rows="3" maxlength="65536" autocomplete="off" spellcheck="false"></textarea></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><div class="actions">${btn('Xem giá trị…', 'vault-reveal:' + s.id)}${btn('Xóa secret', 'vault-delete:' + s.id, 'danger')}</div>`;
 }
 function activityPanel(kind, id, tab) {
   const key = kind + ':' + id;
@@ -512,7 +512,7 @@ function vaultEditor(id) {
   show(
     'Thêm secret',
     'Giá trị được mã hóa tại Hub.',
-    `<form id="vault-save"><label class="field">Tên gợi nhớ<input class="input" name="name" maxlength="80" required></label><label class="field">Giá trị secret<textarea class="input mono" name="secret" rows="3" maxlength="65536" autocomplete="off" spellcheck="false" required></textarea></label>${sharingFields()}<button class="btn primary" type="submit">Tạo secret</button></form>`,
+    `<form id="vault-save"><label class="field">Tên gợi nhớ<input class="input" name="name" maxlength="80" required></label><label class="field">Ghi chú (tùy chọn)<textarea class="input" name="notes" rows="2" maxlength="2000" placeholder="Mô tả mục đích, hạn dùng, ghi chú nội bộ…"></textarea></label><label class="field">Giá trị secret<textarea class="input mono" name="secret" rows="3" maxlength="65536" autocomplete="off" spellcheck="false" required></textarea></label>${sharingFields()}<button class="btn primary" type="submit">Tạo secret</button></form>`,
     btn('Đóng', 'close')
   );
 }
@@ -1015,7 +1015,11 @@ document.addEventListener('submit', async e => {
     }
     if (f.id === 'vault-save') {
       const id = f.dataset.id;
-      const data = { name: b.name, ...(!id || b.secret ? { secret: b.secret } : {}) };
+      const data = {
+        name: b.name,
+        notes: b.notes ?? '',
+        ...(!id || b.secret ? { secret: b.secret } : {})
+      };
       if (!id)
         Object.assign(data, { sharing: b.sharing, agents: new FormData(f).getAll('agents') });
       await api('vault' + (id ? '/' + id : ''), id ? 'PATCH' : 'POST', data);

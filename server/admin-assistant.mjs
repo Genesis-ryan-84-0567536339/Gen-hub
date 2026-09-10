@@ -178,7 +178,7 @@ const routes = [
     'Tạo secret; mặc định riêng tư. sharing: private, selected hoặc all-active (chỉ agent hiện có).',
     'POST',
     () => 'vault',
-    { name: string, secret: string, sharing: string, agents: strings },
+    { name: string, notes: string, secret: string, sharing: string, agents: strings },
     ['name', 'secret']
   ),
   tool(
@@ -186,7 +186,7 @@ const routes = [
     'Đổi tên hoặc thay giá trị secret; không hiển thị lại giá trị.',
     'PATCH',
     a => 'vault/' + a.id,
-    { id: string, name: string, secret: string },
+    { id: string, name: string, notes: string, secret: string },
     ['id']
   ),
   tool(
