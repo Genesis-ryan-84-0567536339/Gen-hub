@@ -144,6 +144,11 @@ def repair(state, cloudflare=False):
     from install import check_ports, prepare_images, setup_tunnel, public_test
     from runtime import manifest, caddy_config, verify_local, admin
     check_storage(state)
+    from gitea import check_volumes, require_bootstrap
+    check_volumes(state, required=True)
+    if not state.get('gitea_bootstrapped'):
+        from gitea import PENDING
+        raise RuntimeError(PENDING)
     release = ROOT / 'releases' / state['revision']
     if not (release / 'Dockerfile').exists():
         raise RuntimeError('Thiếu source của revision đang cài. Chạy lại install.sh để phục hồi source.')
@@ -181,6 +186,7 @@ def repair(state, cloudflare=False):
     prepare_images(path)
     compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--remove-orphans', '--no-build', '--force-recreate')
     verify_local(path, state); public_test(state)
+    require_bootstrap(state, path)
     if admin(path, 'owner-exists').stdout.strip() != 'yes':
         raise RuntimeError('Thiếu owner; hoàn tất TUI cài đặt. Doctor không tự tạo tài khoản.')
     configure_updates(state)
@@ -215,10 +221,14 @@ def purge(state, remove_cloudflare=False):
     from install import check_ports
     # Exact confirmation is enforced by CLI before entering this function.
     check_ports({**state, 'mode': 'personal'}, [])  # Ownership only, no port probes.
+    from gitea import check_volumes
+    owned_gitea = check_volumes(state)
     stop_updates()
     compose(CONF / 'compose.json', 'down', '--remove-orphans')
     if remove_cloudflare and state.get('tunnel_id'):
         cloudflare_cleanup(state)  # Any API failure keeps local state so cleanup can be retried.
+    for volume in owned_gitea:
+        run([*DOCKER, 'volume', 'rm', volume])
     images = run([*DOCKER, 'images', '--format', '{{.Repository}}:{{.Tag}}', '--filter', 'label=org.opencontainers.image.source=https://github.com/' + REPO], capture_output=True).stdout.split()
     for image in {ref for ref in images if ref.startswith('gen-hub:')}:
         subprocess.run([*DOCKER, 'image', 'rm', image], stdout=subprocess.DEVNULL)  # No force: shared/in-use images survive.

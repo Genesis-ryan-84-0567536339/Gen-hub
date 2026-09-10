@@ -26,6 +26,8 @@ def main():
             print('Cập nhật lúc: ' + state['updated_at'])
         if state.get('last_error'):
             print('Lỗi gần nhất: ' + state['last_error'])
+        from gitea import PENDING
+        print('Gitea: https://' + state['domain'] + '/gitea/' if state.get('gitea_bootstrapped') else PENDING)
         compose(path, 'ps', '--all'); return
     if command == 'logs':
         compose(path, 'logs', '--tail', '100'); return
@@ -35,15 +37,21 @@ def main():
         check_storage(state); verify_local(path, state); public_test(state)
         if admin(path, 'owner-exists').stdout.strip() != 'yes':
             raise RuntimeError('Thiếu owner; cần hoàn tất TUI.')
-        print('✓ Owner sẵn sàng.'); return
-    if command not in ['restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
-        print('Lệnh: status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
+        from gitea import require_bootstrap
+        require_bootstrap(state, path)
+        print('✓ Owner và Gitea sẵn sàng.'); return
+    if command not in ['gitea-enable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
+        print('Lệnh: gitea-enable (bootstrap bắt buộc cho máy cũ) | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
     import fcntl
     lock = open(CONF / 'install.lock', 'w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    if command == 'gitea-enable':
+        from gitea import enable
+        enable(state)
+        return
     if command == 'github-token':
         try:
             from runtime import manifest
@@ -88,9 +96,11 @@ def main():
         from lifecycle import repair
         repair(state, cloudflare='--cloudflare' in sys.argv); return
     if command == 'restart':
+        from gitea import check_volumes, require_bootstrap
+        check_volumes(state, required=True)
         compose(path, 'restart')
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
-        verify_local(path, state); return
+        verify_local(path, state); require_bootstrap(state, path); return
     if command == 'reset-password':
         password = input('Mật khẩu owner mới (12–256 ký tự): ')
         if password != input('Nhập lại mật khẩu: '):
@@ -113,6 +123,8 @@ def main():
         previous = CONF / 'previous-compose.json'
         if not previous.exists():
             raise RuntimeError('Chưa có bản Compose trước để quay lại.')
+        from gitea import guard_transition
+        guard_transition(json.loads(path.read_text()), json.loads(previous.read_text()))
         if input('Quay lại runtime trước, giữ database hiện tại? Nhập ROLLBACK: ') != 'ROLLBACK':
             return
         from install import public_test
@@ -151,7 +163,7 @@ def main():
     if command == 'uninstall':
         from lifecycle import purge, stop_updates
         if '--purge' in sys.argv:
-            print('Sẽ xóa vĩnh viễn Gen-hub, database, credentials, chứng chỉ và backup nội bộ trên máy.')
+            print('Sẽ xóa vĩnh viễn Gen-hub, Gitea (repo, database, LFS, attachments, config/keys), credentials, chứng chỉ và backup nội bộ trên máy.')
             if '--cloudflare' in sys.argv:
                 print('Đồng thời xóa tunnel và DNS Cloudflare cho ' + state['domain'] + '.')
             if input('Nhập DELETE ' + state['domain'] + ' để xác nhận: ') != 'DELETE ' + state['domain']:
@@ -159,7 +171,7 @@ def main():
             purge(state, remove_cloudflare='--cloudflare' in sys.argv); return
         if '--cloudflare' in sys.argv:
             raise RuntimeError('--cloudflare cần đi cùng uninstall --purge.')
-        if input('Gỡ container Gen-hub, giữ dữ liệu/cấu hình/backup? Nhập UNINSTALL: ') != 'UNINSTALL':
+        if input('Gỡ container Gen-hub và Gitea, giữ dữ liệu/cấu hình/backup? Nhập UNINSTALL: ') != 'UNINSTALL':
             return
         stop_updates()
         compose(path, 'down', '--remove-orphans')  # Never --volumes or system prune.

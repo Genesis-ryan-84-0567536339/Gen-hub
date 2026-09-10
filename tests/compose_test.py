@@ -57,7 +57,7 @@ class ComposeTest(unittest.TestCase):
                 if str(path).startswith('/usr/local/'):
                     return
                 original_atomic(path, value, mode)
-            with patch.object(installer, 'ROOT', root), patch.object(installer, 'CONF', conf), patch.object(installer, 'DATA', root / 'data'), patch.object(installer, 'atomic', side_effect=write), patch.object(installer, 'compose') as compose, patch.object(installer, 'verify_local'), patch.object(installer, 'public_test', side_effect=RuntimeError('wrong installation')), patch.object(installer, 'ensure_owner') as owner:
+            with patch('gitea.check_volumes'), patch.object(installer, 'ROOT', root), patch.object(installer, 'CONF', conf), patch.object(installer, 'DATA', root / 'data'), patch.object(installer, 'atomic', side_effect=write), patch.object(installer, 'compose') as compose, patch.object(installer, 'verify_local'), patch.object(installer, 'public_test', side_effect=RuntimeError('wrong installation')), patch.object(installer, 'ensure_owner') as owner:
                 with self.assertRaisesRegex(RuntimeError, 'wrong installation'):
                     installer.activate(state, old, release, candidate, lambda: None, [])
                 owner.assert_not_called()

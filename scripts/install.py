@@ -85,11 +85,14 @@ def public_test(state):
         try:
             result=json.loads(fetch('https://'+state['domain']+'/healthz'))
             if result.get('ok') and result.get('installationId')==state['installation_id']:
-                print('✓ HTTPS hợp lệ, domain đã tới đúng Gen-hub.');return
+                gitea = json.loads(fetch('https://' + state['domain'] + '/gitea/api/healthz'))
+                if gitea.get('status') != 'pass':
+                    raise RuntimeError('Gitea chưa sẵn sàng qua HTTPS.')
+                print('✓ HTTPS hợp lệ, domain đã tới đúng Gen-hub và storage đã cấu hình.');return
         except (OSError,ValueError,RuntimeError):pass
         if i%3==0:print('Đang chờ DNS/HTTPS/tunnel…')
         time.sleep(5)
-    raise RuntimeError('HTTPS chưa tới đúng Hub. Xem sudo gen-hub status và sudo gen-hub logs. Chạy lại bộ cài để kiểm tra tiếp.')
+    raise RuntimeError('Hub hoặc Gitea chưa qua kiểm tra HTTPS. Xem sudo gen-hub status và sudo gen-hub logs. Chạy lại bộ cài để kiểm tra tiếp.')
 
 def checkpoint(state, save, name, action):
     print('\n→ ' + name)
@@ -160,11 +163,13 @@ def check_ports(state, legacy):
 
 def prepare_images(path):
     config = json.loads(path.read_text())
-    for service in ['caddy', 'tunnel']:
+    for service in ['caddy', 'tunnel', 'gitea']:
         if service not in config['services']:
             continue
         ref = config['services'][service]['image']
         run([*DOCKER, 'pull', ref])
+        if '@sha256:' in ref:
+            continue
         digests = json.loads(run([*DOCKER, 'image', 'inspect', ref, '--format', '{{json .RepoDigests}}'], capture_output=True).stdout)
         if not digests:
             raise RuntimeError('Image thiếu digest: ' + service)
@@ -199,7 +204,7 @@ def ensure_owner(path, unattended=False):
         raise RuntimeError('Chưa xác minh được tài khoản owner sau khi tạo.')
 
 
-def legacy_backup(target):
+def legacy_backup(target, gitea_archive=None):
     # Call only after stopping the old services. Python SQLite backup includes committed WAL.
     with tempfile.TemporaryDirectory() as temp:
         snapshot = pathlib.Path(temp) / 'hub.db'
@@ -209,12 +214,18 @@ def legacy_backup(target):
         with os.fdopen(fd, 'wb') as stream, tarfile.open(fileobj=stream, mode='w:gz') as archive:
             archive.add(snapshot, arcname='data/hub.db')
             archive.add(DATA / 'master.key', arcname='data/master.key')
+            if gitea_archive:
+                archive.add(gitea_archive, arcname='gitea/volumes.tar')
             archive.add(CONF, arcname='config', filter=lambda info: None if info.name.endswith('.lock') else info)
 
 
 def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, unattended=False):
+    from gitea import guard_transition, bootstrap, check_volumes
     path = CONF / 'compose.json'
     previous = path.read_text() if path.exists() else None
+    if previous:
+        guard_transition(json.loads(previous), json.loads(candidate.read_text()))
+    check_volumes(state, required=bool(state.get('gitea_bootstrapped')))
     previous_caddy = (CONF / 'Caddyfile').read_text() if (CONF / 'Caddyfile').exists() else None
     old_wrapper = pathlib.Path('/usr/local/bin/gen-hub')
     wrapper_text = old_wrapper.read_text() if old_wrapper.exists() else None
@@ -227,7 +238,10 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, 
         if running:
             backup(path, target)
         else:
-            legacy_backup(target)
+            # A stopped Hub still needs a cold Gitea snapshot.
+            from gitea import snapshot
+            with snapshot(path) as gitea_archive:
+                legacy_backup(target, gitea_archive)
     if legacy:
         run(['systemctl', 'stop', *legacy])
     try:
@@ -237,13 +251,14 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, 
         config = json.loads(candidate.read_text())
         config['services']['caddy']['volumes'][0] = f'{CONF}/Caddyfile:/etc/caddy/Caddyfile:ro,Z'
         atomic(path, json.dumps(config, indent=2))
-        state.update(engine='compose', pending_revision=release.name)
+        state.update(engine='compose', pending_revision=release.name, gitea_image=config['services']['gitea']['image'])
         save()
         atomic(old_wrapper, f'#!/usr/bin/env bash\nexec python3 {release}/scripts/manage.py "$@"\n', 0o755)
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--remove-orphans', '--no-build', '--force-recreate')
         checkpoint(state, save, 'Kiểm tra container, SQLite và kết nối nội bộ', lambda: verify_local(path, state))
         checkpoint(state, save, 'Kiểm tra HTTPS qua domain', lambda: public_test(state))
         checkpoint(state, save, 'Tạo hoặc xác minh owner', lambda: ensure_owner(path, unattended))
+        checkpoint(state, save, 'Bootstrap Gitea bắt buộc cùng owner', lambda: bootstrap(path, state, save, unattended))
         # Ensure the owner is visible through the public route, not merely in the CLI process.
         status = json.loads(fetch('https://' + state['domain'] + '/healthz'))
         if not status.get('initialized') or status.get('installationId') != state['installation_id']:
@@ -366,6 +381,13 @@ def main():
             directory.mkdir(exist_ok=True, mode=0o700)
             os.chown(directory, user.pw_uid, user.pw_gid)
         release = copy_release(args.source, args.revision)
+        current_compose = CONF / 'compose.json'
+        if current_compose.exists():
+            installed_gitea = json.loads(current_compose.read_text())['services'].get('gitea')
+            if installed_gitea:
+                state['gitea_image'] = installed_gitea['image']
+        from gitea import check_volumes
+        check_volumes(state, required=bool(state.get('gitea_bootstrapped')))
         candidate_state = {**state, 'revision': args.revision}
         staging = CONF / 'candidate'
         staging.mkdir(exist_ok=True, mode=0o700)

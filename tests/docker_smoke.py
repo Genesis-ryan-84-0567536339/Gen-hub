@@ -14,12 +14,15 @@ import tarfile
 import tempfile
 import urllib.error
 import urllib.request
-from unittest.mock import patch
+from unittest.mock import patch, mock_open
 import contextlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'scripts'))
 import runtime as rt
 import install as installer
 import lifecycle
+import gitea
+import base64
+import subprocess
 from docker_setup import ensure_docker
 
 SOURCE = pathlib.Path(__file__).resolve().parents[1]
@@ -70,6 +73,38 @@ def main():
             assert request('/api/state')[0] == 503, 'Owner bootstrap must remain locked'
             rt.verify_local(path, state)
             rt.admin(path, 'create-owner', {'username': 'ci-owner', 'password': 'CI-only-test-password-123'})
+            state['gitea_image'] = json.loads(path.read_text())['services']['gitea']['image']
+            terminal = mock_open()
+            with patch('builtins.open', terminal):
+                gitea.bootstrap(path, state, lambda: None)
+            credential_text = ''.join(call.args[0] for call in terminal().write.call_args_list)
+            gitea_password = credential_text.split('hãy lưu ngay): ')[1].strip()
+            # Only this disposable test account bypasses the first-login password change.
+            rt.compose(path, 'exec', '-T', 'gitea', 'sh', '-ec',
+                'read -r password; exec gitea admin user change-password --username genhub-admin '
+                '--password "$password" --must-change-password=false', input=gitea_password + '\n', capture_output=True)
+            gitea_auth = {'Authorization': 'Basic ' + base64.b64encode(('genhub-admin:' + gitea_password).encode()).decode()}
+            assert request('/gitea/api/healthz')[1]['status'] == 'pass'
+            status, repo = request('/gitea/api/v1/user/repos', 'POST', {'name': 'lifecycle', 'private': True, 'auto_init': True}, gitea_auth)
+            assert status == 201, repo
+            assert repo['clone_url'] == origin + '/gitea/genhub-admin/lifecycle.git'
+            status, issue = request('/gitea/api/v1/repos/genhub-admin/lifecycle/issues', 'POST', {'title': 'persist Gitea issue'}, gitea_auth)
+            assert status == 201, issue
+            repo_route = '/gitea/api/v1/repos/genhub-admin/lifecycle'
+            git_env = {**os.environ, 'GIT_SSL_CAINFO': str(root / 'root.crt'), 'GIT_TERMINAL_PROMPT': '0',
+                       'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'http.extraHeader',
+                       'GIT_CONFIG_VALUE_0': 'Authorization: ' + gitea_auth['Authorization']}
+            checkout = root / 'git-checkout'
+            subprocess.run(['git', 'clone', repo['clone_url'], str(checkout)], env=git_env, check=True, capture_output=True)
+            (checkout / 'lifecycle.txt').write_text('persist through backup and restore\n')
+            subprocess.run(['git', '-C', str(checkout), 'add', 'lifecycle.txt'], check=True, capture_output=True)
+            subprocess.run(['git', '-C', str(checkout), '-c', 'user.name=CI', '-c', 'user.email=ci@localhost.invalid',
+                            'commit', '-m', 'Exercise Git HTTPS storage'], check=True, capture_output=True)
+            subprocess.run(['git', '-C', str(checkout), 'push'], env=git_env, check=True, capture_output=True)
+
+            logs = rt.compose(path, 'logs', 'gitea', capture_output=True).stdout
+            assert gitea_password not in logs
+
             status, login = request('/api/login', 'POST', {'username': 'ci-owner', 'password': 'CI-only-test-password-123'})
             assert status == 200
             csrf = login['csrf']
@@ -87,13 +122,29 @@ def main():
             rt.compose(path, 'down')
             rt.compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
             assert rt.admin(path, 'owner-exists').stdout.strip() == 'yes'
+            assert request(repo_route, headers=gitea_auth)[0] == 200
+            assert request(repo_route + '/issues/1', headers=gitea_auth)[1]['title'] == 'persist Gitea issue'
             assert hashlib.sha256((data / 'master.key').read_bytes()).hexdigest() == key_before
             status, persisted = request('/api/state')
             assert status == 200 and persisted['settings']['name'] == 'persist-after-recreate', 'Session/settings must persist'
             assert request('/mcp', 'POST', rpc, headers)[0] == 200, 'Agent token must persist'
             rt.backup(path, root / 'backup.tar.gz', conf, data)
             with tarfile.open(root / 'backup.tar.gz') as archive:
-                assert {'data/hub.db', 'data/master.key'}.issubset(set(archive.getnames()))
+                assert {'data/hub.db', 'data/master.key', 'gitea/volumes.tar'}.issubset(set(archive.getnames()))
+                gitea_snapshot = root / 'gitea-volumes.tar'
+                gitea_snapshot.write_bytes(archive.extractfile('gitea/volumes.tar').read())
+            # Restore the complete cold archive into the same disposable volumes, then authenticate/read git/issues.
+            rt.compose(path, 'stop', 'gitea')
+            rt.compose(path, 'run', '--rm', '--no-deps', '-T', '--entrypoint', 'sh', 'gitea', '-ec',
+                       'find /var/lib/gitea /etc/gitea -mindepth 1 -maxdepth 1 -exec rm -rf {} +')
+            with gitea_snapshot.open('rb') as snapshot_input:
+                rt.compose(path, 'run', '--rm', '--no-deps', '-T', '--entrypoint', 'tar', 'gitea', '-C', '/', '-xf', '-', stdin=snapshot_input)
+            rt.compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build', 'gitea')
+            assert request(repo_route, headers=gitea_auth)[0] == 200
+            assert request(repo_route + '/contents/README.md', headers=gitea_auth)[0] == 200
+            assert request(repo_route + '/contents/lifecycle.txt', headers=gitea_auth)[0] == 200
+            assert request(repo_route + '/issues/1', headers=gitea_auth)[1]['title'] == 'persist Gitea issue'
+
             assert (root / 'backup.tar.gz').stat().st_mode & 0o777 == 0o600
             # Doctor must reconstruct broken configuration with real containers and retain the original data/key.
             install_root = root / 'software'
@@ -112,6 +163,7 @@ def main():
             def public_probe(value):
                 code, body = request('/healthz')
                 assert code == 200 and body['installationId'] == value['installation_id']
+                assert request('/gitea/api/healthz')[1]['status'] == 'pass'
             with patch.object(lifecycle, 'ROOT', install_root), patch.object(lifecycle, 'CONF', conf), patch.object(lifecycle, 'DATA', data), patch.object(lifecycle, 'configure_updates'), patch.object(rt, 'manifest', side_effect=test_manifest), patch.object(rt, 'caddy_config', side_effect=test_caddy), patch.object(installer, 'public_test', side_effect=public_probe):
                 lifecycle.repair(state)
             assert request('/api/state')[0] == 200
@@ -137,6 +189,7 @@ def main():
             (neighbor / 'keep').write_text('untouched')
             with patch.object(lifecycle, 'ROOT', install_root), patch.object(lifecycle, 'CONF', conf), patch.object(lifecycle, 'DATA', data), patch.object(lifecycle, 'UNIT_DIR', root / 'units'), patch.object(lifecycle, 'WRAPPER', root / 'wrapper'):
                 lifecycle.purge(state)
+            assert not gitea.check_volumes(state)
             assert not data.exists() and not conf.exists() and not install_root.exists()
             assert (neighbor / 'keep').read_text() == 'untouched'
             # Verify that the real systemd timer enables and invokes its configured command.
@@ -157,7 +210,7 @@ def main():
         finally:
             if path.exists():
                 rt.compose(path, 'logs', '--tail', '30')
-                rt.compose(path, 'down', '--remove-orphans')
+                rt.compose(path, 'down', '--remove-orphans', '--volumes')
 
 if __name__ == '__main__':
     main()

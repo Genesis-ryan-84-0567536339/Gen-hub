@@ -11,8 +11,8 @@ class InstallerTest(unittest.TestCase):
   with patch.object(m,'ask',return_value='test'),patch.object(m,'check_dns',side_effect=[False,True]) as check:
    m.wait_vps_dns(state);self.assertEqual(check.call_count,2)
  def test_https_requires_own_installation(self):
-  with patch.object(m,'fetch',side_effect=[b'{"ok":true,"installationId":"wrong"}',b'{"ok":true,"installationId":"correct"}']) as f,patch.object(m.time,'sleep'):
-   m.public_test({'domain':'hub.example.com','installation_id':'correct'});self.assertEqual(f.call_count,2)
+  with patch.object(m,'fetch',side_effect=[b'{"ok":true,"installationId":"wrong"}',b'{"ok":true,"installationId":"correct"}',b'{"status":"pass"}']) as f,patch.object(m.time,'sleep'):
+   m.public_test({'domain':'hub.example.com','installation_id':'correct'});self.assertEqual(f.call_count,3)
  def test_atomic_secrets(self):
   with tempfile.TemporaryDirectory() as tmp:
    path=pathlib.Path(tmp)/'secret';m.atomic(path,'value');self.assertEqual(path.stat().st_mode&0o777,0o600);self.assertEqual(path.read_text(),'value')
