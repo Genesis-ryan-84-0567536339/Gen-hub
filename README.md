@@ -20,12 +20,16 @@ bash <(curl -fsSL https://raw.githubusercontent.com/Genesis-ryan-84-0567536339/G
 2. VPS: nhập domain, xác nhận IP, tạo DNS theo hướng dẫn rồi kiểm tra. Mở TCP 80/443; Caddy tự cấp/gia hạn HTTPS.
 3. Máy cá nhân: nhập hostname, domain gốc và Cloudflare API token; bộ cài tạo tunnel, DNS và container cloudflared/Caddy. Không publish cổng trên máy cá nhân. Domain gốc cần ở trạng thái Active trên Cloudflare.
 4. Bộ cài kiểm Docker, cổng, image/build, Caddy, container health và SQLite. Chờ kiểm tra HTTPS tới **đúng installation ID**. Chưa đạt không cho tạo owner.
-5. Tạo owner/mật khẩu ngay trên TUI; mật khẩu hiện ra khi gõ (không ẩn — để paste/gõ ổn định trên mọi terminal), không đi qua tham số lệnh hay lưu lịch sử lệnh.
+5. Tạo owner/mật khẩu và luôn bootstrap Gitea ngay trên TUI (không hỏi bật/tắt); mật khẩu hiện ra khi gõ (không ẩn — để paste/gõ ổn định trên mọi terminal), không đi qua tham số lệnh hay lưu lịch sử lệnh.
 6. Nhận URL đăng nhập và MCP tổng `/mcp`; đăng nhập để xem hướng dẫn thiết lập đầu tiên.
 
 Cloudflare token cần **Account / Cloudflare Tunnel / Edit**, **Zone / DNS / Edit**, **Zone / Zone / Read**, giới hạn đúng account/zone. Token quản trị chỉ dùng trong tiến trình cài; runtime tunnel token riêng lưu root-only. Không nhập token vào GitHub hoặc chat.
 
 Bộ cài không ghi đè DNS đang trỏ nơi khác, không chiếm dịch vụ đang dùng cổng cần thiết. Trạng thái được lưu để chạy lại khi mất mạng hoặc ngắt cài. Máy cá nhân cần bật máy và kết nối Internet để agent từ xa truy cập được.
+
+Gitea là thành phần bắt buộc ở `https://<hostname>/gitea/`, có container rootless và named volume riêng, không nhận `master.key` hay `update.env`. Admin nội bộ `genhub-admin` có mật khẩu ngẫu nhiên hiện đúng một lần trên terminal và yêu cầu đổi khi đăng nhập lần đầu; không dùng mật khẩu owner. SSO sẽ có ở PR sau.
+
+Máy đã cài trước khi có Gitea: cập nhật Gen-hub rồi chạy **`sudo gen-hub gitea-enable`** trong terminal để hoàn tất bootstrap bắt buộc. Auto-update không thể giao mật khẩu qua TUI nên chỉ chuẩn bị service/storage và báo bước còn thiếu; `status` nhắc, `doctor` báo chưa hoàn tất cho đến khi bootstrap thành công. [Vận hành và phục hồi Gitea](docs/GITEA_OPERATIONS.md).
 
 ### Fedora / Podman
 
@@ -114,7 +118,7 @@ sudo systemctl list-timers gen-hub-update.timer
 sudo journalctl -u gen-hub-update -n 100 --no-pager
 ```
 
-Cần Internet tới GitHub và registry. Máy cá nhân tắt máy thì không chạy cập nhật; timer kiểm tra bù khi bật lại. Quá trình tạo lại container có gián đoạn ngắn, không cam kết zero-downtime. `sudo gen-hub rollback` quay về runtime trước và tạm tắt auto-update để giữ bản bạn chọn. Rollback không tự hạ database.
+Cần Internet tới GitHub và registry. Máy cá nhân tắt máy thì không chạy cập nhật; timer kiểm tra bù khi bật lại. Quá trình tạo lại container có gián đoạn ngắn, không cam kết zero-downtime. `sudo gen-hub rollback` quay về runtime trước và tạm tắt auto-update để giữ bản bạn chọn. Rollback không tự hạ database. Gitea được pin độc lập: cập nhật Hub giữ image Gitea đang cài; rollback từ chối bản chưa có Gitea hoặc khác image/storage. Xem [vận hành Gitea](docs/GITEA_OPERATIONS.md).
 
 ### Token kiểm tra cập nhật (tùy chọn)
 
@@ -128,7 +132,7 @@ Mở **Kanban → Cấu hình nguồn issue**, chọn connector GitHub REST ho�
 
 Bảng chỉ đọc, tự đồng bộ mỗi 2 phút khi trang đang mở; nút Đồng bộ dùng chung cache 2 phút. Các nhãn `Status: Backlog`, `Status: Ready`, `Status: In Progress`, `Status: Review`, `Status: Done` xác định cột; không phân biệt hoa/thường. Khi trùng nhiều nhãn, lấy cột tiến xa nhất; issue đã đóng luôn vào Done. Issue mở không có nhãn trạng thái vào Backlog, `agent:*` chỉ hiển thị người xử lý. Bấm thẻ để mở issue GitHub; không kéo thả/ghi ngược GitHub Projects.
 
-Đọc tối đa 20 trang mỗi lần (100 bản ghi/trang), lọc pull request khỏi kết quả REST, báo rõ khi chạm giới hạn. Lỗi đồng bộ giữ bản dữ liệu đầy đủ gần nhất trong bộ nhớ và ghi rõ thời điểm/lỗi, không hiển thị dữ liệu một phần như đã đồng bộ xong. Cấu hình lưu qua restart; dữ liệu thẻ được tải lại. API `GET /api/kanban` và `PATCH /api/kanban` chỉ dành cho phiên owner; không thêm quyền quản trị cho agent thường. Adapter hiện tại dành cho GitHub; Gitea/runner đang ở [phương án #23](docs/GITEA_DESIGN.md), chưa triển khai.
+Đọc tối đa 20 trang mỗi lần (100 bản ghi/trang), lọc pull request khỏi kết quả REST, báo rõ khi chạm giới hạn. Lỗi đồng bộ giữ bản dữ liệu đầy đủ gần nhất trong bộ nhớ và ghi rõ thời điểm/lỗi, không hiển thị dữ liệu một phần như đã đồng bộ xong. Cấu hình lưu qua restart; dữ liệu thẻ được tải lại. API `GET /api/kanban` và `PATCH /api/kanban` chỉ dành cho phiên owner; không thêm quyền quản trị cho agent thường. Adapter Kanban hiện tại dành cho GitHub. Gitea storage/lifecycle đã có trong bộ cài; SSO, adapter Kanban Gitea và runner/deploy theo [thứ tự #23](docs/GITEA_DESIGN.md) ở các PR sau.
 
 ## Doctor: kiểm tra và tự sửa
 
@@ -151,7 +155,7 @@ sudo gen-hub uninstall --purge      # Gỡ sạch Gen-hub và dữ liệu trên 
 sudo gen-hub uninstall --purge --cloudflare  # Gỡ sạch máy và xóa thêm tunnel/DNS của bản cài
 ```
 
-**`--purge` xóa vĩnh viễn** container/network Gen-hub, database, credentials, master.key, chứng chỉ Caddy, cấu hình, source và backup nằm trong `/opt/gen-hub/backups`. Chương trình yêu cầu nhập `DELETE <domain>` trước khi thực hiện. Sao lưu ra ngoài thư mục Gen-hub nếu muốn giữ khả năng khôi phục.
+**`--purge` xóa vĩnh viễn** container/network Gen-hub và Gitea, named volume Gitea (git/database/LFS/attachments/config/keys), database, credentials, master.key, chứng chỉ Caddy, cấu hình, source và backup nằm trong `/opt/gen-hub/backups`. Chương trình yêu cầu nhập `DELETE <domain>` trước khi thực hiện. Sao lưu ra ngoài thư mục Gen-hub nếu muốn giữ khả năng khôi phục.
 
 `--cloudflare` cần API token (hiện khi gõ, không lưu ra đĩa/tham số lệnh) với quyền Tunnel Edit và DNS Edit; chỉ xóa tunnel có tên/ID đúng installation và DNS vẫn trỏ tới tunnel đó. Nếu tài nguyên đã được dùng cho hostname khác hoặc API lỗi, dừng để kiểm tra; không báo đã xóa sạch Cloudflare khi chưa thành công.
 

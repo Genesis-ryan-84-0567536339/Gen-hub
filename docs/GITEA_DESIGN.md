@@ -1,19 +1,14 @@
 # Phương án Gitea và runner — Issue #23
 
-Trạng thái: phương án để Ryan quyết định, chưa cài Gitea/runner, chưa chuyển repo Brain. Phản ánh bình luận mở lại #23 ngày 2026-09-10. Gen-hub vẫn lấy chính repo GitHub Gen-hub làm SSOT sản phẩm.
+Trạng thái: quyết định đã chốt theo comment mới nhất #23 ngày 2026-09-10. PR đầu triển khai storage + lifecycle Gitea bắt buộc; SSO, Kanban Gitea, runner/deploy và chuyển Brain chưa triển khai. Gen-hub vẫn lấy chính repo GitHub Gen-hub làm SSOT sản phẩm.
 
-## Đề xuất để chọn
+## Quyết định đã chốt
 
-Đóng gói sẵn khả năng cài Gitea trong installer, hỏi bật ở TUI và cho tắt. Không bắt buộc mọi bản cài đều chạy thêm Gitea: người chỉ cần MCP hub không phải quản lý thêm database/git storage, hostname và backup. Với máy của Ryan có thể chọn bật ngay khi cài. Runner là lựa chọn riêng, mặc định chưa đăng ký quyền deploy.
+Gitea là thành phần bắt buộc của mọi bản cài Gen-hub. TUI luôn bootstrap Gitea cùng owner, không hỏi bật/tắt, không có cấu hình on/off. Route cố định `/gitea/` qua Caddy dùng hostname Gen-hub hiện tại; git/database và cấu hình/keys nằm trong hai named volume riêng của Gitea. Máy đã có owner nhận bước bootstrap bắt buộc một lần qua `sudo gen-hub gitea-enable`. Đây là luồng chuyển tiếp cho bản cài cũ, không phải lựa chọn sản phẩm.
 
-| Phần                       | Đề xuất                                                               | Đánh đổi                                                              |
-| -------------------------- | --------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Gitea                      | Có trong bộ cài, owner bật ở TUI                                      | Thêm một lựa chọn nhưng giữ bản cài nhỏ gọn                           |
-| Repo nội bộ                | Gitea là nơi commit/issue chính                                       | GitHub chỉ là đích xuất bản đã chọn                                   |
-| Kanban                     | Đọc tất cả repo owner cho phép trên Gitea; lọc theo repo/agent/status | Phân trang toàn instance, giới hạn và báo snapshot rõ ràng            |
-| CI build/test              | Runner ở host, user riêng; jobs trong môi trường riêng                | Cần giới hạn tài nguyên, không cấp socket Docker quản trị host        |
-| Deploy                     | Owner duyệt chính xác repo + SHA + môi trường + tác vụ đã đăng ký     | Có một bước duyệt trước khi thực thi trên host                        |
-| Chạy shell tùy ý trên host | Chỉ là chế độ nâng quyền tùy chọn cần Ryan chọn riêng                 | Agent có quyền đẩy workflow thực tế có quyền thực thi của user runner |
+PR storage/lifecycle dùng admin Gitea nội bộ với mật khẩu sinh bằng `secret()` của `server/store.mjs`, hiện một lần ở TUI. SSO owner được triển khai trong PR kế tiếp, không tái sử dụng mật khẩu owner, token MCP hoặc isAdmin. Chi tiết hiện thực, backup/restore và giới hạn phiên bản tại [GITEA_OPERATIONS.md](GITEA_OPERATIONS.md).
+
+Deploy đã chốt theo action đăng ký sẵn + owner duyệt đúng SHA. Không triển khai shell tự do trên host. Runner/CI vẫn nằm ngoài PR storage/lifecycle.
 
 ## Tách SSO owner khỏi OAuth agent
 
@@ -40,7 +35,7 @@ Gitea hỗ trợ push mirror cho branches/tags/commits; cơ chế này không ph
 
 Theo yêu cầu mới “chỉ khi đạt mốc”: mặc định không push-on-commit và không mirror định kỳ. Owner chọn repo đích và mốc release/SHA rồi kích publish. Mirror có thể mang theo lịch sử git; nếu không muốn công khai lịch sử nội bộ, cần repo xuất bản riêng với snapshot đã duyệt. Đây là lựa chọn phải hiện rõ trước lần publish đầu. Không tự tạo repo public, không tự migrate Brain hoặc đẩy toàn bộ repo nội bộ ra ngoài.
 
-## Vòng đời bắt buộc trước khi bật bản chính thức
+## Vòng đời mục tiêu cho toàn Epic (SSO/runner ở các PR sau)
 
 | Lệnh/luồng      | Phần Gitea/runner phải xử lý                                                                               |
 | --------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -52,8 +47,8 @@ Theo yêu cầu mới “chỉ khi đạt mốc”: mặc định không push-on
 | Uninstall       | Dừng/deregister runner; giữ dữ liệu nếu không purge                                                        |
 | Purge           | Xác nhận domain, xóa đúng container/user/storage/route thuộc installation, báo riêng repo/backup sẽ bị xóa |
 
-## Thứ tự thực hiện sau khi Ryan chọn phương án
+## Thứ tự thực hiện đã chốt
 
 Gitea storage + lifecycle → owner OIDC/SSO → adapter Kanban toàn repo → CI cách ly → deploy có duyệt SHA → publish theo mốc. Mỗi phần có PR và kiểm tra riêng. Kanban GitHub #52 được triển khai độc lập ngay; UI nhận dữ liệu chuẩn hóa, adapter Gitea sau này không cần đổi cấu trúc cột/thẻ.
 
-Quyết định còn cần Ryan chọn: **Gitea bật tùy chọn (đề xuất) hay bắt buộc**, và **deploy theo action đã đăng ký + owner duyệt SHA (đề xuất) hay shell tùy ý trong phạm vi user runner**. Không dùng đề xuất này như quyền đã cấp để cài/chạy runner trên host.
+Không dùng thiết kế này như quyền đã cấp để cài/chạy runner hoặc chuyển repo Brain trên host.

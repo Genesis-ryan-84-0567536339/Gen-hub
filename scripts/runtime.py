@@ -43,9 +43,19 @@ def caddy_config(state):
     header_up Host {state['domain']}
     flush_interval -1
   }}'''
+    routes = f"""redir /gitea /gitea/ 308
+  handle_path /gitea/* {{
+    reverse_proxy gitea:3000 {{
+      header_up Host {state['domain']}
+      header_up X-Forwarded-Proto https
+    }}
+  }}
+  handle {{
+    {upstream}
+  }}"""
     if state['mode'] == 'vps':
-        return f'{{\n  admin off\n}}\n{state["domain"]} {{\n  {upstream}\n}}\n'
-    return f'{{\n  admin off\n  auto_https off\n}}\nhttp://:8080 {{\n  {upstream}\n}}\n'
+        return f'{{\n  admin off\n}}\n{state["domain"]} {{\n  {routes}\n}}\n'
+    return f'{{\n  admin off\n  auto_https off\n}}\nhttp://:8080 {{\n  {routes}\n}}\n'
 
 
 def manifest(state, release, conf=CONF, data=DATA):
@@ -81,7 +91,8 @@ def manifest(state, release, conf=CONF, data=DATA):
                     f'{data.parent}/gen-hub-caddy:/data:Z', f'{data.parent}/gen-hub-caddy-config:/config:Z'],
         'depends_on': {'hub': {'condition': 'service_healthy'}},
     }
-    services = {'hub': hub, 'caddy': caddy}
+    from gitea import service, volumes
+    services = {'hub': hub, 'caddy': caddy, 'gitea': service(state, images, common)}
     if state['mode'] == 'vps':
         caddy['ports'] = ['80:80', '443:443']
     else:
@@ -92,7 +103,7 @@ def manifest(state, release, conf=CONF, data=DATA):
                         'run', '--token-file', '/run/secrets/tunnel_token'],
             'secrets': ['tunnel_token'], 'depends_on': {'caddy': {'condition': 'service_started'}},
         }
-    result = {'services': services, 'networks': {'hub': {}},
+    result = {'services': services, 'networks': {'hub': {}}, 'volumes': volumes(state),
               'x-gen-hub': {'installation_id': state['installation_id'], 'schema': 1}}
     if state['mode'] == 'personal':
         result['secrets'] = {'tunnel_token': {'file': str(conf / 'tunnel.token')}}
@@ -120,6 +131,8 @@ def verify_local(path, state):
                 if attempt == 11:
                     raise RuntimeError('Tunnel chưa kết nối Cloudflare. Kiểm tra token và outbound TCP/UDP 7844.') from None
                 time.sleep(5)
+    from gitea import verify
+    verify(path)
     print('✓ Container và lưu trữ đã sẵn sàng.')
 
 
@@ -129,13 +142,24 @@ def backup(path, target, conf=CONF, data=DATA):
     if target.exists():
         raise RuntimeError('Tệp backup đã tồn tại.')
     snapshot = 'backup-' + str(time.time_ns()) + '.db'
+    from gitea import snapshot as gitea_snapshot
     try:
-        admin(path, 'backup', extra=['/data/' + snapshot])
-        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, 'wb') as stream, tarfile.open(fileobj=stream, mode='w:gz') as archive:
-            archive.add(data / snapshot, arcname='data/hub.db')
-            archive.add(data / 'master.key', arcname='data/master.key')
-            archive.add(conf, arcname='config', filter=lambda info: None if info.name.endswith('.lock') else info)
-        print('✓ Backup dữ liệu, khóa và cấu hình: ' + str(target))
+        with gitea_snapshot(path) as gitea_archive:
+            _backup_archive(path, target, conf, data, snapshot, gitea_archive)
+        print('✓ Backup Hub + Gitea, khóa và cấu hình: ' + str(target))
+    except BaseException:
+        target.unlink(missing_ok=True)
+        raise
     finally:
         (data / snapshot).unlink(missing_ok=True)
+
+
+def _backup_archive(path, target, conf, data, snapshot, gitea_archive):
+    admin(path, 'backup', extra=['/data/' + snapshot])
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as stream, tarfile.open(fileobj=stream, mode='w:gz') as archive:
+        archive.add(data / snapshot, arcname='data/hub.db')
+        archive.add(data / 'master.key', arcname='data/master.key')
+        archive.add(conf, arcname='config', filter=lambda info: None if info.name.endswith('.lock') else info)
+        if gitea_archive:
+            archive.add(gitea_archive, arcname='gitea/volumes.tar')
