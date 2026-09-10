@@ -301,10 +301,7 @@ export function adminAssistant(store, origin, execute) {
 
     // 2. Check legacy static admin token
     const record = store.get(kind, 'main');
-    if (
-      record?.hash &&
-      timingSafeEqual(Buffer.from(key), Buffer.from(record.hash))
-    ) {
+    if (record?.hash && timingSafeEqual(Buffer.from(key), Buffer.from(record.hash))) {
       record.lastUsed = new Date().toISOString();
       store.put(kind, 'main', record);
       return 'admin-assistant:' + record.id;
