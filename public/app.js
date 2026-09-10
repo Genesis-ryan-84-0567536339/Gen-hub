@@ -138,6 +138,64 @@ function badge(status) {
 function logo(m) {
   return `<span class="serviceicon ${esc(m.provider === 'github-mcp' ? 'github' : m.provider || 'files')}">${['github', 'github-mcp'].includes(m.provider) ? 'G' : m.provider === 'drive' ? I('file') : m.provider === 'slack' ? '#' : m.provider === 'figma' ? 'F' : I('plug')}</span>`;
 }
+function shortSha(sha) {
+  if (!sha || typeof sha !== 'string') return '';
+  return sha.length > 7 ? sha.slice(0, 7) : sha;
+}
+let updateBannerDismissed = false;
+function renderUpdateBanner() {
+  const u = state?.update;
+  if (!u) return '';
+
+  const seenKey = 'genhub_seen_revision_' + state.owner;
+  const seenRev = localStorage.getItem(seenKey);
+
+  if (seenRev && u.revision && seenRev !== u.revision && !updateBannerDismissed) {
+    const shortCurrent = shortSha(u.revision);
+    const shortPrev = shortSha(u.previousRevision || seenRev);
+    const timeStr = u.updatedAt ? timeAgo(u.updatedAt) : '';
+    return `<div class="update-banner updated" role="status">
+      <div class="banner-msg">
+        <span class="serviceicon files" style="width:30px;height:30px;font-size:15px">${I('shield')}</span>
+        <div>
+          <strong>Gen-hub vừa được tự động cập nhật lên phiên bản <code>${esc(shortCurrent)}</code></strong>${timeStr ? ` <span class="muted">(${esc(timeStr)})</span>` : ''}.
+          <p class="footnote" style="margin:2px 0 0">Phiên bản trước đó: <code>${esc(shortPrev)}</code>.</p>
+        </div>
+      </div>
+      <div class="banner-actions">
+        <button class="btn small" data-action="dismiss-update-banner">Đã hiểu</button>
+      </div>
+    </div>`;
+  }
+
+  if (!seenRev && u.revision) {
+    localStorage.setItem(seenKey, u.revision);
+  }
+
+  if (u.hasUpdate && !updateBannerDismissed) {
+    const shortLatest = shortSha(u.latestRevision);
+    const ciText =
+      u.ciStatus === 'success'
+        ? 'Đã qua kiểm tra CI · sẽ tự động cập nhật trong chu kỳ tiếp theo'
+        : u.ciStatus === 'pending'
+          ? 'Đang kiểm tra CI trên GitHub'
+          : 'Sẽ tự động cập nhật khi CI hoàn tất';
+    return `<div class="update-banner available" role="status">
+      <div class="banner-msg">
+        <span class="serviceicon" style="width:30px;height:30px;font-size:15px;color:#a06a19;background:#fff6e5;border-color:#fce4ba">${I('activity')}</span>
+        <div>
+          <strong>Có bản cập nhật mới trên GitHub (<code>${esc(shortLatest)}</code>)</strong>${u.latestCommitMessage ? `: ${esc(u.latestCommitMessage)}` : ''}
+          <p class="footnote" style="margin:2px 0 0">${ciText}.</p>
+        </div>
+      </div>
+      <div class="banner-actions">
+        <button class="btn small" data-action="check-update">${I('refresh')} Kiểm tra lại</button>
+      </div>
+    </div>`;
+  }
+
+  return '';
+}
 async function api(path, method = 'GET', data) {
   const r = await fetch('/api/' + path, {
     method,
@@ -204,7 +262,7 @@ function render() {
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub v0.1.0</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.revision ? '· ' + shortSha(state.update.revision) : 'v0.1.0'}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
 }
@@ -234,8 +292,11 @@ function overview() {
     head(
       'Tổng quan',
       'Mọi kết nối. Một nơi kiểm soát.',
-      btn('Kết nối agent', 'connect', '', 'link') + btn('Thêm MCP', 'add', 'primary', 'plus')
+      btn('Kiểm tra cập nhật', 'check-update', 'small', 'refresh') +
+        btn('Kết nối agent', 'connect', '', 'link') +
+        btn('Thêm MCP', 'add', 'primary', 'plus')
     ) +
+    renderUpdateBanner() +
     `<section class="stats">${[
       ['MCP đã kết nối', connected, '/ ' + state.mcps.length, 'plug'],
       ['Agent đã duyệt', state.agents.filter(a => a.status === 'active').length, 'agent', 'bot'],
@@ -601,11 +662,30 @@ function vaultEditor(id) {
 function pinSettings() {
   return `<section class="card cardpad" style="margin-top:24px"><h2>PIN xác nhận thao tác xóa</h2><p class="footnote">${state.security.pinConfigured ? 'Đã đặt PIN.' : 'Chưa đặt PIN.'} Dùng khi xóa agent, MCP, secret hoặc ngắt kết nối. Năm lần nhập sai liên tiếp sẽ khóa thử PIN trong 15 phút.</p>${btn(state.security.pinConfigured ? 'Đổi / đặt lại PIN' : 'Đặt PIN', 'pin-setup', '', 'lock')}</section>`;
 }
+function systemUpdatesSettings() {
+  const u = state.update || {};
+  const shortCur = shortSha(u.revision) || 'Môi trường phát triển';
+  const shortLatest = shortSha(u.latestRevision);
+  const curDateStr = u.updatedAt ? `${timeAgo(u.updatedAt)} (${date(u.updatedAt)})` : '—';
+  const checkedDateStr = u.checkedAt ? `${timeAgo(u.checkedAt)} (${date(u.checkedAt)})` : 'Chưa kiểm tra';
+
+  let statusBadge = '';
+  if (u.hasUpdate) {
+    statusBadge = `<span class="badge warn">Có bản mới: ${esc(shortLatest)}</span>`;
+  } else if (u.error) {
+    statusBadge = `<span class="badge red">Lỗi kết nối GitHub</span>`;
+  } else {
+    statusBadge = `<span class="badge">Đang dùng bản mới nhất</span>`;
+  }
+
+  return `<h2>Cập nhật hệ thống</h2><p class="footnote">Gen-hub tự động kiểm tra định kỳ mỗi 30 phút và tự cập nhật khi commit mới trên main đã qua CI.</p><div style="margin:16px 0">${statusBadge}</div><div class="divider"></div><div class="detailgrid"><div><dt>Phiên bản đang chạy</dt><dd><code>${esc(u.revision || 'dev')}</code></dd></div><div><dt>Cập nhật lần gần nhất</dt><dd>${esc(curDateStr)}</dd></div><div><dt>Kiểm tra GitHub gần nhất</dt><dd>${esc(checkedDateStr)}</dd></div><div><dt>Bản mới nhất trên main</dt><dd>${u.latestRevision ? `<code>${esc(u.latestRevision)}</code>` : '—'}</dd></div></div>${u.latestCommitMessage ? `<div style="margin-bottom:18px"><p class="footnote" style="margin-bottom:4px">Thông điệp commit mới nhất trên GitHub:</p><blockquote style="margin:0;padding:8px 12px;background:#f7faf7;border-left:3px solid #28754f;border-radius:4px;font-size:12px">${esc(u.latestCommitMessage)}</blockquote></div>` : ''}${u.error ? `<p class="errorline" style="margin-bottom:18px">${esc(u.error)}</p>` : ''}<div class="actions" style="margin-top:20px">${btn('Kiểm tra cập nhật ngay', 'check-update', 'primary', 'refresh')}</div>`;
+}
 function settings() {
   const groups = [
     ['general', 'Không gian cá nhân'],
     ['security', 'Bảo mật'],
-    ['assistant', 'Trợ lý quản trị']
+    ['assistant', 'Trợ lý quản trị'],
+    ['updates', 'Cập nhật hệ thống']
   ];
   const group = selected.settings;
   const tab = detailTabs.settings;
@@ -621,7 +701,9 @@ function settings() {
       ? `<h2>Bảo mật</h2><p class="footnote">Agent mới luôn cần owner duyệt. Credential được mã hóa tại Hub.</p><div class="divider"></div>${btn('Đổi mật khẩu owner', 'password', '', 'lock')}${pinSettings()}`
       : group === 'assistant'
         ? adminAssistantSettings()
-        : tab === 'endpoint'
+        : group === 'updates'
+          ? systemUpdatesSettings()
+          : tab === 'endpoint'
           ? `<h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code>`
           : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
               [
@@ -926,6 +1008,31 @@ async function act(action, args) {
       `<form id="pin-setup"><label class="field">Mật khẩu owner<input class="input" type="password" name="password" autocomplete="current-password" required></label><label class="field">PIN mới (4–12 chữ số)<input class="input" type="password" name="pin" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="new-password" required></label><label class="field">Nhập lại PIN<input class="input" type="password" name="repeat" inputmode="numeric" pattern="[0-9]{4,12}" autocomplete="new-password" required></label><button type="submit" class="btn primary">Lưu PIN</button></form>`,
       btn('Hủy', 'close')
     );
+    return;
+  }
+  if (action === 'dismiss-update-banner') {
+    if (state?.update?.revision) {
+      localStorage.setItem('genhub_seen_revision_' + state.owner, state.update.revision);
+    }
+    updateBannerDismissed = true;
+    render();
+    return;
+  }
+  if (action === 'check-update') {
+    toast('Đang kiểm tra bản cập nhật mới từ GitHub…');
+    try {
+      const res = await api('check-update', 'POST');
+      await refresh();
+      if (res.hasUpdate) {
+        toast(`Có bản cập nhật mới: ${shortSha(res.latestRevision)}`);
+      } else if (res.error) {
+        toast(`Lưu ý: ${res.error}`);
+      } else {
+        toast('Gen-hub đang ở phiên bản mới nhất.');
+      }
+    } catch (err) {
+      toast(err.message || 'Không thể kiểm tra cập nhật');
+    }
     return;
   }
   if (action === 'close') return close();

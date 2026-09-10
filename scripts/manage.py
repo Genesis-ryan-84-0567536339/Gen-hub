@@ -21,6 +21,8 @@ def main():
     if command == 'status':
         print('Đăng nhập: https://' + state['domain'] + '\nMCP: https://' + state['domain'] + '/mcp')
         print('Revision: ' + state.get('revision', 'đang cài') + '\nBước: ' + state.get('step', ''))
+        if state.get('updated_at'):
+            print('Cập nhật lúc: ' + state['updated_at'])
         if state.get('last_error'):
             print('Lỗi gần nhất: ' + state['last_error'])
         compose(path, 'ps', '--all'); return

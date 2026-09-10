@@ -5,14 +5,14 @@ import { createServer } from 'node:http';
 import { createHub } from '../server/app.mjs';
 import { passwordHash } from '../server/store.mjs';
 
-export async function fixture(t, connector) {
+export async function fixture(t, connector, options = {}) {
   const probe = createServer();
   await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
   const port = probe.address().port;
   await new Promise(resolve => probe.close(resolve));
   const dir = mkdtempSync(join(tmpdir(), 'genhub-regression-'));
   const origin = 'http://127.0.0.1:' + port;
-  const hub = createHub({ dir, origin, connector });
+  const hub = createHub({ dir, origin, connector, ...options });
   hub.store.put('owner', 'main', {
     username: 'owner',
     password: passwordHash('owner-password-123')
