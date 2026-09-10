@@ -1,3 +1,4 @@
+import { kanbanPage, kanbanCards } from './kanban.js';
 import { auditStats, pieArc } from './audit-stats.js';
 import { connectionGuide } from './connection-guides.js';
 import { getNotifications, timeAgo } from './notifications.js';
@@ -46,6 +47,7 @@ const names = {
   agents: 'Agent & quyền',
   vault: 'Kho bí mật',
   audit: 'Nhật ký',
+  kanban: 'Kanban',
   settings: 'Cài đặt'
 };
 let state = null,
@@ -243,8 +245,33 @@ function login(error = '') {
   $('#app').innerHTML =
     `<main class="loginwrap"><div class="loginbrand"><span class="brandmark">g</span>gen-hub</div><section class="card cardpad"><h1>Chào mừng trở lại</h1><p class="subtitle">Đăng nhập để quản lý không gian công cụ.</p><form id="login" style="margin-top:28px"><label class="field">Tài khoản owner<input class="input" name="username" autocomplete="username" required autofocus></label><label class="field">Mật khẩu<input class="input" name="password" type="password" autocomplete="current-password" required></label><p class="errorline" id="login-error">${esc(error)}</p><button class="btn primary" type="submit" style="width:100%">Đăng nhập</button></form><p class="footnote">Tài khoản được tạo trong bước cài đặt trên terminal.</p></section></main>`;
 }
+let kanbanData = null,
+  kanbanGeneration = 0;
+async function loadKanban() {
+  const generation = ++kanbanGeneration;
+  try {
+    const data = await api('kanban');
+    if (generation !== kanbanGeneration || !state || route !== 'kanban') return;
+    kanbanData = data;
+    render();
+  } catch (e) {
+    if (generation !== kanbanGeneration || !state || route !== 'kanban') return;
+    kanbanData = { configured: false, issues: [], error: e.message };
+    render();
+  }
+}
+setInterval(() => {
+  if (
+    state &&
+    route === 'kanban' &&
+    !document.hidden &&
+    !document.activeElement?.closest('#kanban-config')
+  )
+    loadKanban();
+}, 120000);
 async function refresh() {
   state = await api('state');
+  if (route === 'kanban') await loadKanban();
   activity = new Map();
   render();
 }
@@ -273,11 +300,11 @@ function render() {
     )
       .map(
         (k, i) =>
-          `<a href="#${k}" class="${r === k ? 'active' : ''}" ${r === k ? 'aria-current="page"' : ''}>${I(['grid', 'plug', 'bot', 'lock', 'activity', 'settings'][i])}${names[k]}</a>`
+          `<a href="#${k}" class="${r === k ? 'active' : ''}" ${r === k ? 'aria-current="page"' : ''}>${I(['grid', 'plug', 'bot', 'lock', 'activity', 'grid', 'settings'][i])}${names[k]}</a>`
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
 }
@@ -695,7 +722,7 @@ function systemUpdatesSettings() {
     statusBadge = `<span class="badge">Đang dùng bản mới nhất</span>`;
   }
 
-  return `<h2>Cập nhật hệ thống</h2><p class="footnote">Gen-hub tự động kiểm tra định kỳ mỗi 30 phút và tự cập nhật khi commit mới trên main đã qua CI.</p><div style="margin:16px 0">${statusBadge}</div><div class="divider"></div><div class="detailgrid"><div><dt>Phiên bản đang chạy</dt><dd>${u.updatedAt ? esc('v' + formatVersion(u.updatedAt)) + ' · ' : ''}<code title="${esc(u.revision || '')}">${esc(shortCur)}</code></dd></div><div><dt>Cập nhật lần gần nhất</dt><dd>${esc(curDateStr)}</dd></div><div><dt>Kiểm tra GitHub gần nhất</dt><dd>${esc(checkedDateStr)}</dd></div><div><dt>Bản mới nhất trên main</dt><dd>${u.latestRevision ? `<code title="${esc(u.latestRevision)}">${esc(shortLatest)}</code>` : '—'}</dd></div></div>${u.latestCommitMessage ? `<div style="margin-bottom:18px"><p class="footnote" style="margin-bottom:4px">Thông điệp commit mới nhất trên GitHub:</p><blockquote style="margin:0;padding:8px 12px;background:#f7faf7;border-left:3px solid #28754f;border-radius:4px;font-size:12px">${esc(u.latestCommitMessage)}</blockquote></div>` : ''}${u.error ? `<p class="errorline" style="margin-bottom:18px">${esc(u.error)}</p>` : ''}<div class="actions" style="margin-top:20px">${btn('Kiểm tra cập nhật ngay', 'check-update', 'primary', 'refresh')}</div>`;
+  return `<h2>Cập nhật hệ thống</h2><p class="footnote">Gen-hub tự động kiểm tra định kỳ mỗi 30 phút và tự cập nhật khi commit mới trên main đã qua CI.</p><div style="margin:16px 0">${statusBadge}</div><div class="divider"></div><div class="detailgrid"><div><dt>Phiên bản đang chạy</dt><dd>${u.updatedAt ? esc('v' + formatVersion(u.updatedAt)) + ' · ' : ''}<code title="${esc(u.revision || '')}">${esc(shortCur)}</code></dd></div><div><dt>Cập nhật lần gần nhất</dt><dd>${esc(curDateStr)}</dd></div><div><dt>Kiểm tra GitHub gần nhất</dt><dd>${esc(checkedDateStr)}</dd></div><div><dt>Bản mới nhất trên main</dt><dd>${u.latestRevision ? `<code title="${esc(u.latestRevision)}">${esc(shortLatest)}</code>` : '—'}</dd></div></div>${u.latestCommitMessage ? `<div style="margin-bottom:18px"><p class="footnote" style="margin-bottom:4px">Thông điệp commit mới nhất trên GitHub:</p><blockquote style="margin:0;padding:8px 12px;background:#f7faf7;border-left:3px solid #28754f;border-radius:4px;font-size:12px">${esc(u.latestCommitMessage)}</blockquote></div>` : ''}${u.error ? `<p class="errorline" style="margin-bottom:18px">${esc(u.error)}</p>` : ''}${u.nextRetryAt ? `<p class="footnote">Thử lại từ: ${date(u.nextRetryAt)}</p>` : ''}<div class="actions" style="margin-top:20px">${btn('Kiểm tra cập nhật ngay', 'check-update', 'primary', 'refresh')}</div>`;
 }
 function settings() {
   const groups = [
@@ -1147,6 +1174,7 @@ async function act(action, args) {
     }
     return;
   }
+  if (action === 'kanban-refresh') return loadKanban();
   if (action === 'close') return close();
   if (action === 'menu') {
     document.querySelector('.sidebar').classList.toggle('open');
@@ -1377,6 +1405,12 @@ document.addEventListener('submit', async e => {
       await refresh();
       toast('Đã lưu quyền đọc secret');
     }
+    if (f.id === 'kanban-config') {
+      await api('kanban', 'PATCH', { repository: b.repository.trim(), connectorId: b.connectorId });
+      kanbanData = null;
+      await loadKanban();
+      toast('Đã lưu nguồn Kanban');
+    }
     if (f.id === 'login') {
       const r = await api('login', 'POST', b);
       csrf = r.csrf;
@@ -1494,9 +1528,12 @@ document.addEventListener('submit', async e => {
 function updateResults() {
   const el = $('#results');
   if (el)
-    el.innerHTML = ['mcps', 'agents', 'vault'].includes(route)
-      ? entityResults(route)
-      : logTable(logFilter());
+    el.innerHTML =
+      route === 'kanban'
+        ? kanbanCards(kanbanData, filter)
+        : ['mcps', 'agents', 'vault'].includes(route)
+          ? entityResults(route)
+          : logTable(logFilter());
 }
 document.addEventListener('input', e => {
   if (e.target.name === 'url' && e.target.form?.id === 'remote')
@@ -1549,6 +1586,8 @@ document.addEventListener('change', e => {
 });
 window.addEventListener('hashchange', async () => {
   route = location.hash.slice(1) || 'overview';
+  kanbanGeneration++;
+  if (state && route === 'kanban') loadKanban();
   filter = '';
   statusFilter = 'all';
   agentFilter = 'all';

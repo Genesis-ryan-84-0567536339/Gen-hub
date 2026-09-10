@@ -70,6 +70,9 @@ def manifest(state, release, conf=CONF, data=DATA):
         'healthcheck': {'test': ['CMD', 'node', 'server/healthcheck.mjs'],
                         'interval': '5s', 'timeout': '5s', 'retries': 12, 'start_period': '10s'},
     }
+    # Optional root-owned file, shared with the host updater; never embed its token in Compose JSON.
+    if (conf / 'update.env').is_file():
+        hub['env_file'] = [str(conf / 'update.env')]
     caddy = {
         **copy.deepcopy(common), 'image': images['caddy'],
         'user': f"{state['uid']}:{state['gid']}",

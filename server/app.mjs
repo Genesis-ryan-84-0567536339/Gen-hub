@@ -13,6 +13,8 @@ import { GITHUB_MCP_URL, githubEndpoint, githubPublished } from './github-mcp.mj
 import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
+import { kanbanService } from './kanban.mjs';
+import { githubRetryAt } from './github-rate.mjs';
 const pub = fileURLToPath(new URL('../public/', import.meta.url));
 const cleanMcp = ({ secret, ...m }) => ({ ...m, hasCredential: !!secret });
 
@@ -72,6 +74,7 @@ export function createHub({
     auth = authService(store, origin),
     up = connector || connectorService(store),
     limits = new Map();
+  const kanban = kanbanService(store, up);
 
   const currentRevision = revision !== undefined ? revision : detectRevision();
   const currentUpdatedAt = updatedAt !== undefined ? updatedAt : detectUpdatedAt();
@@ -120,7 +123,13 @@ export function createHub({
   async function checkRemoteUpdate(force = false) {
     const cached = store.get('system', 'update_check');
     const now = Date.now();
-    if (!force && cached && now - (cached.timestamp || 0) < UPDATE_CHECK_TTL) {
+    if (cached?.nextRetryAt && Date.parse(cached.nextRetryAt) > now) return cached;
+    if (
+      !force &&
+      cached &&
+      !cached.nextRetryAt &&
+      now - (cached.timestamp || 0) < UPDATE_CHECK_TTL
+    ) {
       return cached;
     }
     if (updateCheckPromise) {
@@ -134,8 +143,9 @@ export function createHub({
       let latestRevision = cached?.latestRevision || null;
       let latestCommitDate = cached?.latestCommitDate || null;
       let latestCommitMessage = cached?.latestCommitMessage || null;
-      let ciStatus = cached?.ciStatus || 'unknown';
+      let ciStatus = 'unknown';
       let error = null;
+      let nextRetryAt = null;
 
       try {
         const commitRes = await effectiveFetch(GITHUB_COMMITS_URL, {
@@ -143,8 +153,9 @@ export function createHub({
           signal: AbortSignal.timeout(10000)
         });
 
-        if (commitRes.status === 403 || commitRes.status === 429) {
-          error = 'Giới hạn tốc độ kết nối GitHub (rate limit), vui lòng thử lại sau';
+        nextRetryAt = githubRetryAt(commitRes);
+        if (nextRetryAt) {
+          error = 'Giới hạn GitHub API tạm thời (rate limit). Có thể thử lại từ ' + nextRetryAt;
         } else if (!commitRes.ok) {
           error = `GitHub API trả mã ${commitRes.status}`;
         } else {
@@ -181,9 +192,14 @@ export function createHub({
                   } else {
                     ciStatus = 'pending';
                   }
+                } else {
+                  nextRetryAt = githubRetryAt(runsRes);
+                  error = nextRetryAt
+                    ? 'Giới hạn GitHub API tạm thời (rate limit). Có thể thử lại từ ' + nextRetryAt
+                    : `GitHub CI API trả mã ${runsRes.status}`;
                 }
               } catch {
-                // Non-fatal
+                error = 'Không thể xác minh CI từ GitHub; sẽ thử lại';
               }
             } else {
               ciStatus = 'success';
@@ -208,6 +224,7 @@ export function createHub({
         latestCommitMessage,
         hasUpdate,
         ciStatus,
+        nextRetryAt,
         error
       };
 
@@ -236,6 +253,7 @@ export function createHub({
         cached?.latestRevision && currentRevision && cached.latestRevision !== currentRevision
       ),
       ciStatus: cached?.ciStatus || 'unknown',
+      nextRetryAt: cached?.nextRetryAt || null,
       error: cached?.error || null
     };
 
@@ -830,6 +848,13 @@ export function createHub({
         return respond(200, getUpdateStatus());
       }
     }
+    if (resource === 'kanban' && !mid) {
+      if (method === 'GET') {
+        rate('kanban:' + actor, 60);
+        return respond(200, await kanban.read());
+      }
+      if (method === 'PATCH') return respond(200, kanban.configure(b, actor));
+    }
     throw new HubError('Không tìm thấy API', 404);
   }
   const assistant = adminAssistant(store, origin, ({ path, ...context }) =>
@@ -1011,6 +1036,7 @@ export function createHub({
         '/': 'index.html',
         '/app.js': 'app.js',
         '/connection-guides.js': 'connection-guides.js',
+        '/kanban.js': 'kanban.js',
         '/audit-stats.js': 'audit-stats.js',
         '/notifications.js': 'notifications.js',
         '/styles.css': 'styles.css'

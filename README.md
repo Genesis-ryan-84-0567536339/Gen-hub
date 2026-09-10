@@ -116,6 +116,20 @@ sudo journalctl -u gen-hub-update -n 100 --no-pager
 
 Cần Internet tới GitHub và registry. Máy cá nhân tắt máy thì không chạy cập nhật; timer kiểm tra bù khi bật lại. Quá trình tạo lại container có gián đoạn ngắn, không cam kết zero-downtime. `sudo gen-hub rollback` quay về runtime trước và tạm tắt auto-update để giữ bản bạn chọn. Rollback không tự hạ database.
 
+### Token kiểm tra cập nhật (tùy chọn)
+
+Nếu GitHub báo giới hạn API theo IP, chạy `sudo gen-hub github-token` rồi nhập token GitHub riêng cho updater. Lệnh lưu `/etc/gen-hub/update.env` quyền 0600, tạo lại container Hub và kiểm tra kết nối; lỗi tạo lại sẽ khôi phục cấu hình/token trước đó. Chạy lại và để trống để gỡ. Token này dùng cho cả app và updater trên host, **không lấy token của connector GitHub**. Với repo public Gen-hub, chỉ cần token đọc API repo/Actions, không cần quyền ghi. Cấu hình token nằm trong backup cấu hình và bị xóa khi purge.
+
+Khi bị rate limit, UI/CLI hiển thị thời điểm thử lại theo header GitHub. Nút kiểm tra ngay cũng chờ hết thời gian này; CLI lưu thời gian chờ qua các lần chạy. Sau thời điểm đó, app tự thử ở chu kỳ kiểm tra 30 phút tiếp theo hoặc khi owner bấm kiểm tra ngay; auto-update host thử ở chu kỳ timer mỗi giờ tiếp theo. HTTP 403 do quyền truy cập được báo riêng. Cache CI của app không được dùng làm giấy phép để updater root cài mã: updater vẫn tự kiểm tra đúng commit/main/push/CI, tránh tin dữ liệu mà tiến trình web có thể ghi.
+
+## Kanban issue GitHub
+
+Mở **Kanban → Cấu hình nguồn issue**, chọn connector GitHub REST hoặc GitHub MCP đã kết nối, nhập repo dạng `owner/repository` (gợi ý mặc định repo Gen-hub). Owner dùng quyền đọc issue của connector; không yêu cầu cấp tool đó cho một agent riêng và không tự thay quyền agent.
+
+Bảng chỉ đọc, tự đồng bộ mỗi 2 phút khi trang đang mở; nút Đồng bộ dùng chung cache 2 phút. Các nhãn `Status: Backlog`, `Status: Ready`, `Status: In Progress`, `Status: Review`, `Status: Done` xác định cột; không phân biệt hoa/thường. Khi trùng nhiều nhãn, lấy cột tiến xa nhất; issue đã đóng luôn vào Done. Issue mở không có nhãn trạng thái vào Backlog, `agent:*` chỉ hiển thị người xử lý. Bấm thẻ để mở issue GitHub; không kéo thả/ghi ngược GitHub Projects.
+
+Đọc tối đa 20 trang mỗi lần (100 bản ghi/trang), lọc pull request khỏi kết quả REST, báo rõ khi chạm giới hạn. Lỗi đồng bộ giữ bản dữ liệu đầy đủ gần nhất trong bộ nhớ và ghi rõ thời điểm/lỗi, không hiển thị dữ liệu một phần như đã đồng bộ xong. Cấu hình lưu qua restart; dữ liệu thẻ được tải lại. API `GET /api/kanban` và `PATCH /api/kanban` chỉ dành cho phiên owner; không thêm quyền quản trị cho agent thường. Adapter hiện tại dành cho GitHub; Gitea/runner đang ở [phương án #23](docs/GITEA_DESIGN.md), chưa triển khai.
+
 ## Doctor: kiểm tra và tự sửa
 
 ```bash
