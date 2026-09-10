@@ -1,6 +1,30 @@
 // Audit contains redacted JSON, not LLM token usage or raw network payloads.
 export const payloadBytes = value => new TextEncoder().encode(JSON.stringify(value) ?? '').length;
 
+export function pieArc(cx, cy, R, r, startFrac, endFrac) {
+  const frac = endFrac - startFrac;
+  if (frac <= 0) return '';
+  if (frac >= 0.9999) {
+    const mid = startFrac + frac / 2;
+    return `${pieArc(cx, cy, R, r, startFrac, mid)} ${pieArc(cx, cy, R, r, mid, endFrac)}`;
+  }
+  const a0 = 2 * Math.PI * startFrac - Math.PI / 2;
+  const a1 = 2 * Math.PI * endFrac - Math.PI / 2;
+  const x0 = (cx + R * Math.cos(a0)).toFixed(2);
+  const y0 = (cy + R * Math.sin(a0)).toFixed(2);
+  const x1 = (cx + R * Math.cos(a1)).toFixed(2);
+  const y1 = (cy + R * Math.sin(a1)).toFixed(2);
+  const large = frac > 0.5 ? 1 : 0;
+  if (r <= 0) {
+    return `M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${x1} ${y1} L ${cx} ${cy} Z`;
+  }
+  const x2 = (cx + r * Math.cos(a1)).toFixed(2);
+  const y2 = (cy + r * Math.sin(a1)).toFixed(2);
+  const x3 = (cx + r * Math.cos(a0)).toFixed(2);
+  const y3 = (cy + r * Math.sin(a0)).toFixed(2);
+  return `M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${x1} ${y1} L ${x2} ${y2} A ${r} ${r} 0 ${large} 0 ${x3} ${y3} Z`;
+}
+
 export function auditStats(logs, hours = 168, now = Date.now()) {
   const step = hours <= 24 ? 3600000 : 86400000;
   // Daily buckets follow the console's GMT+7 timezone.

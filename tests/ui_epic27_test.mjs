@@ -145,7 +145,9 @@ test('Issue #27: real browser list/detail tabs, edits, grants, filtered activity
   await shot('agent-stats-desktop');
   await page.selectOption('#activity-hours', '24');
   await page.waitForSelector('.audit-chart');
-  assert.equal(await page.locator('.ratio-stack').count(), 25);
+  assert.equal(await page.locator('.pie-chart').count(), 1);
+  assert.equal(await page.locator('.pie-slice').count(), 2);
+  assert.equal(await page.locator('.payload-group').count(), 25);
   // Retry a failed request, then switch entities while an older request is outstanding.
   await page.route('**/api/logs?**', route => route.abort(), { times: 1 });
   await click('activity-reload');
