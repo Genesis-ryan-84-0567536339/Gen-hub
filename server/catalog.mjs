@@ -1,11 +1,12 @@
 const s = description => ({ type: 'string', description });
 const n = (description, maximum = 100) => ({ type: 'integer', description, minimum: 1, maximum });
-const tool = (name, description, props = {}, required = [], write = false) => ({
+const tool = (name, description, props = {}, required = [], write = false, scopes = []) => ({
   name,
   description,
   inputSchema: { type: 'object', properties: props, required, additionalProperties: false },
   annotations: { readOnlyHint: !write, destructiveHint: write, openWorldHint: true },
-  published: !write
+  published: !write,
+  scopes
 });
 export const catalog = [
   {
@@ -26,7 +27,9 @@ export const catalog = [
         'search_repositories',
         'Tìm kho mã nguồn',
         { query: s('Từ khóa'), per_page: n('Số kết quả') },
-        ['query']
+        ['query'],
+        false,
+        []
       ),
       tool(
         'get_file_contents',
@@ -37,20 +40,25 @@ export const catalog = [
           path: s('Đường dẫn'),
           ref: s('Branch hoặc commit')
         },
-        ['owner', 'repo', 'path']
+        ['owner', 'repo', 'path'],
+        false,
+        ['repo', 'public_repo']
       ),
       tool(
         'list_issues',
         'Danh sách issue',
         { owner: s('Chủ repo'), repo: s('Repo'), state: s('open, closed hoặc all') },
-        ['owner', 'repo']
+        ['owner', 'repo'],
+        false,
+        ['repo', 'public_repo']
       ),
       tool(
         'create_issue',
         'Tạo issue',
         { owner: s('Chủ repo'), repo: s('Repo'), title: s('Tiêu đề'), body: s('Nội dung') },
         ['owner', 'repo', 'title'],
-        true
+        true,
+        ['repo', 'public_repo']
       ),
       tool(
         'create_pull_request',
@@ -64,7 +72,8 @@ export const catalog = [
           body: s('Mô tả')
         },
         ['owner', 'repo', 'title', 'head', 'base'],
-        true
+        true,
+        ['repo', 'public_repo']
       )
     ]
   },
@@ -100,22 +109,41 @@ export const catalog = [
           page_size: n('Số kết quả'),
           page_token: s('Trang tiếp theo')
         },
-        []
+        [],
+        false,
+        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
       ),
-      tool('get_file', 'Đọc metadata của tệp', { file_id: s('ID tệp') }, ['file_id']),
-      tool('read_file', 'Đọc nội dung tệp văn bản', { file_id: s('ID tệp') }, ['file_id']),
+      tool(
+        'get_file',
+        'Đọc metadata của tệp',
+        { file_id: s('ID tệp') },
+        ['file_id'],
+        false,
+        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
+      ),
+      tool(
+        'read_file',
+        'Đọc nội dung tệp văn bản',
+        { file_id: s('ID tệp') },
+        ['file_id'],
+        false,
+        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
+      ),
       tool(
         'export_file',
         'Xuất Google Docs thành văn bản',
         { file_id: s('ID tệp'), mime_type: s('text/plain hoặc text/csv') },
-        ['file_id']
+        ['file_id'],
+        false,
+        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']
       ),
       tool(
         'create_file',
         'Tạo tệp văn bản',
         { name: s('Tên tệp'), content: s('Nội dung'), parent_id: s('ID thư mục') },
         ['name', 'content'],
-        true
+        true,
+        ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/drive.file']
       )
     ]
   },
@@ -136,20 +164,25 @@ export const catalog = [
         'list_channels',
         'Liệt kê kênh',
         { cursor: s('Trang tiếp theo'), limit: n('Số kênh') },
-        []
+        [],
+        false,
+        ['channels:read', 'groups:read']
       ),
       tool(
         'read_history',
         'Đọc lịch sử kênh',
         { channel: s('ID kênh'), cursor: s('Trang tiếp theo'), limit: n('Số tin') },
-        ['channel']
+        ['channel'],
+        false,
+        ['channels:history', 'groups:history']
       ),
       tool(
         'post_message',
         'Gửi tin nhắn',
         { channel: s('ID kênh'), text: s('Tin nhắn'), thread_ts: s('Thread tùy chọn') },
         ['channel', 'text'],
-        true
+        true,
+        ['chat:write', 'chat:write:bot', 'chat:write:user']
       )
     ]
   },

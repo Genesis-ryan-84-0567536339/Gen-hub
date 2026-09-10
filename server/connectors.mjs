@@ -7,8 +7,166 @@ const query = o => {
   for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== '') q.set(k, v);
   return q.toString();
 };
-export function connectorService(store, { mcpRequest = request } = {}) {
+export function checkToolPermissions(m, tools = [], { headers = {}, credential = {} } = {}) {
+  const providerId = m?.provider || m?.id;
+
+  if (providerId === 'github') {
+    const scopeHeader = headers['x-oauth-scopes'];
+    if (scopeHeader !== undefined && scopeHeader !== null) {
+      const tokenScopes = scopeHeader
+        .split(',')
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean);
+      return tools.map(t => {
+        const required = t.scopes || [];
+        if (required.length === 0) {
+          return { ...t, permission: { status: 'ok', reason: 'Khả dụng' } };
+        }
+        const hasScope = required.some(req => tokenScopes.includes(req.toLowerCase()));
+        if (hasScope) {
+          return { ...t, permission: { status: 'ok', reason: 'Khả dụng' } };
+        }
+        const needed = required[0];
+        return {
+          ...t,
+          permission: {
+            status: 'missing',
+            reason: `Thiếu quyền: cần scope ${needed}`
+          }
+        };
+      });
+    }
+    return tools.map(t => ({
+      ...t,
+      permission: {
+        status: 'unknown',
+        reason: 'Không xác định được (fine-grained token hoặc provider không trả scope)'
+      }
+    }));
+  }
+
+  if (providerId === 'slack') {
+    const scopeHeader = headers['x-oauth-scopes'] || credential.scope;
+    if (scopeHeader !== undefined && scopeHeader !== null) {
+      const tokenScopes = (typeof scopeHeader === 'string' ? scopeHeader.split(/[\s,]+/) : [])
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean);
+      return tools.map(t => {
+        const required = t.scopes || [];
+        if (required.length === 0) {
+          return { ...t, permission: { status: 'ok', reason: 'Khả dụng' } };
+        }
+        const hasScope = required.some(req => tokenScopes.includes(req.toLowerCase()));
+        if (hasScope) {
+          return { ...t, permission: { status: 'ok', reason: 'Khả dụng' } };
+        }
+        const needed = required[0];
+        return {
+          ...t,
+          permission: {
+            status: 'missing',
+            reason: `Thiếu quyền: cần scope ${needed}`
+          }
+        };
+      });
+    }
+    return tools.map(t => ({
+      ...t,
+      permission: {
+        status: 'unknown',
+        reason: 'Không xác định được (provider không trả scope)'
+      }
+    }));
+  }
+
+  if (providerId === 'drive') {
+    const scopeHeader = headers['x-oauth-scopes'] || credential.scope;
+    if (scopeHeader !== undefined && scopeHeader !== null) {
+      const tokenScopes = (typeof scopeHeader === 'string' ? scopeHeader.split(/[\s,]+/) : [])
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean);
+      return tools.map(t => {
+        const required = t.scopes || [];
+        if (required.length === 0) {
+          return { ...t, permission: { status: 'ok', reason: 'Khả dụng' } };
+        }
+        const hasScope = required.some(req => tokenScopes.includes(req.toLowerCase()));
+        if (hasScope) {
+          return { ...t, permission: { status: 'ok', reason: 'Khả dụng' } };
+        }
+        const isWriteTool = t.annotations?.destructiveHint || !t.annotations?.readOnlyHint;
+        const reason = isWriteTool
+          ? 'Thiếu quyền: cần scope ghi Drive (hiện chỉ có readonly)'
+          : `Thiếu quyền: cần scope ${required[0]}`;
+        return {
+          ...t,
+          permission: {
+            status: 'missing',
+            reason
+          }
+        };
+      });
+    }
+    return tools.map(t => ({
+      ...t,
+      permission: {
+        status: 'unknown',
+        reason: 'Không xác định được (provider không trả scope)'
+      }
+    }));
+  }
+
+  if (providerId === 'telegram') {
+    return tools.map(t => ({
+      ...t,
+      permission: { status: 'ok', reason: 'Khả dụng' }
+    }));
+  }
+
+  if (providerId === 'discord') {
+    return tools.map(t => ({
+      ...t,
+      permission: {
+        status: 'unknown',
+        reason: 'Không xác định được (quyền Discord phân cấp theo server)'
+      }
+    }));
+  }
+
+  if (providerId === 'figma') {
+    return tools.map(t => ({
+      ...t,
+      permission: {
+        status: 'unknown',
+        reason: 'Không xác định được (Figma PAT không trả scope)'
+      }
+    }));
+  }
+
+  return tools.map(t => ({
+    ...t,
+    permission: t.permission || {
+      status: 'unknown',
+      reason: 'Không xác định được'
+    }
+  }));
+}
+export function connectorService(store, { mcpRequest = request, serviceRequest = request } = {}) {
   const locks = new Map();
+  async function doRequest(url, options) {
+    const r = await serviceRequest(url, options);
+    if (r.status < 200 || r.status >= 300)
+      throw new HubError(`Dịch vụ trả HTTP ${r.status}`, r.status === 401 ? 401 : r.status === 403 ? 403 : 502);
+    if (r.json?.ok === false || r.json?.error) {
+      const isMissingScope = r.json?.error === 'missing_scope';
+      const errText = isMissingScope
+        ? `Dịch vụ từ chối: thiếu scope ${r.json.needed || ''}`.trim()
+        : 'Dịch vụ từ chối: ' +
+          String(r.json.error?.message || r.json.error || r.json.description).slice(0, 300);
+      throw new HubError(errText, isMissingScope ? 403 : 502);
+    }
+    return r;
+  }
   async function credential(m) {
     let c = m.secret ? store.unseal(m.secret) : {};
     if (c.refresh_token && c.expires_at && c.expires_at < Date.now() + 60000) {
@@ -175,7 +333,8 @@ export function connectorService(store, { mcpRequest = request } = {}) {
       }
     }
     if (!url) throw new HubError('Tool không hỗ trợ');
-    return jsonRequest(url, { headers, method, body });
+    const r = await doRequest(url, { headers, method, body });
+    return r.json ?? { text: r.text };
   }
   async function rpc(m, method, params = {}, session, notify = false) {
     const endpoint = m.provider === 'github-mcp' ? githubEndpoint(m) : m.url;
@@ -199,7 +358,8 @@ export function connectorService(store, { mcpRequest = request } = {}) {
       responseId: notify ? undefined : reqId
     });
     if (r.status === 401) throw new HubError('MCP yêu cầu xác thực lại', 401);
-    if (r.status < 200 || r.status >= 300) throw new HubError('MCP trả HTTP ' + r.status, 502);
+    if (r.status < 200 || r.status >= 300)
+      throw new HubError('MCP trả HTTP ' + r.status, r.status === 403 ? 403 : 502);
     if (notify) return {};
     let data = r.json;
     if (!data && r.headers['content-type']?.includes('text/event-stream')) {
@@ -253,29 +413,61 @@ export function connectorService(store, { mcpRequest = request } = {}) {
   async function sync(m) {
     if (!isMcp(m)) {
       const p = provider(m.provider);
-      await call(
-        m,
-        m.provider === 'github'
-          ? 'search_repositories'
-          : m.provider === 'drive'
-            ? 'list_files'
-            : m.provider === 'slack'
-              ? 'list_channels'
-              : 'get_me',
-        m.provider === 'github' ? { query: 'repo:octocat/Hello-World' } : {}
-      );
-      return p.tools;
+      const c = await credential(m);
+      const token = c.access_token || c.token;
+      if (!token && m.auth !== 'none') throw new HubError('MCP chưa có credential', 401);
+      let probeUrl,
+        probeHeaders = { Authorization: 'Bearer ' + token };
+      if (m.provider === 'github') {
+        probeUrl = 'https://api.github.com/user';
+        probeHeaders.Accept = 'application/vnd.github+json';
+        probeHeaders['X-GitHub-Api-Version'] = '2022-11-28';
+      } else if (m.provider === 'drive') {
+        probeUrl = 'https://www.googleapis.com/drive/v3/files?pageSize=1';
+      } else if (m.provider === 'slack') {
+        probeUrl = 'https://slack.com/api/auth.test';
+      } else if (m.provider === 'telegram') {
+        probeUrl = 'https://api.telegram.org/bot' + token + '/getMe';
+        probeHeaders = {};
+      } else if (m.provider === 'discord') {
+        probeUrl = 'https://discord.com/api/v10/users/@me';
+        probeHeaders.Authorization = 'Bot ' + token;
+      } else if (m.provider === 'figma') {
+        probeUrl = 'https://api.figma.com/v1/me';
+        probeHeaders = { 'X-Figma-Token': token };
+      }
+      let responseHeaders = {};
+      if (probeUrl) {
+        try {
+          const r = await doRequest(probeUrl, { headers: probeHeaders, method: 'GET' });
+          responseHeaders = r.headers || {};
+        } catch (err) {
+          if (m.provider === 'github' && err.status === 403) {
+            const r = await doRequest(
+              'https://api.github.com/search/repositories?q=repo:octocat/Hello-World',
+              { headers: probeHeaders, method: 'GET' }
+            );
+            responseHeaders = r.headers || {};
+          } else {
+            throw err;
+          }
+        }
+      }
+      return checkToolPermissions(m, p.tools, { headers: responseHeaders, credential: c });
     }
     return withSession(m, async session => {
       const result = [];
       let cursor;
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 500; i++) {
         const r = await rpc(m, 'tools/list', cursor ? { cursor } : {}, session);
         if (!Array.isArray(r.result?.tools)) throw new HubError('MCP thiếu danh sách tools', 502);
         result.push(...r.result.tools);
         cursor = r.result.nextCursor;
-        if (!cursor) return m.provider === 'github-mcp' ? githubTools(result) : result;
-        if (result.length > 2000) break;
+        if (!cursor) {
+          const list = m.provider === 'github-mcp' ? githubTools(result) : result;
+          return checkToolPermissions(m, list);
+        }
+        if (result.length > 10000) break;
       }
       throw new HubError('Danh sách tool vượt giới hạn đồng bộ', 502);
     });
