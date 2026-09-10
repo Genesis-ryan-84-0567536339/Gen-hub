@@ -1,4 +1,4 @@
-import { auditStats } from './audit-stats.js';
+import { auditStats, pieArc } from './audit-stats.js';
 import { connectionGuide } from './connection-guides.js';
 import { getNotifications, timeAgo } from './notifications.js';
 ('use strict');
@@ -452,12 +452,38 @@ function statsCharts(logs, now) {
     return (state.mcps.find(m => m.id === id)?.name || id) + ' / ' + rest.join(' / ');
   };
   const legend = `<div class="stats-legend">${tools.map(key => `<span><i style="background:${color(key)}"></i>${esc(toolLabel(key))}</span>`).join('')}</div>`;
-  const ratio = buckets
-    .map(
-      bucket =>
-        `<div class="stats-column"><div class="ratio-stack">${[...bucket.tools].map(([key, row]) => `<div style="height:${(row.count / bucket.count) * 100}%;background:${color(key)}" title="${esc(label(bucket.start) + ' · ' + toolLabel(key) + ': ' + row.count + ' lượt (' + ((row.count / bucket.count) * 100).toFixed(1) + '%)')}"></div>`).join('')}</div><small>${esc(label(bucket.start))}</small></div>`
-    )
-    .join('');
+  const toolCounts = new Map(tools.map(key => [key, 0]));
+  let totalCalls = 0;
+  for (const bucket of buckets) {
+    for (const [key, row] of bucket.tools) {
+      if (toolCounts.has(key)) {
+        toolCounts.set(key, toolCounts.get(key) + row.count);
+        totalCalls += row.count;
+      }
+    }
+  }
+  let currentFrac = 0;
+  const slices = [];
+  for (const key of tools) {
+    const count = toolCounts.get(key) || 0;
+    if (!count) continue;
+    const frac = totalCalls ? count / totalCalls : 0;
+    const pathD = pieArc(100, 100, 80, 48, currentFrac, currentFrac + frac);
+    const pct = (frac * 100).toFixed(1);
+    slices.push(
+      `<path class="pie-slice" d="${pathD}" fill="${color(key)}" stroke="#fff" stroke-width="2"><title>${esc(toolLabel(key) + ': ' + count + ' lượt (' + pct + '%)')}</title></path>`
+    );
+    currentFrac += frac;
+  }
+  const pieChart = `<svg class="pie-chart" viewBox="0 0 200 200" width="180" height="180" role="img" aria-label="Biểu đồ tròn tỷ lệ loại tool"><g class="pie-slices">${slices.join('')}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${totalCalls.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">lượt gọi</text></svg>`;
+  const pieLegend = `<div class="pie-legend">${tools
+    .map(key => {
+      const count = toolCounts.get(key) || 0;
+      const pct = totalCalls ? ((count / totalCalls) * 100).toFixed(1) : '0.0';
+      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${color(key)}"></i>${esc(toolLabel(key))}</span><span class="pie-legend-value"><strong>${count.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
+    })
+    .join('')}</div>`;
+  const ratio = `<div class="pie-wrap">${pieChart}${pieLegend}</div>`;
   const max = Math.max(
     1,
     ...buckets.flatMap(bucket => [...bucket.tools.values()].flatMap(row => [row.input, row.output]))
@@ -479,7 +505,7 @@ function statsCharts(logs, now) {
     )
     .join('');
   const table = `<details class="stats-data"><summary>Xem số liệu theo thời gian và tool</summary><div class="tablewrap"><table><thead><tr><th>Thời gian (GMT+7)</th><th>Tool</th><th>Lượt gọi</th><th>Tỷ lệ</th><th>Input (byte)</th><th>Output (byte)</th></tr></thead><tbody>${buckets.flatMap(bucket => [...bucket.tools].map(([key, row]) => `<tr><td>${esc(label(bucket.start))}</td><td>${esc(toolLabel(key))}</td><td>${row.count}</td><td>${((row.count / bucket.count) * 100).toFixed(1)}%</td><td>${row.input}</td><td>${row.output}</td></tr>`)).join('')}</tbody></table></div></details>`;
-  return `<section class="audit-chart"><h3>Tỷ lệ loại tool theo thời gian</h3><p class="footnote">0–100% lượt gọi trong từng ${step === 3600000 ? 'giờ' : 'ngày'} (GMT+7), gồm thành công, lỗi và bị từ chối. Cột trống = chưa có lượt gọi.</p><div class="stats-scroll" role="img" aria-label="Biểu đồ tỷ lệ tool; số liệu đầy đủ ở bảng bên dưới"><div class="stats-plot">${ratio}</div></div>${legend}</section><section class="audit-chart"><h3>Kích thước payload theo tool và thời gian</h3><p class="footnote">Tổng byte JSON UTF-8 của input/output đã redact; không phải token LLM hoặc byte mạng. Thang đo: 0–${max.toLocaleString('vi-VN')} byte. Input: đậm · Output: nhạt. Vault chỉ có metadata audit, không chứa giá trị secret.</p><div class="stats-scroll" role="img" aria-label="Biểu đồ byte input và output; số liệu đầy đủ ở bảng bên dưới"><div class="stats-plot">${payload}</div></div>${legend}</section>${table}`;
+  return `<section class="audit-chart"><h3>Tỷ lệ loại tool đã gọi</h3><p class="footnote">Tỷ lệ phần trăm theo tổng lượt gọi tool trong khoảng thời gian đã chọn (gồm thành công, lỗi và bị từ chối).</p>${ratio}</section><section class="audit-chart"><h3>Kích thước payload theo tool và thời gian</h3><p class="footnote">Tổng byte JSON UTF-8 của input/output đã redact; không phải token LLM hoặc byte mạng. Thang đo: 0–${max.toLocaleString('vi-VN')} byte. Input: đậm · Output: nhạt. Vault chỉ có metadata audit, không chứa giá trị secret.</p><div class="stats-scroll" role="img" aria-label="Biểu đồ byte input và output; số liệu đầy đủ ở bảng bên dưới"><div class="stats-plot">${payload}</div></div>${legend}</section>${table}`;
 }
 
 function options(rows, current) {
