@@ -811,7 +811,7 @@ function toolPermissionBadge(p) {
 }
 function connectorTools(m) {
   const id = m.id;
-  return `<div class="actions">${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}</div><div class="divider"></div><div class="toolgroup">${m.tools.map(t => `<div class="toolrow"><div><b>${esc(t.name)}</b><p>${esc(t.description)}</p></div><div class="inline">${toolPermissionBadge(t.permission)}<span class="badge ${t.annotations?.readOnlyHint ? 'gray' : 'warn'}">${t.annotations?.readOnlyHint ? 'Đọc' : 'Ghi / khác'}</span>${sw(t.published, 'publish:' + id + ':' + t.name, 'Công bố ' + t.name)}</div></div>`).join('') || '<div class="empty">Kết nối rồi đồng bộ danh sách tool.</div>'}</div>`;
+  return `<div class="actions">${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}</div><div class="divider"></div><div class="toolgroup">${m.tools.map(t => `<div class="toolrow"><div><b>${esc(t.name)}</b><p title="${esc(t.description || '')}">${esc(t.description)}</p></div><div class="inline">${toolPermissionBadge(t.permission)}<span class="badge ${t.annotations?.readOnlyHint ? 'gray' : 'warn'}">${t.annotations?.readOnlyHint ? 'Đọc' : 'Ghi / khác'}</span>${sw(t.published, 'publish:' + id + ':' + t.name, 'Công bố ' + t.name)}</div></div>`).join('') || '<div class="empty">Kết nối rồi đồng bộ danh sách tool.</div>'}</div>`;
 }
 function connectionGuideHtml(provider, endpoint) {
   const guide = connectionGuide(provider, endpoint);
@@ -847,7 +847,7 @@ function grantRows(selected) {
               .filter(t => t.published || selected.includes(m.id + ':' + t.name))
               .map(
                 t =>
-                  `<label class="toolrow"><div><b>${esc(t.name)}</b><p>${esc(t.description)}${!t.published ? ' · Chưa công bố' : ''}</p></div><div class="inline">${toolPermissionBadge(t.permission)}<input type="checkbox" name="permissions" value="${esc(m.id + ':' + t.name)}" ${selected.includes(m.id + ':' + t.name) ? 'checked' : ''} ${!t.published ? 'disabled' : ''}></div></label>`
+                  `<label class="toolrow"><div><b>${esc(t.name)}</b><p title="${esc(t.description || '')}">${esc(t.description)}${!t.published ? ' · Chưa công bố' : ''}</p></div><div class="inline">${toolPermissionBadge(t.permission)}<input type="checkbox" name="permissions" value="${esc(m.id + ':' + t.name)}" ${selected.includes(m.id + ':' + t.name) ? 'checked' : ''} ${!t.published ? 'disabled' : ''}></div></label>`
               )
               .join('') || '<p class="footnote" style="padding:15px">Chưa công bố tool.</p>'
           }</div>`
