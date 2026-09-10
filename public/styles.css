@@ -62,3 +62,14 @@
   .update-banner .banner-actions{justify-content:flex-end}
 }
 
+/* Agent permissions accordion & quick actions (Issue #51) */
+details.toolgroup summary.toolgrouphead{cursor:pointer;user-select:none;list-style:none;border-bottom:0}
+details.toolgroup summary.toolgrouphead::-webkit-details-marker{display:none}
+details.toolgroup[open] summary.toolgrouphead{border-bottom:1px solid var(--line)}
+details.toolgroup summary .chevron{transition:transform .15s ease;display:inline-flex;align-items:center}
+details.toolgroup[open] summary .chevron{transform:rotate(180deg)}
+.grant-toolbar{margin-bottom:16px;padding:10px 14px;background:#f7faf7;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.grant-actions{padding:10px 15px;background:#fafcfb;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+@media(max-width:700px){.grant-toolbar{flex-direction:column;align-items:flex-start}}
+
+

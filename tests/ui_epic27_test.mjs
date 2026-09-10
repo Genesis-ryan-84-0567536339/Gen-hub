@@ -104,6 +104,7 @@ test('Issue #27: real browser list/detail tabs, edits, grants, filtered activity
   );
   await shot('agent-info-desktop');
   await tab('grants');
+  await page.click('#grants summary.toolgrouphead');
   await page.check(`#grants [value="${mcp.id}:read"]`);
   await page.check(`#grants [value="vault:${secret.id}"]`);
   await save('#grants', '/api/agents/' + a.id);
