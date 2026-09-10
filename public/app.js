@@ -1153,10 +1153,14 @@ function credential(id) {
   const m = state.mcps.find(m => m.id === id),
     c = state.catalog.find(c => c.id === m.provider);
   modalContext = { kind: 'credential', id };
+  const urlField =
+    m.provider === 'gitea-mcp'
+      ? `<label class="field">URL Gitea API<input class="input" name="url" value="${esc(m.url || 'http://gitea:3000/api/v1')}" placeholder="http://gitea:3000/api/v1"></label>`
+      : '';
   const tokenForm =
     m.provider === 'drive'
       ? ''
-      : `<div class="divider"></div><h3>${m.auth === 'none' ? 'Kết nối không xác thực' : 'Kết nối bằng token'}</h3>${m.auth === 'none' ? `<p class="footnote">Endpoint: ${esc(m.url)}</p>${btn('Kiểm tra & đồng bộ', 'sync:' + id, 'primary')}` : `<form id="credential" style="margin-top:18px"><label class="field">${['telegram', 'discord'].includes(m.provider) ? 'Bot token' : 'Access token'}<input class="input" name="token" type="password" required autocomplete="new-password"></label><button class="btn primary" type="submit">Lưu & kiểm tra kết nối</button></form>`}`;
+      : `<div class="divider"></div><h3>${m.auth === 'none' ? 'Kết nối không xác thực' : 'Kết nối bằng token'}</h3>${m.auth === 'none' ? `<p class="footnote">Endpoint: ${esc(m.url)}</p>${btn('Kiểm tra & đồng bộ', 'sync:' + id, 'primary')}` : `<form id="credential" style="margin-top:18px">${urlField}<label class="field">${['telegram', 'discord'].includes(m.provider) ? 'Bot token' : 'Access token'}<input class="input" name="token" type="password" required autocomplete="new-password"></label><button class="btn primary" type="submit">Lưu & kiểm tra kết nối</button></form>`}`;
   const oauthForm = !c?.oauth
     ? ''
     : `<div class="divider"></div><h3>Đăng nhập bằng OAuth</h3><p class="footnote">Tạo OAuth App của bạn tại <a href="${esc(c.guide)}" target="_blank" rel="noopener noreferrer">trang nhà cung cấp</a>, rồi khai báo chính xác Redirect URI: <code>${esc(state.origin)}/oauth/callback</code></p><form id="oauth" style="margin-top:18px"><label class="field">Client ID<input name="client_id" class="input" required autocomplete="off"></label><label class="field">Client secret<input name="client_secret" class="input" type="password" required autocomplete="new-password"></label><button class="btn primary" type="submit">Lưu & đăng nhập ${esc(m.name)}</button></form>`;

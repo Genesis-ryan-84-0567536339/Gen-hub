@@ -65,7 +65,7 @@ const routes = [
     'Lưu token dịch vụ và kiểm tra kết nối. OAuth dịch vụ cần owner hoàn tất trong trình duyệt.',
     'POST',
     a => 'mcps/' + a.id + '/credential',
-    { id: string, token: string },
+    { id: string, token: string, url: string },
     ['id', 'token']
   ),
   tool(

@@ -15,6 +15,22 @@ const guides = {
     ],
     note: 'Mọi tool mới đều chờ owner công bố. Pilot này chưa có đăng nhập OAuth; chưa thay thế REST.'
   },
+  'gitea-mcp': {
+    title: 'Gitea MCP (pilot)',
+    recommendation:
+      'Kết nối Gitea tự host qua REST API bằng Personal Access Token; quản lý quyền tool như GitHub MCP.',
+    links: [
+      ['Tài liệu Gitea API', 'https://docs.gitea.com/development/api-usage']
+    ],
+    steps: [
+      'Đăng nhập vào Gitea instance của bạn (mặc định nội bộ: http://gitea:3000/api/v1).',
+      'Vào Cài đặt người dùng → Ứng dụng → Quản lý Access Token để tạo Personal Access Token mới.',
+      'Chọn các quyền cần thiết (repo: read/write, issue: read/write) rồi tạo token.',
+      'Dán URL Gitea (hoặc để mặc định) và PAT vào ô bên dưới để kết nối và đồng bộ tool.',
+      'Owner công bố từng tool rồi cấp quyền cho agent trong Agent & Grants.'
+    ],
+    note: 'Mọi tool mới đều có trạng thái chờ owner công bố (published: false).'
+  },
   github: {
     title: 'GitHub',
     recommendation: 'Dùng Personal Access Token để bắt đầu nhanh.',

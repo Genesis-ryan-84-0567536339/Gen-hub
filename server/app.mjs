@@ -19,6 +19,7 @@ import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
 import { GITHUB_MCP_URL, githubEndpoint, githubPublished } from './github-mcp.mjs';
 import { ownerOidcService, OWNER_OIDC_CLIENT } from './owner-oidc.mjs';
+import { DEFAULT_GITEA_URL, giteaBaseUrl, giteaEndpoint, giteaPublished } from './gitea-mcp.mjs';
 import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
@@ -416,7 +417,12 @@ export function createHub({
               t,
               old.find(x => x.name === t.name)
             )
-          : (old.find(x => x.name === t.name)?.published ?? t.annotations?.readOnlyHint === true)
+          : m.provider === 'gitea-mcp'
+            ? giteaPublished(
+                t,
+                old.find(x => x.name === t.name)
+              )
+            : (old.find(x => x.name === t.name)?.published ?? t.annotations?.readOnlyHint === true)
     }));
     latest.status = 'connected';
     latest.lastError = null;
@@ -693,6 +699,11 @@ export function createHub({
         m.url = b.url || GITHUB_MCP_URL;
         githubEndpoint(m);
       }
+      if (m.provider === 'gitea-mcp') {
+        m.url = giteaBaseUrl(b.url || DEFAULT_GITEA_URL);
+        giteaEndpoint(m);
+        m.allowPrivate = true;
+      }
       store.put('mcp', mid, m);
       audit('mcp.add', { name: m.name, provider: m.provider }, { id: mid }, mid);
       return respond(201, cleanMcp(m));
@@ -727,6 +738,10 @@ export function createHub({
         if (m.provider === 'remote' && new URL(m.url).protocol !== 'https:' && !m.allowPrivate)
           throw new HubError('Dùng HTTPS để bảo vệ token');
         const token = text(b.token, 16000);
+        if (m.provider === 'gitea-mcp' && b.url) {
+          m.url = giteaBaseUrl(b.url);
+          giteaEndpoint(m);
+        }
         m.credentialVersion = (m.credentialVersion || 0) + 1;
         m.secret = store.seal({ token });
         m.status = 'disconnected';
