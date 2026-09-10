@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { chromium } from 'playwright-core';
@@ -40,7 +40,7 @@ test('Gen-hub Playwright UI automated flow (Issue #9)', async t => {
   const chromiumPath =
     process.env.PLAYWRIGHT_CHROMIUM_PATH ||
     process.env.CHROMIUM_PATH ||
-    join(homedir(), '.cache/ms-playwright/chromium-1234/chrome-linux64/chrome');
+    chromium.executablePath();
 
   assert(existsSync(chromiumPath), `Chromium executable not found at ${chromiumPath}`);
 

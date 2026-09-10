@@ -22,6 +22,18 @@ jobs:
         run: npm test
       - name: Linux installer and syntax checks
         run: npm run check
+  ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - name: Browser flows and list-detail tabs
+        run: npm run test:ui
   docker:
     strategy:
       fail-fast: false

@@ -89,7 +89,7 @@ const routes = [
     'Tạo agent thường với token riêng và quyền được chỉ định.',
     'POST',
     () => 'agents',
-    { name: string, permissions: strings },
+    { name: string, description: string, instructions: string, permissions: strings },
     ['name']
   ),
   tool(
@@ -97,7 +97,14 @@ const routes = [
     'Đặt tên, cấp quyền hoặc thu hồi agent thường.',
     'PATCH',
     a => 'agents/' + a.id,
-    { id: string, name: string, permissions: strings, status: string },
+    {
+      id: string,
+      name: string,
+      description: string,
+      instructions: string,
+      permissions: strings,
+      status: string
+    },
     ['id']
   ),
   tool(
@@ -127,10 +134,17 @@ const routes = [
   ),
   tool(
     'audit_list',
-    'Đọc tối đa 5000 bản ghi audit đã che credential.',
+    'Đọc tối đa 5000 bản ghi audit đã che credential; lọc actor, mcp, secret (lượt đọc), tool và since trước giới hạn.',
     'GET',
     () => 'logs',
-    {},
+    {
+      actor: string,
+      mcp: string,
+      secret: string,
+      tool: string,
+      since: string,
+      limit: { type: 'integer', minimum: 1, maximum: 5000 }
+    },
     [],
     true
   ),

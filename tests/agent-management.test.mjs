@@ -49,6 +49,18 @@ test('owner names OAuth agents, renames them and deletes only revoked agents whi
   const agents = (await x.call('/api/state')).data.agents;
   assert.deepEqual(agents.map(a => a.name).sort(), ['Duplicate client', 'Laptop cá nhân'].sort());
   const a = agents.find(a => a.name === 'Laptop cá nhân');
+  await x.call('/api/agents/' + a.id, 'PATCH', {
+    description: 'Agent OAuth trên laptop',
+    instructions: 'Hướng dẫn chỉ dành cho laptop'
+  });
+  const initialized = await x.call(
+    '/mcp',
+    'POST',
+    { jsonrpc: '2.0', id: 1, method: 'initialize' },
+    { Authorization: 'Bearer ' + token.access_token }
+  );
+  assert.equal(initialized.data.result.instructions, 'Hướng dẫn chỉ dành cho laptop');
+
   assert.equal((await x.call('/api/agents/' + a.id, 'DELETE')).status, 409);
   for (const name of ['', ' '.repeat(4), 'x'.repeat(81), 12])
     assert.equal((await x.call('/api/agents/' + a.id, 'PATCH', { name })).status, 400);
