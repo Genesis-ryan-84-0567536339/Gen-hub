@@ -138,6 +138,20 @@ function badge(status) {
 function logo(m) {
   return `<span class="serviceicon ${esc(m.provider === 'github-mcp' ? 'github' : m.provider || 'files')}">${['github', 'github-mcp'].includes(m.provider) ? 'G' : m.provider === 'drive' ? I('file') : m.provider === 'slack' ? '#' : m.provider === 'figma' ? 'F' : I('plug')}</span>`;
 }
+function formatVersion(iso) {
+  if (!iso) return '';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    hour12: false
+  })
+    .formatToParts(new Date(iso))
+    .reduce((o, p) => ((o[p.type] = p.value), o), {});
+  return `${parts.day}${parts.month}${parts.year}.${parts.hour}`;
+}
 function shortSha(sha) {
   if (!sha || typeof sha !== 'string') return '';
   return sha.length > 7 ? sha.slice(0, 7) : sha;
@@ -262,7 +276,7 @@ function render() {
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.revision ? '· ' + shortSha(state.update.revision) : 'v0.1.0'}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
 }
@@ -680,7 +694,7 @@ function systemUpdatesSettings() {
     statusBadge = `<span class="badge">Đang dùng bản mới nhất</span>`;
   }
 
-  return `<h2>Cập nhật hệ thống</h2><p class="footnote">Gen-hub tự động kiểm tra định kỳ mỗi 30 phút và tự cập nhật khi commit mới trên main đã qua CI.</p><div style="margin:16px 0">${statusBadge}</div><div class="divider"></div><div class="detailgrid"><div><dt>Phiên bản đang chạy</dt><dd><code title="${esc(u.revision || '')}">${esc(shortCur)}</code></dd></div><div><dt>Cập nhật lần gần nhất</dt><dd>${esc(curDateStr)}</dd></div><div><dt>Kiểm tra GitHub gần nhất</dt><dd>${esc(checkedDateStr)}</dd></div><div><dt>Bản mới nhất trên main</dt><dd>${u.latestRevision ? `<code title="${esc(u.latestRevision)}">${esc(shortLatest)}</code>` : '—'}</dd></div></div>${u.latestCommitMessage ? `<div style="margin-bottom:18px"><p class="footnote" style="margin-bottom:4px">Thông điệp commit mới nhất trên GitHub:</p><blockquote style="margin:0;padding:8px 12px;background:#f7faf7;border-left:3px solid #28754f;border-radius:4px;font-size:12px">${esc(u.latestCommitMessage)}</blockquote></div>` : ''}${u.error ? `<p class="errorline" style="margin-bottom:18px">${esc(u.error)}</p>` : ''}<div class="actions" style="margin-top:20px">${btn('Kiểm tra cập nhật ngay', 'check-update', 'primary', 'refresh')}</div>`;
+  return `<h2>Cập nhật hệ thống</h2><p class="footnote">Gen-hub tự động kiểm tra định kỳ mỗi 30 phút và tự cập nhật khi commit mới trên main đã qua CI.</p><div style="margin:16px 0">${statusBadge}</div><div class="divider"></div><div class="detailgrid"><div><dt>Phiên bản đang chạy</dt><dd>${u.updatedAt ? esc('v' + formatVersion(u.updatedAt)) + ' · ' : ''}<code title="${esc(u.revision || '')}">${esc(shortCur)}</code></dd></div><div><dt>Cập nhật lần gần nhất</dt><dd>${esc(curDateStr)}</dd></div><div><dt>Kiểm tra GitHub gần nhất</dt><dd>${esc(checkedDateStr)}</dd></div><div><dt>Bản mới nhất trên main</dt><dd>${u.latestRevision ? `<code title="${esc(u.latestRevision)}">${esc(shortLatest)}</code>` : '—'}</dd></div></div>${u.latestCommitMessage ? `<div style="margin-bottom:18px"><p class="footnote" style="margin-bottom:4px">Thông điệp commit mới nhất trên GitHub:</p><blockquote style="margin:0;padding:8px 12px;background:#f7faf7;border-left:3px solid #28754f;border-radius:4px;font-size:12px">${esc(u.latestCommitMessage)}</blockquote></div>` : ''}${u.error ? `<p class="errorline" style="margin-bottom:18px">${esc(u.error)}</p>` : ''}<div class="actions" style="margin-top:20px">${btn('Kiểm tra cập nhật ngay', 'check-update', 'primary', 'refresh')}</div>`;
 }
 function settings() {
   const groups = [
