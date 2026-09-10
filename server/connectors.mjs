@@ -45,6 +45,37 @@ export function checkToolPermissions(m, tools = [], { headers = {}, credential =
     }));
   }
 
+  if (providerId === 'github-mcp') {
+    const scopeHeader = headers['x-oauth-scopes'] || credential.scope;
+    if (scopeHeader !== undefined && scopeHeader !== null) {
+      const tokenScopes = (typeof scopeHeader === 'string' ? scopeHeader.split(/[\s,]+/) : [])
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean);
+      return tools.map(t => {
+        const required = t.scopes || [];
+        if (required.length === 0) {
+          return { ...t, permission: { status: 'ok', reason: 'Khả dụng' } };
+        }
+        const hasScope = required.some(req => tokenScopes.includes(req.toLowerCase()));
+        if (hasScope) {
+          return { ...t, permission: { status: 'ok', reason: 'Khả dụng' } };
+        }
+        const needed = required[0];
+        return {
+          ...t,
+          permission: {
+            status: 'missing',
+            reason: `Thiếu quyền: cần scope ${needed}`
+          }
+        };
+      });
+    }
+    return tools.map(t => ({
+      ...t,
+      permission: t.permission || { status: 'ok', reason: 'Khả dụng' }
+    }));
+  }
+
   if (providerId === 'slack') {
     const scopeHeader = headers['x-oauth-scopes'] || credential.scope;
     if (scopeHeader !== undefined && scopeHeader !== null) {
@@ -468,7 +499,8 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
         cursor = r.result.nextCursor;
         if (!cursor) {
           const list = m.provider === 'github-mcp' ? githubTools(result) : result;
-          return checkToolPermissions(m, list);
+          const c = await credential(m);
+          return checkToolPermissions(m, list, { credential: c });
         }
         if (result.length > 10000) break;
       }
