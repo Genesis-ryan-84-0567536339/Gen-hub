@@ -10,13 +10,20 @@ test('Issue #40: id() and prefixedId() generate type-prefixed IDs with 5 random 
   assert(/^\d{5}$/.test(id()));
   assert.equal(prefixedId, id);
 
-  for (const type of ['agent', 'vault', 'mcp', 'flow', 'token', 'client', 'code', 'admin', 'doctor']) {
+  for (const type of [
+    'agent',
+    'vault',
+    'mcp',
+    'flow',
+    'token',
+    'client',
+    'code',
+    'admin',
+    'doctor'
+  ]) {
     for (let i = 0; i < 50; i++) {
       const generated = id(type);
-      assert(
-        generated.startsWith(type + '-'),
-        `Expected ${generated} to start with ${type}-`
-      );
+      assert(generated.startsWith(type + '-'), `Expected ${generated} to start with ${type}-`);
       assert.equal(generated.length, type.length + 1 + 5);
       assert(
         new RegExp(`^${type}-[0-9]{5}$`).test(generated),
@@ -60,7 +67,8 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   assert.equal(agentRes.status, 201);
   const aid = agentRes.data.id;
   assert.match(aid, /^agent-[0-9]{5}$/);
-  assert.match(agentRes.data.token, /^token-[0-9]{10}$/);
+  // Bearer secrets must stay high-entropy, never the short display-ID digit format.
+  assert.match(agentRes.data.token, /^token_[A-Za-z0-9_-]{48}$/);
 
   // 4. OAuth Client Registration
   const clientRes = await x.call('/oauth/register', 'POST', {
@@ -87,7 +95,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   const authRedirect = await x.call('/oauth/authorize?' + authQuery);
   assert.equal(authRedirect.status, 302);
   const fid = authRedirect.headers.get('location').split('/').at(-1);
-  assert.match(fid, /^flow-[0-9]{5}$/);
+  assert.match(fid, /^flow_[A-Za-z0-9_-]{24}$/);
 
   // 6. OAuth Consent -> Code -> Token Exchange
   const consentRes = await x.call('/api/flows/' + fid, 'POST', {
@@ -97,7 +105,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   assert.equal(consentRes.status, 200);
   const redirectUrl = new URL(consentRes.data.redirect);
   const code = redirectUrl.searchParams.get('code');
-  assert.match(code, /^code-[0-9]{10}$/);
+  assert.match(code, /^code_[A-Za-z0-9_-]{48}$/);
 
   const tokenRes = await x.call('/oauth/token', 'POST', {
     grant_type: 'authorization_code',
@@ -108,8 +116,8 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
     code_verifier: verifier
   });
   assert.equal(tokenRes.status, 200);
-  assert.match(tokenRes.data.access_token, /^token-[0-9]{10}$/);
-  assert.match(tokenRes.data.refresh_token, /^refresh-[0-9]{10}$/);
+  assert.match(tokenRes.data.access_token, /^token_[A-Za-z0-9_-]{48}$/);
+  assert.match(tokenRes.data.refresh_token, /^refresh_[A-Za-z0-9_-]{48}$/);
 
   // 7. Admin Assistant creation
   const adminRes = await x.call('/api/admin-assistant', 'POST', {
@@ -117,7 +125,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(adminRes.status, 201);
   assert.match(adminRes.data.id, /^admin-[0-9]{5}$/);
-  assert.match(adminRes.data.token, /^gh_admin_[0-9]{10}$/);
+  assert.match(adminRes.data.token, /^gh_admin_[A-Za-z0-9_-]{48}$/);
 
   // Verify all entity IDs pass admin tool id validation regex /^[A-Za-z0-9_-]{1,100}$/
   for (const entityId of [mid, vid, aid, cid, fid, adminRes.data.id]) {
@@ -143,7 +151,14 @@ test('Issue #40: legacy un-prefixed IDs remain 100% operational without data mig
     description: 'Legacy service',
     on: true,
     status: 'connected',
-    tools: [{ name: 'read', description: 'Read data', published: true, inputSchema: { type: 'object', properties: {} } }],
+    tools: [
+      {
+        name: 'read',
+        description: 'Read data',
+        published: true,
+        inputSchema: { type: 'object', properties: {} }
+      }
+    ],
     auth: 'none',
     url: 'https://legacy.example.com',
     allowPrivate: false,

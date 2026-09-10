@@ -27,10 +27,7 @@ export function migrateIds(store) {
       let newId;
       do {
         newId = id(kind);
-      } while (
-        store.get(kind, newId) ||
-        Object.values(mappings[kind] || {}).includes(newId)
-      );
+      } while (store.get(kind, newId) || Object.values(mappings[kind] || {}).includes(newId));
       return newId;
     }
 

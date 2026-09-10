@@ -15,6 +15,17 @@ export const id = type => {
   return type ? `${type}-${num}` : num;
 };
 export const prefixedId = id;
+// Short digit IDs are for display-facing record keys only, never for bearer secrets.
+export const secret = prefix =>
+  (prefix ? `${prefix}_` : '') + randomBytes(18).toString('base64url');
+// Record primary keys must never silently collide with an existing row (store.put upserts on conflict).
+export function uniqueId(store, kind, type) {
+  let candidate;
+  do {
+    candidate = id(type);
+  } while (store.get(kind, candidate));
+  return candidate;
+}
 export const digest = v => createHash('sha256').update(v).digest('hex');
 export const passwordHash = p => {
   const salt = randomBytes(16).toString('hex');

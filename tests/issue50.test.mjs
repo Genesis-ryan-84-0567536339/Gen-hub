@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fixture } from './helpers.mjs';
-import { digest, id } from '../server/store.mjs';
+import { digest, id, secret, uniqueId } from '../server/store.mjs';
 import { migrateIds } from '../server/migrate-ids.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -89,10 +89,7 @@ test('Issue #50: migrateIds migrates legacy unprefixed IDs, updates cross-refere
     name: 'Legacy Production Agent',
     client: legacyClientId,
     status: 'active',
-    permissions: [
-      legacyMcpId + ':echo',
-      'vault:' + legacyVaultId
-    ],
+    permissions: [legacyMcpId + ':echo', 'vault:' + legacyVaultId],
     created: new Date().toISOString(),
     last: null
   });
@@ -142,7 +139,14 @@ test('Issue #50: migrateIds migrates legacy unprefixed IDs, updates cross-refere
 
   // Seed existing historical audit logs referencing legacy IDs
   x.hub.store.audit(legacyAgentId, legacyMcpId, 'echo', 'success', { text: 'hello' }, {});
-  x.hub.store.audit('admin-assistant:' + legacyAdminId, 'hub', 'settings_update', 'success', {}, {});
+  x.hub.store.audit(
+    'admin-assistant:' + legacyAdminId,
+    'hub',
+    'settings_update',
+    'success',
+    {},
+    {}
+  );
   const preMigrationLogs = x.hub.store.logs(50);
   assert.equal(preMigrationLogs.length, initialLogCount + 2);
 
@@ -183,10 +187,7 @@ test('Issue #50: migrateIds migrates legacy unprefixed IDs, updates cross-refere
   assert(migratedAgent, 'Migrated agent must exist under new ID');
   assert.equal(migratedAgent.id, newAgentId);
   assert.equal(migratedAgent.client, newClientId);
-  assert.deepEqual(migratedAgent.permissions, [
-    newMcpId + ':echo',
-    'vault:' + newVaultId
-  ]);
+  assert.deepEqual(migratedAgent.permissions, [newMcpId + ':echo', 'vault:' + newVaultId]);
 
   const migratedMcp = x.hub.store.get('mcp', newMcpId);
   assert.equal(migratedMcp.id, newMcpId);
@@ -291,10 +292,14 @@ test('Issue #50: CLI commands `node server/admin.mjs migrate-ids` and `node serv
   });
 
   // Execute `node server/admin.mjs migrate-ids`
-  const adminCli = await execFileAsync(process.execPath, ['--no-warnings', 'server/admin.mjs', 'migrate-ids'], {
-    cwd: process.cwd(),
-    env: { ...process.env, DATA_DIR: x.dir }
-  });
+  const adminCli = await execFileAsync(
+    process.execPath,
+    ['--no-warnings', 'server/admin.mjs', 'migrate-ids'],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, DATA_DIR: x.dir }
+    }
+  );
   const parsedAdmin = JSON.parse(adminCli.stdout);
   assert.equal(parsedAdmin.total, 1);
   assert(parsedAdmin.mappings.agent[legacyAid]);
@@ -316,11 +321,37 @@ test('Issue #50: CLI commands `node server/admin.mjs migrate-ids` and `node serv
   });
 
   // Execute `node server/migrate-ids.mjs` directly
-  const directCli = await execFileAsync(process.execPath, ['--no-warnings', 'server/migrate-ids.mjs'], {
-    cwd: process.cwd(),
-    env: { ...process.env, DATA_DIR: x.dir }
-  });
+  const directCli = await execFileAsync(
+    process.execPath,
+    ['--no-warnings', 'server/migrate-ids.mjs'],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, DATA_DIR: x.dir }
+    }
+  );
   const parsedDirect = JSON.parse(directCli.stdout);
   assert.equal(parsedDirect.total, 1);
   assert(parsedDirect.mappings.mcp[legacyMid]);
+});
+
+test('uniqueId() never returns an ID already present in the store, even when the 5-digit space is nearly exhausted', async t => {
+  const x = await fixture(t);
+  // Fill in every ID except one, forcing uniqueId() to retry many times before succeeding.
+  const survivor = '00042';
+  for (let n = 0; n < 100000; n++) {
+    const candidate = String(n).padStart(5, '0');
+    if (candidate === survivor) continue;
+    x.hub.store.put('mcp', 'mcp-' + candidate, { id: 'mcp-' + candidate });
+  }
+  const fresh = uniqueId(x.hub.store, 'mcp', 'mcp');
+  assert.equal(fresh, 'mcp-' + survivor);
+  assert.equal(x.hub.store.get('mcp', fresh), null);
+});
+
+test('secret() produces high-entropy bearer values distinct from the short display-ID format used by id()', () => {
+  assert.doesNotMatch(secret(), /^[0-9]{5}$/);
+  assert.match(secret('token'), /^token_[A-Za-z0-9_-]{24}$/);
+  const seen = new Set();
+  for (let i = 0; i < 1000; i++) seen.add(secret());
+  assert.equal(seen.size, 1000, 'secret() must not collide across 1000 draws');
 });
