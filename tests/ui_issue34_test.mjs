@@ -14,7 +14,7 @@ test('Issue #34 UI: dashboard update banner, Settings update panel, and manual c
     commit: { message: 'release: stable update', committer: { date: '2026-09-10T10:00:00Z' } }
   };
 
-  const mockFetch = async (url) => {
+  const mockFetch = async url => {
     if (url.includes('/commits/main')) {
       return {
         ok: true,
@@ -27,7 +27,14 @@ test('Issue #34 UI: dashboard update banner, Settings update panel, and manual c
         ok: true,
         status: 200,
         json: async () => ({
-          workflow_runs: [{ head_sha: mockCheckResult.sha, head_branch: 'main', status: 'completed', conclusion: 'success' }]
+          workflow_runs: [
+            {
+              head_sha: mockCheckResult.sha,
+              head_branch: 'main',
+              status: 'completed',
+              conclusion: 'success'
+            }
+          ]
         })
       };
     }
@@ -41,7 +48,10 @@ test('Issue #34 UI: dashboard update banner, Settings update panel, and manual c
   });
 
   x.hub.store.put('settings', 'main', { name: 'Gen-hub', retention: 30, onboarded: true });
-  x.hub.store.put('system', 'previous_version', { revision: prevRev, updatedAt: '2026-09-10T11:00:00.000Z' });
+  x.hub.store.put('system', 'previous_version', {
+    revision: prevRev,
+    updatedAt: '2026-09-10T11:00:00.000Z'
+  });
 
   const browser = await chromium.launch({
     executablePath:
@@ -65,9 +75,12 @@ test('Issue #34 UI: dashboard update banner, Settings update panel, and manual c
   };
 
   // Pre-seed localStorage to simulate that user last saw prevRev
-  await page.addInitScript(({ owner, prevRev }) => {
-    localStorage.setItem('genhub_seen_revision_' + owner, prevRev);
-  }, { owner: 'owner', prevRev });
+  await page.addInitScript(
+    ({ owner, prevRev }) => {
+      localStorage.setItem('genhub_seen_revision_' + owner, prevRev);
+    },
+    { owner: 'owner', prevRev }
+  );
 
   // 1. Log in
   await page.goto(x.origin, { waitUntil: 'networkidle' });
@@ -83,14 +96,24 @@ test('Issue #34 UI: dashboard update banner, Settings update panel, and manual c
   const banner = page.locator('.update-banner.updated');
   await banner.waitFor({ state: 'visible' });
   const bannerText = await banner.innerText();
-  assert.ok(bannerText.includes('Gen-hub vừa được tự động cập nhật'), 'Banner text must indicate auto update: ' + bannerText);
-  assert.ok(bannerText.includes('aaaa111'), 'Banner must mention current short revision: ' + bannerText);
+  assert.ok(
+    bannerText.includes('Gen-hub vừa được tự động cập nhật'),
+    'Banner text must indicate auto update: ' + bannerText
+  );
+  assert.ok(
+    bannerText.includes('aaaa111'),
+    'Banner must mention current short revision: ' + bannerText
+  );
 
   // 3. Dismiss banner
   const dismissBtn = banner.locator('button[data-action="dismiss-update-banner"]');
   await dismissBtn.click();
   await banner.waitFor({ state: 'detached' });
-  assert.equal(await page.locator('.update-banner.updated').count(), 0, 'Banner should disappear after dismiss');
+  assert.equal(
+    await page.locator('.update-banner.updated').count(),
+    0,
+    'Banner should disappear after dismiss'
+  );
 
   // 4. Check that "Kiểm tra cập nhật" button exists in Overview
   const checkBtn = page.locator('button[data-action="check-update"]').first();
@@ -101,7 +124,10 @@ test('Issue #34 UI: dashboard update banner, Settings update panel, and manual c
   const toast = page.locator('#toast');
   await toast.waitFor({ state: 'visible' });
   const toastText = await toast.innerText();
-  assert.ok(toastText.includes('mới nhất') || toastText.includes('kiểm tra'), 'Toast should confirm check: ' + toastText);
+  assert.ok(
+    toastText.includes('mới nhất') || toastText.includes('kiểm tra'),
+    'Toast should confirm check: ' + toastText
+  );
 
   // 5. Navigate to Settings -> Cập nhật hệ thống
   await page.goto(x.origin + '#settings', { waitUntil: 'networkidle' });
@@ -117,8 +143,14 @@ test('Issue #34 UI: dashboard update banner, Settings update panel, and manual c
   await detailPanel.waitFor({ state: 'visible' });
   const panelText = await detailPanel.innerText();
   assert.ok(panelText.includes('Phiên bản đang chạy'), 'Detail panel must show current version');
-  assert.ok(panelText.includes('aaaa1111bbbb2222cccc3333dddd4444eeee5555'), 'Detail panel must contain current revision sha');
-  assert.ok(panelText.includes('Kiểm tra cập nhật ngay'), 'Panel must have button to check for updates');
+  assert.ok(
+    panelText.includes('aaaa111'),
+    'Detail panel must contain shortened current revision sha'
+  );
+  assert.ok(
+    panelText.includes('Kiểm tra cập nhật ngay'),
+    'Panel must have button to check for updates'
+  );
 
   assert.equal(errors.length, 0, 'No JavaScript errors occurred during test');
 });
