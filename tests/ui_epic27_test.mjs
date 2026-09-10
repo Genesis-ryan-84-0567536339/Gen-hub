@@ -264,7 +264,7 @@ test('Issue #27: real browser list/detail tabs, edits, grants, filtered activity
   await click('select:settings:security');
   await page.waitForSelector('[data-action="pin-setup"]');
   await click('select:settings:assistant');
-  await page.waitForSelector('[data-action="admin-create"]');
+  await page.waitForSelector('h2:has-text("Trợ lý AI quản trị")');
   await click('select:settings:general');
   await tab('endpoint');
   await page.waitForSelector('.entity-detail h2:has-text("Domain & endpoint")');
