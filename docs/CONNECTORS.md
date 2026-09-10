@@ -24,6 +24,7 @@ MCP tùy chỉnh: checkbox cho phép mạng riêng là quyết định của own
 - **Quét đủ tool**: Gen-hub đồng bộ danh sách tool MCP với phân trang đầy đủ (tối đa 500 trang / 10.000 tool thay vì cắt ngắn tùy tiện), đảm bảo lấy trọn vẹn danh mục từ upstream MCP server.
 - **Chủ động kiểm tra quyền token**: Khi đồng bộ (`connector_sync`), Gen-hub kiểm tra token với provider để đối chiếu quyền cần thiết cho từng tool:
   - `GitHub`: Đọc header `X-OAuth-Scopes` từ GitHub API. Nếu token thiếu scope (ví dụ chỉ có `read:user` mà thiếu `repo`), đánh dấu tool thiếu quyền cụ thể ("Thiếu quyền: cần scope repo"). Nếu dùng fine-grained PAT không trả header scope, đánh dấu trạng thái "không xác định được".
+  - `GitHub MCP (pilot)`: Endpoint MCP chính thức (`https://api.githubcopilot.com/mcp/`) lọc động danh mục tool theo token và không trả header `X-OAuth-Scopes`. Các tool lấy về thành công qua phiên MCP hợp lệ được đánh dấu `Khả dụng`. Trường hợp token có khai báo scope hoặc header `X-OAuth-Scopes`, Hub đối chiếu scope tương ứng.
   - `Google Drive`: Đối chiếu scope OAuth/token đã cấp (`drive` vs `drive.readonly`). Đánh dấu rõ các tool ghi văn bản khi token chỉ có quyền đọc.
   - `Slack`: Thăm dò scope qua `auth.test` và header `X-OAuth-Scopes`; báo rõ nếu thiếu các scope như `channels:read`, `channels:history`, hoặc `chat:write`.
   - `Telegram`: Đánh dấu khả dụng khi bot token hợp lệ qua `getMe`.
