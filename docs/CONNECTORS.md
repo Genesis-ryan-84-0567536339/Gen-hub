@@ -7,7 +7,7 @@ Mỗi bản cài dùng tài khoản và ứng dụng OAuth do owner sở hữu. 
 | Google Drive | OAuth web app, bật Drive API; scope Drive; đăng ký callback | list_files, get_file (metadata), read_file (tệp văn bản), export_file (Docs/CSV), create_file (văn bản) |
 | GitHub | OAuth app hoặc PAT có quyền repo phù hợp | search_repositories, get_file_contents, list_issues, create_issue, create_pull_request |
 | GitHub MCP (pilot) | PAT qua Bearer tới endpoint https://api.githubcopilot.com/mcp/ | Đồng bộ từ upstream MCP; issue_write được bọc an toàn thành github_issue_create, github_issue_close, github_issue_label; tích hợp github_check_status đọc trạng thái CI/GitHub Actions qua REST; tool mới chờ owner bật |
-| Gitea MCP (pilot) | PAT token gọi REST API Gitea tự host (mặc định http://gitea:3000/api/v1) | 15 tool MCP: get_file_contents, create_or_update_file, push_files, list_branches, create_branch, list_pull_requests, create_pull_request, merge_pull_request, pull_request_read, list_issues, issue_read, add_issue_comment, gitea_issue_create, gitea_issue_close, gitea_issue_label; tool mới chờ owner bật |
+| Gitea MCP (pilot) | PAT token gọi REST API Gitea tự host (mặc định http://gitea:3000/api/v1) | 58 tool MCP: tệp, repo/commit/topics, nhánh/tag, pull requests/reviews, issues/comments, nhãn (labels), milestones, releases, collaborators, tìm kiếm (search), organizations/teams, webhooks; tool mới chờ owner bật |
 | Slack | OAuth app hoặc bot token; channels:read, channels:history, chat:write; bot tham gia kênh | list_channels, read_history, post_message |
 | Telegram | BotFather bot token | get_me, get_updates, send_message |
 | Discord | Bot token, mời bot vào guild, quyền view/read/send kênh | get_me, list_guilds, get_channel_messages, create_message |
@@ -33,11 +33,19 @@ Connector `github-mcp` bổ sung tool đọc trạng thái CI / GitHub Actions t
 Connector `gitea-mcp` tích hợp phiên bản Gitea tự host (self-hosted) với mô hình quản trị công cụ và bảo mật tương tự GitHub MCP:
 - **Kiến trúc mạng & REST API**: Gitea chạy trong mạng Docker nội bộ (mặc định: `http://gitea:3000/api/v1`) hoặc URL tự cấu hình bởi owner qua giao diện cài đặt credential. Cho phép truy cập mạng riêng (`allowPrivate: true`) để giao tiếp thông suốt giữa container Hub và Gitea.
 - **Xác thực**: Sử dụng Personal Access Token (PAT) với header `Authorization: token <PAT>` hoặc `Authorization: Bearer <PAT>`. Token được mã hóa trên Hub và không bao giờ rò rỉ vào audit log.
-- **Danh mục 15 tool MCP chuẩn hóa**:
-  - *Quản lý tệp*: `get_file_contents` (tự giải mã nội dung base64 sang text UTF-8), `create_or_update_file` (tự động phát hiện SHA khi cập nhật hoặc tạo mới), `push_files` (batch commit nhiều tệp đồng thời).
-  - *Quản lý nhánh*: `list_branches` (liệt kê branch, commit id, trạng thái bảo vệ), `create_branch` (tạo branch mới từ ref nguồn).
-  - *Pull Requests*: `list_pull_requests` (lọc theo trạng thái open/closed/all), `create_pull_request`, `merge_pull_request` (hỗ trợ phương thức merge, rebase, squash), `pull_request_read`.
-  - *Issues*: `list_issues`, `issue_read`, `add_issue_comment`, `gitea_issue_create` (chỉ tiêu đề và nội dung), `gitea_issue_close` (chuyển trạng thái sang closed an toàn), `gitea_issue_label` (thay thế toàn bộ danh sách nhãn, truyền `[]` để xóa sạch).
+- **Danh mục 58 tool MCP chuẩn hóa**:
+  - *Quản lý tệp*: `get_file_contents` (tự giải mã base64 sang text UTF-8), `create_or_update_file` (tự động phát hiện SHA khi cập nhật hoặc tạo mới), `push_files` (batch commit nhiều tệp đồng thời).
+  - *Kho mã nguồn & Commits*: `get_repository`, `create_repository`, `fork_repository`, `list_commits`, `get_commit`, `list_repo_topics`, `set_repo_topics`.
+  - *Quản lý nhánh & Tag*: `list_branches` (liệt kê branch, commit id, trạng thái bảo vệ), `create_branch`, `list_tags`, `create_tag`, `delete_tag`.
+  - *Pull Requests & Reviews*: `list_pull_requests`, `create_pull_request`, `pull_request_read`, `merge_pull_request` (merge, squash, rebase), `list_pr_commits`, `list_pr_reviews`, `create_pr_review`.
+  - *Issues*: `list_issues`, `issue_read`, `add_issue_comment`, `gitea_issue_create`, `gitea_issue_close`, `gitea_issue_label` (thay thế nhãn, `[]` để xóa).
+  - *Nhãn repo (Labels)*: `list_repo_labels`, `get_repo_label`, `create_repo_label`, `update_repo_label`, `delete_repo_label`.
+  - *Milestones*: `list_milestones`, `get_milestone`, `create_milestone`, `update_milestone`, `delete_milestone`.
+  - *Releases*: `list_releases`, `get_release`, `create_release`, `delete_release`.
+  - *Collaborators*: `list_collaborators`, `check_collaborator`, `add_collaborator`, `remove_collaborator`.
+  - *Tìm kiếm*: `search_repositories`, `search_issues`, `search_users`.
+  - *Organizations & Teams*: `list_user_orgs`, `get_org`, `list_org_repos`, `list_org_teams`, `list_team_members`.
+  - *Webhooks*: `list_repo_hooks`, `get_repo_hook`, `create_repo_hook`, `delete_repo_hook`.
 - **Chính sách an toàn & phân quyền**:
   - Mọi tool mới đồng bộ đều ở trạng thái chờ owner kích hoạt (`published: false`).
   - Phân quyền mặc định là `Khả dụng` (`checkToolPermissions` trả về `ok`), tương thích hoàn toàn với mô hình cấp quyền per-agent của Gen-hub.

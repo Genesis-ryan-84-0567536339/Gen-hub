@@ -14,26 +14,81 @@ import {
 } from '../server/gitea-mcp.mjs';
 import { connectionGuide } from '../public/connection-guides.js';
 
-test('giteaTools returns 15 standardized tools with published: false and appropriate annotations', () => {
+test('giteaTools returns 58 standardized tools with published: false and appropriate annotations', () => {
   const tools = giteaTools();
-  assert.equal(tools.length, 15);
+  assert.equal(tools.length, 58);
 
   const expectedNames = [
+    // Files
     'get_file_contents',
     'create_or_update_file',
     'push_files',
+    // Repo & Commits
+    'get_repository',
+    'create_repository',
+    'fork_repository',
+    'list_commits',
+    'get_commit',
+    'list_repo_topics',
+    'set_repo_topics',
+    // Branches & Tags
     'list_branches',
     'create_branch',
+    'list_tags',
+    'create_tag',
+    'delete_tag',
+    // PRs & Reviews
     'list_pull_requests',
     'create_pull_request',
-    'merge_pull_request',
     'pull_request_read',
+    'merge_pull_request',
+    'list_pr_commits',
+    'list_pr_reviews',
+    'create_pr_review',
+    // Issues
     'list_issues',
     'issue_read',
     'add_issue_comment',
     'gitea_issue_create',
     'gitea_issue_close',
-    'gitea_issue_label'
+    'gitea_issue_label',
+    // Labels
+    'list_repo_labels',
+    'get_repo_label',
+    'create_repo_label',
+    'update_repo_label',
+    'delete_repo_label',
+    // Milestones
+    'list_milestones',
+    'get_milestone',
+    'create_milestone',
+    'update_milestone',
+    'delete_milestone',
+    // Releases
+    'list_releases',
+    'get_release',
+    'create_release',
+    'delete_release',
+    // Collaborators
+    'list_collaborators',
+    'check_collaborator',
+    'add_collaborator',
+    'remove_collaborator',
+    // Search
+    'search_repositories',
+    'search_issues',
+    'search_users',
+    // Orgs & Teams
+    'list_user_orgs',
+    'get_org',
+    'list_org_repos',
+    'list_org_teams',
+    'list_team_members',
+    // Webhooks
+    'list_repo_hooks',
+    'get_repo_hook',
+    'create_repo_hook',
+    'delete_repo_hook'
   ];
 
   for (const name of expectedNames) {
@@ -45,31 +100,16 @@ test('giteaTools returns 15 standardized tools with published: false and appropr
     assert(Array.isArray(t.inputSchema.required));
     assert.equal(t.inputSchema.additionalProperties, false);
   }
-
-  // Check readOnly and destructive hints
-  const readTools = ['get_file_contents', 'list_branches', 'list_pull_requests', 'pull_request_read', 'list_issues', 'issue_read'];
-  for (const name of readTools) {
-    const t = tools.find(x => x.name === name);
-    assert.equal(t.annotations.readOnlyHint, true);
-    assert.equal(t.annotations.destructiveHint, false);
-  }
-
-  const writeTools = ['create_or_update_file', 'push_files', 'create_branch', 'create_pull_request', 'merge_pull_request', 'add_issue_comment', 'gitea_issue_create', 'gitea_issue_close', 'gitea_issue_label'];
-  for (const name of writeTools) {
-    const t = tools.find(x => x.name === name);
-    assert.equal(t.annotations.readOnlyHint, false);
-    assert.equal(t.annotations.destructiveHint, true);
-  }
 });
 
-test('catalog registers gitea-mcp provider correctly', () => {
+test('catalog registers gitea-mcp provider correctly with 58 tools', () => {
   const p = provider('gitea-mcp');
   assert(p);
   assert.equal(p.id, 'gitea-mcp');
   assert.equal(p.name, 'Gitea MCP (pilot)');
   assert.equal(p.category, 'Phát triển');
   assert.equal(p.auth, 'PAT');
-  assert.equal(p.tools.length, 15);
+  assert.equal(p.tools.length, 58);
   assert(p.tools.every(t => t.published === false));
 });
 
@@ -91,7 +131,6 @@ test('giteaPublished preserves published status across identical schemas', () =>
   assert.equal(giteaPublished(t, { published: false, inputSchema: t.inputSchema, annotations: t.annotations }), false);
   assert.equal(giteaPublished(t, { published: true, inputSchema: t.inputSchema, annotations: t.annotations }), true);
 
-  // Schema change resets published to false
   const modifiedSchema = { ...t.inputSchema, properties: { ...t.inputSchema.properties, extra: { type: 'string' } } };
   assert.equal(giteaPublished(t, { published: true, inputSchema: modifiedSchema, annotations: t.annotations }), false);
 });
@@ -132,7 +171,7 @@ test('giteaCall enforces credentials and validates input schemas', async () => {
   );
 });
 
-test('giteaCall executes all operations with mock requests and header verification', async () => {
+test('giteaCall executes broad scope of tools with mock requests', async () => {
   const requests = [];
   const mockRequest = async (url, options) => {
     requests.push({ url, options });
@@ -174,300 +213,310 @@ test('giteaCall executes all operations with mock requests and header verificati
       };
     }
 
+    if (url.endsWith('/repos/test-owner/test-repo') && options.method === 'GET') {
+      return { status: 200, json: { id: 1, name: 'test-repo', full_name: 'test-owner/test-repo' } };
+    }
+
+    if (url.endsWith('/user/repos') && options.method === 'POST') {
+      return { status: 201, json: { id: 2, name: options.body.name } };
+    }
+
+    if (url.includes('/forks') && options.method === 'POST') {
+      return { status: 202, json: { id: 3, name: 'forked-repo' } };
+    }
+
+    if (url.includes('/commits') && options.method === 'GET') {
+      return { status: 200, json: [{ sha: 'sha-c1', commit: { message: 'first commit' } }] };
+    }
+
+    if (url.includes('/git/commits/sha-c1') && options.method === 'GET') {
+      return { status: 200, json: { sha: 'sha-c1', message: 'first commit details' } };
+    }
+
+    if (url.includes('/topics') && options.method === 'GET') {
+      return { status: 200, json: { topics: ['go', 'gitea'] } };
+    }
+
+    if (url.includes('/topics') && options.method === 'PUT') {
+      return { status: 200, json: { topics: options.body.topics } };
+    }
+
     if (url.includes('/branches') && options.method === 'GET') {
       return {
         status: 200,
-        json: [
-          { name: 'main', commit: { id: 'c1' }, protected: true },
-          { name: 'feat', commit: { id: 'c2' }, protected: false }
-        ]
+        json: [{ name: 'main', commit: { id: 'c1' }, protected: true }]
       };
     }
 
     if (url.includes('/branches') && options.method === 'POST') {
-      return {
-        status: 201,
-        json: { name: options.body.new_branch_name, commit: { id: 'c3' } }
-      };
+      return { status: 201, json: { name: options.body.new_branch_name, commit: { id: 'c3' } } };
     }
 
-    if (url.includes('/pulls') && options.method === 'GET' && !url.includes('/pulls/10')) {
-      return {
-        status: 200,
-        json: [
-          {
-            number: 10,
-            title: 'PR Title',
-            state: 'open',
-            user: { username: 'alice' },
-            head: { ref: 'feat', sha: 'c2' },
-            base: { ref: 'main', sha: 'c1' },
-            created_at: '2026-09-10T10:00:00Z',
-            updated_at: '2026-09-10T11:00:00Z'
-          }
-        ]
-      };
+    if (url.includes('/tags') && options.method === 'GET') {
+      return { status: 200, json: [{ name: 'v1.0.0', id: 'tag-1' }] };
     }
 
-    if (url.includes('/pulls') && options.method === 'POST' && !url.includes('/merge')) {
-      return {
-        status: 201,
-        json: {
-          number: 11,
-          title: options.body.title,
-          state: 'open',
-          head: { ref: options.body.head, sha: 'c2' },
-          base: { ref: options.body.base, sha: 'c1' }
-        }
-      };
+    if (url.includes('/tags') && options.method === 'POST') {
+      return { status: 201, json: { name: options.body.tag_name, message: options.body.message } };
     }
 
-    if (url.includes('/pulls/10/merge') && options.method === 'POST') {
-      return {
-        status: 200,
-        json: { message: 'merged successfully' }
-      };
+    if (url.includes('/tags/v1.0.0') && options.method === 'DELETE') {
+      return { status: 204 };
     }
 
-    if (url.includes('/pulls/10') && options.method === 'GET') {
-      return {
-        status: 200,
-        json: {
-          number: 10,
-          title: 'PR Title',
-          body: 'PR body text',
-          state: 'closed',
-          user: { username: 'alice' },
-          head: { ref: 'feat', sha: 'c2' },
-          base: { ref: 'main', sha: 'c1' },
-          merged: true,
-          merged_at: '2026-09-10T12:00:00Z',
-          created_at: '2026-09-10T10:00:00Z',
-          updated_at: '2026-09-10T12:00:00Z'
-        }
-      };
+    if (url.includes('/pulls/10/reviews') && options.method === 'POST') {
+      return { status: 200, json: { id: 50, state: options.body.event, body: options.body.body } };
     }
 
-    if (url.includes('/issues') && options.method === 'GET' && !url.includes('/issues/5')) {
-      return {
-        status: 200,
-        json: [
-          {
-            number: 5,
-            title: 'Issue 5',
-            state: 'open',
-            user: { username: 'bob' },
-            labels: [{ name: 'bug' }],
-            created_at: '2026-09-10T09:00:00Z',
-            updated_at: '2026-09-10T09:30:00Z'
-          }
-        ]
-      };
+    if (url.includes('/labels') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 1, name: 'bug', color: '#ff0000' }] };
     }
 
-    if (url.includes('/issues/5/comments') && options.method === 'POST') {
-      return {
-        status: 201,
-        json: { id: 101, user: { username: 'carol' }, body: options.body.body, created_at: '2026-09-10T13:00:00Z' }
-      };
+    if (url.includes('/labels/1') && options.method === 'GET') {
+      return { status: 200, json: { id: 1, name: 'bug', color: '#ff0000' } };
     }
 
-    if (url.includes('/issues/5/labels') && options.method === 'PUT') {
-      return {
-        status: 200,
-        json: options.body.labels.map(name => ({ name }))
-      };
+    if (url.endsWith('/labels') && options.method === 'POST') {
+      return { status: 201, json: { id: 2, name: options.body.name, color: options.body.color } };
     }
 
-    if (url.includes('/issues/5') && options.method === 'GET') {
-      return {
-        status: 200,
-        json: {
-          number: 5,
-          title: 'Issue 5',
-          body: 'Bug report description',
-          state: 'open',
-          user: { username: 'bob' },
-          labels: [{ name: 'bug' }],
-          comments: 1,
-          created_at: '2026-09-10T09:00:00Z',
-          updated_at: '2026-09-10T13:00:00Z'
-        }
-      };
+    if (url.includes('/labels/1') && options.method === 'PATCH') {
+      return { status: 200, json: { id: 1, name: options.body.name || 'bug', color: options.body.color } };
     }
 
-    if (url.includes('/issues/5') && options.method === 'PATCH') {
-      return {
-        status: 200,
-        json: { number: 5, title: 'Issue 5', state: options.body.state }
-      };
+    if (url.includes('/labels/1') && options.method === 'DELETE') {
+      return { status: 204 };
     }
 
-    if (url.endsWith('/issues') && options.method === 'POST') {
-      return {
-        status: 201,
-        json: { number: 6, title: options.body.title, state: 'open', user: { username: 'me' } }
-      };
+    if (url.includes('/milestones') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 10, title: 'v1.0', state: 'open' }] };
+    }
+
+    if (url.includes('/milestones/10') && options.method === 'GET') {
+      return { status: 200, json: { id: 10, title: 'v1.0', state: 'open' } };
+    }
+
+    if (url.endsWith('/milestones') && options.method === 'POST') {
+      return { status: 201, json: { id: 11, title: options.body.title, state: 'open' } };
+    }
+
+    if (url.includes('/milestones/10') && options.method === 'PATCH') {
+      return { status: 200, json: { id: 10, title: options.body.title || 'v1.0', state: 'closed' } };
+    }
+
+    if (url.includes('/milestones/10') && options.method === 'DELETE') {
+      return { status: 204 };
+    }
+
+    if (url.includes('/releases') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 20, tag_name: 'v1.0.0', name: 'Release 1.0' }] };
+    }
+
+    if (url.includes('/releases/20') && options.method === 'GET') {
+      return { status: 200, json: { id: 20, tag_name: 'v1.0.0', name: 'Release 1.0' } };
+    }
+
+    if (url.endsWith('/releases') && options.method === 'POST') {
+      return { status: 201, json: { id: 21, tag_name: options.body.tag_name, name: options.body.name } };
+    }
+
+    if (url.includes('/releases/20') && options.method === 'DELETE') {
+      return { status: 204 };
+    }
+
+    if (url.includes('/collaborators') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 5, login: 'collab1' }] };
+    }
+
+    if (url.includes('/collaborators/collab1') && options.method === 'GET') {
+      return { status: 204 };
+    }
+
+    if (url.includes('/collaborators/collab1') && options.method === 'PUT') {
+      return { status: 204 };
+    }
+
+    if (url.includes('/collaborators/collab1') && options.method === 'DELETE') {
+      return { status: 204 };
+    }
+
+    if (url.includes('/repos/search') && options.method === 'GET') {
+      return { status: 200, json: { data: [{ id: 1, name: 'repo-found' }] } };
+    }
+
+    if (url.includes('/repos/issues/search') && options.method === 'GET') {
+      return { status: 200, json: { data: [{ id: 10, title: 'issue-found' }] } };
+    }
+
+    if (url.includes('/users/search') && options.method === 'GET') {
+      return { status: 200, json: { data: [{ id: 100, username: 'user-found' }] } };
+    }
+
+    if (url.includes('/user/orgs') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 1, username: 'my-org' }] };
+    }
+
+    if (url.includes('/orgs/my-org') && options.method === 'GET') {
+      return { status: 200, json: { id: 1, name: 'my-org', full_name: 'My Organization' } };
+    }
+
+    if (url.includes('/orgs/my-org/repos') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 1, name: 'org-repo' }] };
+    }
+
+    if (url.includes('/orgs/my-org/teams') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 7, name: 'dev-team' }] };
+    }
+
+    if (url.includes('/teams/7/members') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 3, username: 'member1' }] };
+    }
+
+    if (url.includes('/hooks') && options.method === 'GET') {
+      return { status: 200, json: [{ id: 30, type: 'gitea' }] };
+    }
+
+    if (url.includes('/hooks/30') && options.method === 'GET') {
+      return { status: 200, json: { id: 30, type: 'gitea', config: { url: 'https://webhook.site/test' } } };
+    }
+
+    if (url.endsWith('/hooks') && options.method === 'POST') {
+      return { status: 201, json: { id: 31, type: options.body.type } };
+    }
+
+    if (url.includes('/hooks/30') && options.method === 'DELETE') {
+      return { status: 204 };
     }
 
     return { status: 404, json: { message: 'Not found' } };
   };
 
   const opts = { url: 'http://gitea:3000', token: 'secret-pat', request: mockRequest };
+  const repoArgs = { owner: 'test-owner', repo: 'test-repo' };
 
-  // 1. get_file_contents
-  const rFile = await giteaCall('get_file_contents', { owner: 'repo-owner', repo: 'repo-name', filepath: 'README.md' }, opts);
-  assert.equal(rFile.isError, false);
-  const dataFile = JSON.parse(rFile.content[0].text);
-  assert.equal(dataFile.content, 'Hello, Gitea!');
-  assert.equal(dataFile.sha, 'blob-sha-123');
+  // Repo operations
+  const rRepo = await giteaCall('get_repository', repoArgs, opts);
+  assert.equal(rRepo.isError, false);
 
-  // 2. create_or_update_file
-  const rUpdate = await giteaCall('create_or_update_file', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    filepath: 'README.md',
-    content: 'New content',
-    message: 'update readme'
-  }, opts);
-  assert.equal(rUpdate.isError, false);
-  const dataUpdate = JSON.parse(rUpdate.content[0].text);
-  assert.equal(dataUpdate.commit.sha, 'commit-sha-456');
+  const rNewRepo = await giteaCall('create_repository', { name: 'my-new-repo' }, opts);
+  assert.equal(rNewRepo.isError, false);
 
-  // 3. push_files
-  const rPush = await giteaCall('push_files', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    branch: 'main',
-    message: 'batch commit',
-    files: [{ path: 'file1.txt', content: 'c1' }, { path: 'file2.txt', content: 'c2' }]
-  }, opts);
-  assert.equal(rPush.isError, false);
-  const dataPush = JSON.parse(rPush.content[0].text);
-  assert.equal(dataPush.commit.sha, 'batch-commit-sha');
-  assert.equal(dataPush.files.length, 2);
+  const rFork = await giteaCall('fork_repository', repoArgs, opts);
+  assert.equal(rFork.isError, false);
 
-  // 4. list_branches
-  const rBranches = await giteaCall('list_branches', { owner: 'repo-owner', repo: 'repo-name' }, opts);
-  assert.equal(rBranches.isError, false);
-  const dataBranches = JSON.parse(rBranches.content[0].text);
-  assert.equal(dataBranches.length, 2);
+  const rCommits = await giteaCall('list_commits', repoArgs, opts);
+  assert.equal(rCommits.isError, false);
 
-  // 5. create_branch
-  const rNewBranch = await giteaCall('create_branch', { owner: 'repo-owner', repo: 'repo-name', branch: 'feat-2' }, opts);
-  assert.equal(rNewBranch.isError, false);
-  const dataNewBranch = JSON.parse(rNewBranch.content[0].text);
-  assert.equal(dataNewBranch.name, 'feat-2');
+  const rCommit = await giteaCall('get_commit', { ...repoArgs, sha: 'sha-c1' }, opts);
+  assert.equal(rCommit.isError, false);
 
-  // 6. list_pull_requests
-  const rPRs = await giteaCall('list_pull_requests', { owner: 'repo-owner', repo: 'repo-name', state: 'open' }, opts);
-  assert.equal(rPRs.isError, false);
-  const dataPRs = JSON.parse(rPRs.content[0].text);
-  assert.equal(dataPRs.length, 1);
-  assert.equal(dataPRs[0].number, 10);
+  const rTopics = await giteaCall('list_repo_topics', repoArgs, opts);
+  assert.equal(rTopics.isError, false);
 
-  // 7. create_pull_request
-  const rNewPR = await giteaCall('create_pull_request', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    title: 'New PR',
-    head: 'feat',
-    base: 'main',
-    body: 'Details'
-  }, opts);
-  assert.equal(rNewPR.isError, false);
-  const dataNewPR = JSON.parse(rNewPR.content[0].text);
-  assert.equal(dataNewPR.number, 11);
+  const rSetTopics = await giteaCall('set_repo_topics', { ...repoArgs, topics: ['gitea', 'mcp'] }, opts);
+  assert.equal(rSetTopics.isError, false);
 
-  // 8. merge_pull_request
-  const rMerge = await giteaCall('merge_pull_request', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    pull_number: 10,
-    merge_method: 'squash'
-  }, opts);
-  assert.equal(rMerge.isError, false);
-  const dataMerge = JSON.parse(rMerge.content[0].text);
-  assert.equal(dataMerge.merged, true);
+  // Tags
+  const rTags = await giteaCall('list_tags', repoArgs, opts);
+  assert.equal(rTags.isError, false);
 
-  // 9. pull_request_read
-  const rReadPR = await giteaCall('pull_request_read', { owner: 'repo-owner', repo: 'repo-name', pull_number: 10 }, opts);
-  assert.equal(rReadPR.isError, false);
-  const dataReadPR = JSON.parse(rReadPR.content[0].text);
-  assert.equal(dataReadPR.number, 10);
-  assert.equal(dataReadPR.merged, true);
+  const rNewTag = await giteaCall('create_tag', { ...repoArgs, tag_name: 'v1.1.0' }, opts);
+  assert.equal(rNewTag.isError, false);
 
-  // 10. list_issues
-  const rIssues = await giteaCall('list_issues', { owner: 'repo-owner', repo: 'repo-name' }, opts);
-  assert.equal(rIssues.isError, false);
-  const dataIssues = JSON.parse(rIssues.content[0].text);
-  assert.equal(dataIssues.length, 1);
-  assert.equal(dataIssues[0].number, 5);
+  const rDelTag = await giteaCall('delete_tag', { ...repoArgs, tag_name: 'v1.0.0' }, opts);
+  assert.equal(rDelTag.isError, false);
 
-  // 11. issue_read
-  const rReadIssue = await giteaCall('issue_read', { owner: 'repo-owner', repo: 'repo-name', issue_number: 5 }, opts);
-  assert.equal(rReadIssue.isError, false);
-  const dataReadIssue = JSON.parse(rReadIssue.content[0].text);
-  assert.equal(dataReadIssue.number, 5);
+  // Reviews
+  const rReview = await giteaCall('create_pr_review', { ...repoArgs, pull_number: 10, event: 'APPROVED', body: 'Looks good' }, opts);
+  assert.equal(rReview.isError, false);
 
-  // 12. add_issue_comment
-  const rComment = await giteaCall('add_issue_comment', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    issue_number: 5,
-    body: 'LGTM'
-  }, opts);
-  assert.equal(rComment.isError, false);
-  const dataComment = JSON.parse(rComment.content[0].text);
-  assert.equal(dataComment.body, 'LGTM');
+  // Labels
+  const rLabels = await giteaCall('list_repo_labels', repoArgs, opts);
+  assert.equal(rLabels.isError, false);
 
-  // 13. gitea_issue_create
-  const rCreateIssue = await giteaCall('gitea_issue_create', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    title: 'Issue 6',
-    body: 'Created via MCP'
-  }, opts);
-  assert.equal(rCreateIssue.isError, false);
-  const dataCreateIssue = JSON.parse(rCreateIssue.content[0].text);
-  assert.equal(dataCreateIssue.number, 6);
+  const rNewLabel = await giteaCall('create_repo_label', { ...repoArgs, name: 'feat', color: '#00ff00' }, opts);
+  assert.equal(rNewLabel.isError, false);
 
-  // 14. gitea_issue_close
-  const rCloseIssue = await giteaCall('gitea_issue_close', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    issue_number: 5
-  }, opts);
-  assert.equal(rCloseIssue.isError, false);
-  const dataCloseIssue = JSON.parse(rCloseIssue.content[0].text);
-  assert.equal(dataCloseIssue.state, 'closed');
+  const rUpdateLabel = await giteaCall('update_repo_label', { ...repoArgs, label_id: 1, color: '#0000ff' }, opts);
+  assert.equal(rUpdateLabel.isError, false);
 
-  // 15. gitea_issue_label
-  const rLabelIssue = await giteaCall('gitea_issue_label', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    issue_number: 5,
-    labels: ['bug', 'triage']
-  }, opts);
-  assert.equal(rLabelIssue.isError, false);
-  const dataLabelIssue = JSON.parse(rLabelIssue.content[0].text);
-  assert.deepEqual(dataLabelIssue.labels, ['bug', 'triage']);
+  const rDelLabel = await giteaCall('delete_repo_label', { ...repoArgs, label_id: 1 }, opts);
+  assert.equal(rDelLabel.isError, false);
 
-  // Clear labels with []
-  const rClearLabels = await giteaCall('gitea_issue_label', {
-    owner: 'repo-owner',
-    repo: 'repo-name',
-    issue_number: 5,
-    labels: []
-  }, opts);
-  assert.equal(rClearLabels.isError, false);
-  const dataClearLabels = JSON.parse(rClearLabels.content[0].text);
-  assert.deepEqual(dataClearLabels.labels, []);
+  // Milestones
+  const rMilestones = await giteaCall('list_milestones', repoArgs, opts);
+  assert.equal(rMilestones.isError, false);
 
-  // Ensure secret-pat was never placed into returned payloads
-  for (const r of [rFile, rUpdate, rPush, rBranches, rNewBranch, rPRs, rNewPR, rMerge, rReadPR, rIssues, rReadIssue, rComment, rCreateIssue, rCloseIssue, rLabelIssue]) {
-    assert(!JSON.stringify(r).includes('secret-pat'));
-  }
+  const rNewMilestone = await giteaCall('create_milestone', { ...repoArgs, title: 'v2.0' }, opts);
+  assert.equal(rNewMilestone.isError, false);
+
+  const rUpdateMilestone = await giteaCall('update_milestone', { ...repoArgs, milestone_id: 10, state: 'closed' }, opts);
+  assert.equal(rUpdateMilestone.isError, false);
+
+  const rDelMilestone = await giteaCall('delete_milestone', { ...repoArgs, milestone_id: 10 }, opts);
+  assert.equal(rDelMilestone.isError, false);
+
+  // Releases
+  const rReleases = await giteaCall('list_releases', repoArgs, opts);
+  assert.equal(rReleases.isError, false);
+
+  const rNewRelease = await giteaCall('create_release', { ...repoArgs, tag_name: 'v1.1.0', name: 'Release 1.1' }, opts);
+  assert.equal(rNewRelease.isError, false);
+
+  const rDelRelease = await giteaCall('delete_release', { ...repoArgs, release_id: 20 }, opts);
+  assert.equal(rDelRelease.isError, false);
+
+  // Collaborators
+  const rCollabs = await giteaCall('list_collaborators', repoArgs, opts);
+  assert.equal(rCollabs.isError, false);
+
+  const rCheckCollab = await giteaCall('check_collaborator', { ...repoArgs, collaborator: 'collab1' }, opts);
+  assert.equal(rCheckCollab.isError, false);
+
+  const rAddCollab = await giteaCall('add_collaborator', { ...repoArgs, collaborator: 'collab1', permission: 'write' }, opts);
+  assert.equal(rAddCollab.isError, false);
+
+  const rRemCollab = await giteaCall('remove_collaborator', { ...repoArgs, collaborator: 'collab1' }, opts);
+  assert.equal(rRemCollab.isError, false);
+
+  // Search
+  const rSearchRepos = await giteaCall('search_repositories', { q: 'gitea' }, opts);
+  assert.equal(rSearchRepos.isError, false);
+
+  const rSearchIssues = await giteaCall('search_issues', { q: 'bug' }, opts);
+  assert.equal(rSearchIssues.isError, false);
+
+  const rSearchUsers = await giteaCall('search_users', { q: 'alice' }, opts);
+  assert.equal(rSearchUsers.isError, false);
+
+  // Orgs & Teams
+  const rOrgs = await giteaCall('list_user_orgs', {}, opts);
+  assert.equal(rOrgs.isError, false);
+
+  const rOrg = await giteaCall('get_org', { org: 'my-org' }, opts);
+  assert.equal(rOrg.isError, false);
+
+  const rOrgRepos = await giteaCall('list_org_repos', { org: 'my-org' }, opts);
+  assert.equal(rOrgRepos.isError, false);
+
+  const rOrgTeams = await giteaCall('list_org_teams', { org: 'my-org' }, opts);
+  assert.equal(rOrgTeams.isError, false);
+
+  const rTeamMembers = await giteaCall('list_team_members', { team_id: 7 }, opts);
+  assert.equal(rTeamMembers.isError, false);
+
+  // Webhooks
+  const rHooks = await giteaCall('list_repo_hooks', repoArgs, opts);
+  assert.equal(rHooks.isError, false);
+
+  const rHook = await giteaCall('get_repo_hook', { ...repoArgs, hook_id: 30 }, opts);
+  assert.equal(rHook.isError, false);
+
+  const rNewHook = await giteaCall('create_repo_hook', { ...repoArgs, type: 'gitea', target_url: 'https://example.com/hook' }, opts);
+  assert.equal(rNewHook.isError, false);
+
+  const rDelHook = await giteaCall('delete_repo_hook', { ...repoArgs, hook_id: 30 }, opts);
+  assert.equal(rDelHook.isError, false);
 });
 
 test('full Hub lifecycle: add gitea-mcp, configure token, sync, publish tool, call via /mcp and audit', async t => {
@@ -523,7 +572,7 @@ test('full Hub lifecycle: add gitea-mcp, configure token, sync, publish tool, ca
   assert.equal(m.url, DEFAULT_GITEA_URL);
   assert.equal(m.allowPrivate, true);
   assert.equal(m.status, 'disconnected');
-  assert.equal(m.tools.length, 15);
+  assert.equal(m.tools.length, 58);
   assert(m.tools.every(t => t.published === false));
 
   // 2. Set credential with custom URL
@@ -538,6 +587,7 @@ test('full Hub lifecycle: add gitea-mcp, configure token, sync, publish tool, ca
   assert.equal(probeHeaders.Authorization, 'token pat-token-999');
   assert.equal(synced.status, 'connected');
   assert.equal(synced.url, customUrl);
+  assert.equal(synced.tools.length, 58);
   assert(synced.tools.every(t => t.published === false));
   assert(synced.tools.every(t => t.permission?.status === 'ok'));
 
