@@ -4,21 +4,22 @@ import { createHash } from 'node:crypto';
 import { id, prefixedId, openStore } from '../server/store.mjs';
 import { fixture } from './helpers.mjs';
 
-test('Issue #40: id() and prefixedId() generate type-prefixed IDs with high entropy and no double underscores', () => {
+test('Issue #40: id() and prefixedId() generate type-prefixed IDs with 5 random digits', () => {
   assert.equal(typeof id(), 'string');
-  assert.equal(id().length, 24);
+  assert.equal(id().length, 5);
+  assert(/^\d{5}$/.test(id()));
   assert.equal(prefixedId, id);
 
   for (const type of ['agent', 'vault', 'mcp', 'flow', 'token', 'client', 'code', 'admin', 'doctor']) {
     for (let i = 0; i < 50; i++) {
       const generated = id(type);
       assert(
-        generated.startsWith(type + '_'),
-        `Expected ${generated} to start with ${type}_`
+        generated.startsWith(type + '-'),
+        `Expected ${generated} to start with ${type}-`
       );
-      assert.equal(generated.length, type.length + 1 + 24);
+      assert.equal(generated.length, type.length + 1 + 5);
       assert(
-        /^[a-z]+_[A-Za-z0-9_-]{24}$/.test(generated),
+        new RegExp(`^${type}-[0-9]{5}$`).test(generated),
         `Generated ID ${generated} should match standard prefixed format`
       );
       // Double underscore must never occur anywhere in the ID
@@ -39,7 +40,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(mcpRes.status, 201);
   const mid = mcpRes.data.id;
-  assert.match(mid, /^mcp_[A-Za-z0-9_-]{24}$/);
+  assert.match(mid, /^mcp-[0-9]{5}$/);
 
   // 2. Vault secret creation
   const vaultRes = await x.call('/api/vault', 'POST', {
@@ -49,7 +50,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(vaultRes.status, 201);
   const vid = vaultRes.data.id;
-  assert.match(vid, /^vault_[A-Za-z0-9_-]{24}$/);
+  assert.match(vid, /^vault-[0-9]{5}$/);
 
   // 3. Agent creation
   const agentRes = await x.call('/api/agents', 'POST', {
@@ -58,8 +59,8 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(agentRes.status, 201);
   const aid = agentRes.data.id;
-  assert.match(aid, /^agent_[A-Za-z0-9_-]{24}$/);
-  assert.match(agentRes.data.token, /^token_[A-Za-z0-9_-]{48}$/);
+  assert.match(aid, /^agent-[0-9]{5}$/);
+  assert.match(agentRes.data.token, /^token-[0-9]{10}$/);
 
   // 4. OAuth Client Registration
   const clientRes = await x.call('/oauth/register', 'POST', {
@@ -69,7 +70,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   });
   assert.equal(clientRes.status, 201);
   const cid = clientRes.data.client_id;
-  assert.match(cid, /^client_[A-Za-z0-9_-]{24}$/);
+  assert.match(cid, /^client-[0-9]{5}$/);
 
   // 5. OAuth Flow Authorization
   const verifier = 'v'.repeat(43);
@@ -86,7 +87,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   const authRedirect = await x.call('/oauth/authorize?' + authQuery);
   assert.equal(authRedirect.status, 302);
   const fid = authRedirect.headers.get('location').split('/').at(-1);
-  assert.match(fid, /^flow_[A-Za-z0-9_-]{24}$/);
+  assert.match(fid, /^flow-[0-9]{5}$/);
 
   // 6. OAuth Consent -> Code -> Token Exchange
   const consentRes = await x.call('/api/flows/' + fid, 'POST', {
@@ -96,7 +97,7 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
   assert.equal(consentRes.status, 200);
   const redirectUrl = new URL(consentRes.data.redirect);
   const code = redirectUrl.searchParams.get('code');
-  assert.match(code, /^code_[A-Za-z0-9_-]{48}$/);
+  assert.match(code, /^code-[0-9]{10}$/);
 
   const tokenRes = await x.call('/oauth/token', 'POST', {
     grant_type: 'authorization_code',
@@ -107,16 +108,16 @@ test('Issue #40: real Hub entities (agent, mcp, vault, OAuth, admin) are created
     code_verifier: verifier
   });
   assert.equal(tokenRes.status, 200);
-  assert.match(tokenRes.data.access_token, /^token_[A-Za-z0-9_-]{48}$/);
-  assert.match(tokenRes.data.refresh_token, /^refresh_[A-Za-z0-9_-]{48}$/);
+  assert.match(tokenRes.data.access_token, /^token-[0-9]{10}$/);
+  assert.match(tokenRes.data.refresh_token, /^refresh-[0-9]{10}$/);
 
   // 7. Admin Assistant creation
   const adminRes = await x.call('/api/admin-assistant', 'POST', {
     password: 'owner-password-123'
   });
   assert.equal(adminRes.status, 201);
-  assert.match(adminRes.data.id, /^admin_[A-Za-z0-9_-]{24}$/);
-  assert.match(adminRes.data.token, /^gh_admin_[A-Za-z0-9_-]{48}$/);
+  assert.match(adminRes.data.id, /^admin-[0-9]{5}$/);
+  assert.match(adminRes.data.token, /^gh_admin_[0-9]{10}$/);
 
   // Verify all entity IDs pass admin tool id validation regex /^[A-Za-z0-9_-]{1,100}$/
   for (const entityId of [mid, vid, aid, cid, fid, adminRes.data.id]) {

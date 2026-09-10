@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from 'n
 import { join } from 'node:path';
 import {
   randomBytes,
+  randomInt,
   createCipheriv,
   createDecipheriv,
   createHash,
@@ -10,10 +11,8 @@ import {
   timingSafeEqual
 } from 'node:crypto';
 export const id = type => {
-  let rand = randomBytes(18).toString('base64url');
-  if (type && rand.startsWith('_')) rand = '-' + rand.slice(1);
-  while (rand.includes('__')) rand = rand.replace('__', '-_');
-  return (type ? `${type}_` : '') + rand;
+  const num = randomInt(0, 100000).toString().padStart(5, '0');
+  return type ? `${type}-${num}` : num;
 };
 export const prefixedId = id;
 export const digest = v => createHash('sha256').update(v).digest('hex');

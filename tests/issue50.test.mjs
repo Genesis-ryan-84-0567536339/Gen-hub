@@ -165,12 +165,12 @@ test('Issue #50: migrateIds migrates legacy unprefixed IDs, updates cross-refere
   const newFlowId = result.mappings.flow[legacyFlowId];
   const newAdminId = result.mappings.admin[legacyAdminId];
 
-  assert.match(newAgentId, /^agent_[A-Za-z0-9_-]{24}$/);
-  assert.match(newMcpId, /^mcp_[A-Za-z0-9_-]{24}$/);
-  assert.match(newVaultId, /^vault_[A-Za-z0-9_-]{24}$/);
-  assert.match(newClientId, /^client_[A-Za-z0-9_-]{24}$/);
-  assert.match(newFlowId, /^flow_[A-Za-z0-9_-]{24}$/);
-  assert.match(newAdminId, /^admin_[A-Za-z0-9_-]{24}$/);
+  assert.match(newAgentId, /^agent-[0-9]{5}$/);
+  assert.match(newMcpId, /^mcp-[0-9]{5}$/);
+  assert.match(newVaultId, /^vault-[0-9]{5}$/);
+  assert.match(newClientId, /^client-[0-9]{5}$/);
+  assert.match(newFlowId, /^flow-[0-9]{5}$/);
+  assert.match(newAdminId, /^admin-[0-9]{5}$/);
 
   // 4. Verify old keys deleted and new keys present in store
   assert.equal(x.hub.store.get('agent', legacyAgentId), null);

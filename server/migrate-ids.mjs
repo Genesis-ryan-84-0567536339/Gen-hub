@@ -2,8 +2,11 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { id, openStore } from './store.mjs';
 
+const isStandard = (kind, val) =>
+  typeof val === 'string' && new RegExp(`^${kind}-[0-9]{5}$`).test(val);
+
 /**
- * Migrate legacy IDs (unprefixed) to standard prefixed IDs (Issue #40, #50).
+ * Migrate legacy IDs (unprefixed or old base64 format) to standard 5-digit format `type-NNNNN` (Issue #40, #50).
  * Runs atomically in a single store transaction.
  *
  * @param {object} store - openStore instance
@@ -20,12 +23,23 @@ export function migrateIds(store) {
       admin: {}
     };
 
-    // 1. MCP connectors: migrate if id does not start with 'mcp_'
+    function generateId(kind) {
+      let newId;
+      do {
+        newId = id(kind);
+      } while (
+        store.get(kind, newId) ||
+        Object.values(mappings[kind] || {}).includes(newId)
+      );
+      return newId;
+    }
+
+    // 1. MCP connectors: migrate if id does not match mcp-NNNNN
     const mcps = store.list('mcp');
     for (const m of mcps) {
-      if (!m.id.startsWith('mcp_')) {
+      if (!isStandard('mcp', m.id)) {
         const oldId = m.id;
-        const newId = id('mcp');
+        const newId = generateId('mcp');
         mappings.mcp[oldId] = newId;
         store.del('mcp', oldId);
         m.id = newId;
@@ -33,12 +47,12 @@ export function migrateIds(store) {
       }
     }
 
-    // 2. Vault secrets: migrate if id does not start with 'vault_'
+    // 2. Vault secrets: migrate if id does not match vault-NNNNN
     const vaults = store.list('vault');
     for (const v of vaults) {
-      if (!v.id.startsWith('vault_')) {
+      if (!isStandard('vault', v.id)) {
         const oldId = v.id;
-        const newId = id('vault');
+        const newId = generateId('vault');
         mappings.vault[oldId] = newId;
         store.del('vault', oldId);
         v.id = newId;
@@ -46,12 +60,12 @@ export function migrateIds(store) {
       }
     }
 
-    // 3. OAuth Clients: migrate if id does not start with 'client_'
+    // 3. OAuth Clients: migrate if id does not match client-NNNNN
     const clients = store.list('client');
     for (const c of clients) {
-      if (!c.id.startsWith('client_')) {
+      if (!isStandard('client', c.id)) {
         const oldId = c.id;
-        const newId = id('client');
+        const newId = generateId('client');
         mappings.client[oldId] = newId;
         store.del('client', oldId);
         c.id = newId;
@@ -60,7 +74,7 @@ export function migrateIds(store) {
       }
     }
 
-    // 4. OAuth Flows: migrate if id does not start with 'flow_' and update client_id
+    // 4. OAuth Flows: migrate if id does not match flow-NNNNN and update client_id
     const flows = store.list('flow');
     for (const f of flows) {
       let changed = false;
@@ -68,9 +82,9 @@ export function migrateIds(store) {
         f.client_id = mappings.client[f.client_id];
         changed = true;
       }
-      if (!f.id.startsWith('flow_')) {
+      if (!isStandard('flow', f.id)) {
         const oldId = f.id;
-        const newId = id('flow');
+        const newId = generateId('flow');
         mappings.flow[oldId] = newId;
         store.del('flow', oldId);
         f.id = newId;
@@ -80,7 +94,7 @@ export function migrateIds(store) {
       }
     }
 
-    // 5. Agents: migrate if id does not start with 'agent_'
+    // 5. Agents: migrate if id does not match agent-NNNNN
     // Also update all permissions referencing migrated mcps (mid:tool) and vaults (vault:vid)
     // Also update client references
     const agents = store.list('agent');
@@ -112,9 +126,9 @@ export function migrateIds(store) {
         a.permissions = updatedPermissions;
       }
 
-      if (!a.id.startsWith('agent_')) {
+      if (!isStandard('agent', a.id)) {
         const oldId = a.id;
-        const newId = id('agent');
+        const newId = generateId('agent');
         mappings.agent[oldId] = newId;
         store.del('agent', oldId);
         a.id = newId;
@@ -170,9 +184,9 @@ export function migrateIds(store) {
 
     // 9. Admin Assistant: migrate record.id in 'admin-assistant'
     const adminRecord = store.get('admin-assistant', 'main');
-    if (adminRecord?.id && !adminRecord.id.startsWith('admin_')) {
+    if (adminRecord?.id && !isStandard('admin', adminRecord.id)) {
       const oldId = adminRecord.id;
-      const newId = id('admin');
+      const newId = generateId('admin');
       mappings.admin[oldId] = newId;
       adminRecord.id = newId;
       store.put('admin-assistant', 'main', adminRecord);
@@ -180,9 +194,9 @@ export function migrateIds(store) {
     // Also check any direct records in 'admin' kind
     const admins = store.list('admin');
     for (const adm of admins) {
-      if (!adm.id.startsWith('admin_')) {
+      if (!isStandard('admin', adm.id)) {
         const oldId = adm.id;
-        const newId = id('admin');
+        const newId = generateId('admin');
         mappings.admin[oldId] = newId;
         store.del('admin', oldId);
         adm.id = newId;
