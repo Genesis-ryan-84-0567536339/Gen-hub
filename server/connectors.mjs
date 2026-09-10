@@ -522,10 +522,19 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
     sync,
     call: async (m, t, a) => {
       if (isMcp(m)) {
-        const params = m.provider === 'github-mcp' ? githubCall(t, a) : { name: t, arguments: a };
+        if (m.provider === 'github-mcp') {
+          const c = await credential(m);
+          const token = c.access_token || c.token;
+          const res = await githubCall(t, a, { token, request: doRequest });
+          if (res?.content) return res;
+          return withSession(
+            m,
+            async session => (await rpc(m, 'tools/call', res, session)).result
+          );
+        }
         return withSession(
           m,
-          async session => (await rpc(m, 'tools/call', params, session)).result
+          async session => (await rpc(m, 'tools/call', { name: t, arguments: a }, session)).result
         );
       }
       return {

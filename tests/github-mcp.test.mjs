@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { fixture } from './helpers.mjs';
 import { connectorService } from '../server/connectors.mjs';
 import { provider } from '../server/catalog.mjs';
-import { GITHUB_MCP_URL, githubTools, githubCall } from '../server/github-mcp.mjs';
+import { GITHUB_MCP_URL, githubTools, githubCall, checkStatusTool, githubCheckStatus } from '../server/github-mcp.mjs';
+import { checkToolPermissions } from '../server/connectors.mjs';
 import { connectionGuide } from '../public/connection-guides.js';
 
 const upstream = () => [
@@ -126,6 +127,8 @@ test('issue wrappers construct fixed payloads and reject privilege escalation wi
   drift[0].inputSchema.properties.method.enum = ['create'];
   assert.throws(() => githubTools(drift), /Schema/);
   assert.throws(() => githubTools([...upstream(), { name: 'github_issue_close' }]), /trùng/);
+  assert.throws(() => githubTools([...upstream(), { name: 'github_check_status' }]), /trùng/);
+  assert(githubTools(upstream().slice(1)).some(t => t.name === 'github_check_status'));
 });
 
 test('official connector pins endpoint and token transport, preserves MCP errors and never retries writes', async () => {
@@ -135,7 +138,7 @@ test('official connector pins endpoint and token transport, preserves MCP errors
     { mcpRequest: wire.request }
   );
   const m = { provider: 'github-mcp', url: GITHUB_MCP_URL, auth: 'token', secret: true };
-  assert.equal((await service.sync(m)).length, 8);
+  assert.equal((await service.sync(m)).length, 9);
   assert(wire.requests.every(r => r.options.headers.Authorization === 'Bearer synthetic-pat'));
   const merge = { ...args, pullNumber: 4, expectedHeadSha: 'a'.repeat(40) };
   await service.call(m, 'merge_pull_request', merge);
@@ -313,4 +316,234 @@ test('catalog and connection guide distinguish REST and token-only MCP pilot', (
   const guide = connectionGuide('github-mcp');
   assert(guide.steps.some(s => s.includes(GITHUB_MCP_URL)));
   assert(guide.note.includes('owner'));
+});
+
+test('github_check_status: validates input, calls GitHub REST, reduces check-runs output, preserves security and passes tool permissions', async t => {
+  // 1. Tool definition & Schema checks
+  assert.equal(checkStatusTool.name, 'github_check_status');
+  assert.equal(checkStatusTool.annotations.readOnlyHint, true);
+  assert.equal(checkStatusTool.annotations.destructiveHint, false);
+  assert.equal(checkStatusTool.annotations.openWorldHint, true);
+  assert.equal(checkStatusTool.published, false);
+  assert.deepEqual(checkStatusTool.inputSchema.required, ['owner', 'repo', 'ref']);
+
+  // 2. Input validation
+  const token = 'ghp_test_secret_pat_9876543210';
+  await assert.rejects(() => githubCheckStatus({ repo: 'r', ref: 'main' }, { token }), /Thiếu tham số owner/);
+  await assert.rejects(() => githubCheckStatus({ owner: 'o', ref: 'main' }, { token }), /Thiếu tham số repo/);
+  await assert.rejects(() => githubCheckStatus({ owner: 'o', repo: 'r' }, { token }), /Thiếu tham số ref/);
+  await assert.rejects(() => githubCheckStatus({ owner: '  ', repo: 'r', ref: 'main' }, { token }), /owner không được rỗng/);
+  await assert.rejects(() => githubCheckStatus({ owner: 'o', repo: '', ref: 'main' }, { token }), /repo không được rỗng/);
+  await assert.rejects(() => githubCheckStatus({ owner: 'o', repo: 'r', ref: '   ' }, { token }), /ref không được rỗng/);
+  await assert.rejects(() => githubCheckStatus({ owner: 'o', repo: 'r', ref: 'main', extra: 1 }, { token }), /Tham số không hỗ trợ/);
+  await assert.rejects(() => githubCheckStatus({ owner: 'o', repo: 'r', ref: 'main' }, {}), /credential/);
+
+  // 3. Mock REST call and Output reduction
+  let requestedUrl = null;
+  let requestedOptions = null;
+  const mockGithubResponse = {
+    total_count: 2,
+    check_runs: [
+      {
+        id: 42,
+        head_sha: '1234567890abcdef',
+        name: 'build-test',
+        status: 'completed',
+        conclusion: 'success',
+        details_url: 'https://github.com/o/r/runs/42',
+        output: { title: 'Passed', summary: 'All 50 tests passed' },
+        started_at: '2026-09-10T00:00:00Z',
+        completed_at: '2026-09-10T00:01:00Z'
+      },
+      {
+        id: 43,
+        head_sha: '1234567890abcdef',
+        name: 'lint',
+        status: 'in_progress',
+        conclusion: null,
+        details_url: 'https://github.com/o/r/runs/43',
+        started_at: '2026-09-10T00:01:00Z'
+      }
+    ]
+  };
+
+  const mockRequest = async (url, options) => {
+    requestedUrl = url;
+    requestedOptions = options;
+    return {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      json: mockGithubResponse
+    };
+  };
+
+  const result = await githubCall(
+    'github_check_status',
+    { owner: 'my-org', repo: 'my-repo', ref: 'epic/ci-status' },
+    { token, request: mockRequest }
+  );
+
+  assert.equal(
+    requestedUrl,
+    'https://api.github.com/repos/my-org/my-repo/commits/epic%2Fci-status/check-runs'
+  );
+  assert.equal(requestedOptions.method, 'GET');
+  assert.equal(requestedOptions.headers.Authorization, 'Bearer ' + token);
+  assert.equal(requestedOptions.headers.Accept, 'application/vnd.github+json');
+  assert.equal(requestedOptions.headers['X-GitHub-Api-Version'], '2022-11-28');
+
+  // Verify reduced output
+  assert.equal(result.isError, false);
+  const runs = JSON.parse(result.content[0].text);
+  assert.deepEqual(runs, [
+    { name: 'build-test', status: 'completed', conclusion: 'success' },
+    { name: 'lint', status: 'in_progress', conclusion: null }
+  ]);
+
+  // Verify secret token is NOT leaked in output
+  assert(!JSON.stringify(result).includes(token));
+  assert(!result.content[0].text.includes('42'));
+  assert(!result.content[0].text.includes('details_url'));
+
+  // 4. REST Error handling
+  await assert.rejects(
+    () =>
+      githubCall(
+        'github_check_status',
+        { owner: 'o', repo: 'r', ref: 'm' },
+        {
+          token,
+          request: async () => ({ status: 401, headers: {} })
+        }
+      ),
+    e => e.status === 401
+  );
+  await assert.rejects(
+    () =>
+      githubCall(
+        'github_check_status',
+        { owner: 'o', repo: 'r', ref: 'm' },
+        {
+          token,
+          request: async () => ({ status: 403, headers: {} })
+        }
+      ),
+    e => e.status === 403
+  );
+  await assert.rejects(
+    () =>
+      githubCall(
+        'github_check_status',
+        { owner: 'o', repo: 'r', ref: 'm' },
+        {
+          token,
+          request: async () => ({ status: 500, headers: {} })
+        }
+      ),
+    e => e.status === 502
+  );
+
+  // 5. checkToolPermissions marks github_check_status as 'ok' by default
+  const permissionEvaluated = checkToolPermissions({ provider: 'github-mcp' }, [checkStatusTool]);
+  assert.equal(permissionEvaluated[0].permission.status, 'ok');
+  assert.equal(permissionEvaluated[0].permission.reason, 'Khả dụng');
+
+  // 6. Integration via connectorService: calls REST directly, does NOT forward to upstream MCP
+  const wire = transport();
+  let restCalled = false;
+  const service = connectorService(
+    { unseal: () => ({ token }) },
+    {
+      mcpRequest: wire.request,
+      serviceRequest: async (url, options) => {
+        restCalled = true;
+        return mockRequest(url, options);
+      }
+    }
+  );
+  const m = { provider: 'github-mcp', url: GITHUB_MCP_URL, auth: 'token', secret: true };
+  const serviceOut = await service.call(m, 'github_check_status', {
+    owner: 'my-org',
+    repo: 'my-repo',
+    ref: 'main'
+  });
+  assert.equal(restCalled, true);
+  assert.equal(wire.calls.length, 0); // Upstream MCP tools/call was NOT invoked
+  assert.deepEqual(JSON.parse(serviceOut.content[0].text), [
+    { name: 'build-test', status: 'completed', conclusion: 'success' },
+    { name: 'lint', status: 'in_progress', conclusion: null }
+  ]);
+
+  // 7. Real Hub route execution (/mcp tools/call) and Audit log verification
+  let hubRestCalled = false;
+  let hubService;
+  const x = await fixture(t, {
+    sync: m => hubService.sync(m),
+    call: (m, n, a) => hubService.call(m, n, a)
+  });
+  hubService = connectorService(x.hub.store, {
+    mcpRequest: wire.request,
+    serviceRequest: async (url, options) => {
+      hubRestCalled = true;
+      return mockRequest(url, options);
+    }
+  });
+
+  const admin = (
+    await x.call('/api/admin-assistant', 'POST', { password: 'owner-password-123' })
+  ).data;
+  const adminCall = async (name, input) => {
+    const r = await x.call(
+      '/mcp/admin',
+      'POST',
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: input } },
+      { Authorization: 'Bearer ' + admin.token }
+    );
+    assert.equal(r.data.result.isError, false);
+    return JSON.parse(r.data.result.content[0].text);
+  };
+
+  const ghMcp = await adminCall('connector_add', { provider: 'github-mcp' });
+  await adminCall('connector_set_token', { id: ghMcp.id, token });
+  await adminCall('connector_update', {
+    id: ghMcp.id,
+    published: ['github_check_status']
+  });
+
+  const agent = await adminCall('agent_create', {
+    name: 'ci-watcher',
+    permissions: [ghMcp.id + ':github_check_status']
+  });
+
+  const agentRpc = (method, params = {}) =>
+    x.call(
+      '/mcp',
+      'POST',
+      { jsonrpc: '2.0', id: 1, method, params },
+      { Authorization: 'Bearer ' + agent.token }
+    );
+
+  const toolsList = (await agentRpc('tools/list')).data.result.tools;
+  assert.deepEqual(
+    toolsList.map(t => t.name),
+    [ghMcp.id + '__github_check_status']
+  );
+
+  const callRes = await agentRpc('tools/call', {
+    name: ghMcp.id + '__github_check_status',
+    arguments: { owner: 'my-org', repo: 'my-repo', ref: 'main' }
+  });
+  assert.equal(callRes.status, 200);
+  assert.equal(callRes.data.result.isError, false);
+  assert.equal(hubRestCalled, true);
+  const checkRunsOut = JSON.parse(callRes.data.result.content[0].text);
+  assert.equal(checkRunsOut.length, 2);
+
+  // Check audit log
+  const logs = (await x.call('/api/logs')).data;
+  const checkLog = logs.find(l => l.tool === 'github_check_status');
+  assert.ok(checkLog, 'Audit log for github_check_status must exist');
+  assert.equal(checkLog.status, 'success');
+  assert.equal(checkLog.actor, agent.id);
+  assert(!JSON.stringify(logs).includes(token), 'Audit logs must NOT leak the PAT token');
 });

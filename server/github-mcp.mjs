@@ -1,4 +1,4 @@
-import { HubError, assertSchema } from './net.mjs';
+import { HubError, assertSchema, request } from './net.mjs';
 
 export const GITHUB_MCP_URL = 'https://api.githubcopilot.com/mcp/';
 export const isMcp = m => ['remote', 'github-mcp'].includes(m.provider);
@@ -41,8 +41,58 @@ const wrappers = [
   )
 ];
 
+export const checkStatusTool = {
+  name: 'github_check_status',
+  description: 'Đọc trạng thái CI / GitHub Actions check-runs của commit hoặc branch.',
+  inputSchema: {
+    type: 'object',
+    properties: { ...repo, ref: string },
+    required: ['owner', 'repo', 'ref'],
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+  published: false
+};
+
+export async function githubCheckStatus(args, { token, request: doRequest = request } = {}) {
+  if (!token) throw new HubError('MCP chưa có credential', 401);
+  assertSchema(checkStatusTool.inputSchema, args);
+  for (const key of ['owner', 'repo', 'ref']) {
+    if (typeof args[key] !== 'string' || !args[key].trim())
+      throw new HubError(key + ' không được rỗng');
+  }
+  const enc = encodeURIComponent;
+  const url = `https://api.github.com/repos/${enc(args.owner.trim())}/${enc(args.repo.trim())}/commits/${enc(args.ref.trim())}/check-runs`;
+  const headers = {
+    Authorization: 'Bearer ' + token,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+  const r = await doRequest(url, { headers, method: 'GET' });
+  if (r.status !== undefined) {
+    if (r.status === 401) throw new HubError('MCP yêu cầu xác thực lại', 401);
+    if (r.status < 200 || r.status >= 300)
+      throw new HubError('GitHub API trả HTTP ' + r.status, r.status === 403 ? 403 : 502);
+  }
+  const data = r.json ?? (r.text ? JSON.parse(r.text) : r);
+  const checkRuns = Array.isArray(data?.check_runs) ? data.check_runs : [];
+  const runs = checkRuns.map(c => ({
+    name: c.name,
+    status: c.status,
+    conclusion: c.conclusion ?? null
+  }));
+  return {
+    content: [{ type: 'text', text: JSON.stringify(runs) }],
+    isError: false
+  };
+}
+
 export function githubTools(tools) {
-  if (tools.some(t => wrappers.some(w => w.tool.name === t.name)))
+  if (
+    tools.some(
+      t => t.name === checkStatusTool.name || wrappers.some(w => w.tool.name === t.name)
+    )
+  )
     throw new HubError('GitHub MCP trùng tên wrapper của Hub', 502);
   const upstream = tools.find(t => t.name === 'issue_write');
   const result = tools.filter(t => t.name !== 'issue_write');
@@ -59,10 +109,14 @@ export function githubTools(tools) {
       result.push(structuredClone(tool));
     }
   }
+  result.push(structuredClone(checkStatusTool));
   return result;
 }
 
-export function githubCall(name, args) {
+export function githubCall(name, args, { token, request: doRequest = request } = {}) {
+  if (name === 'github_check_status') {
+    return githubCheckStatus(args, { token, request: doRequest });
+  }
   if (name === 'issue_write') throw new HubError('Dùng wrapper issue riêng của Gen-hub', 403);
   const w = wrappers.find(w => w.tool.name === name);
   if (!w) return { name, arguments: args };
