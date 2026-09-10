@@ -37,8 +37,8 @@ export function authService(store, origin) {
     return { cookie: cookie(raw, 43200), csrf: s.csrf };
   }
   function issue(agent, client, resource) {
-    const access = id() + id(),
-      refresh = id() + id();
+    const access = id('token') + id(),
+      refresh = id('refresh') + id();
     const t = {
       id: digest(access),
       agent,
@@ -100,7 +100,7 @@ export function authService(store, origin) {
     }
     if (b.token_endpoint_auth_method && !['none'].includes(b.token_endpoint_auth_method))
       throw new HubError('Dùng token_endpoint_auth_method=none và PKCE');
-    const cid = id();
+    const cid = id('client');
     const c = {
       id: cid,
       client_id: cid,
@@ -126,7 +126,7 @@ export function authService(store, origin) {
       (q.scope && q.scope !== 'mcp')
     )
       throw new HubError('Yêu cầu code + PKCE S256 + resource MCP hợp lệ');
-    const fid = id();
+    const fid = id('flow');
     store.put('flow', fid, {
       ...q,
       id: fid,
@@ -150,8 +150,8 @@ export function authService(store, origin) {
         redirect.searchParams.set('error', 'access_denied');
         return redirect.href;
       }
-      const agentId = id(),
-        code = id() + id();
+      const agentId = id('agent'),
+        code = id('code') + id();
       store.put('agent', agentId, {
         id: agentId,
         name: name || f.name,

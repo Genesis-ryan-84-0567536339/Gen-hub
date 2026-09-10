@@ -77,7 +77,7 @@ export function vaultService(store) {
     return store.tx(() => {
       const now = new Date().toISOString();
       const record = {
-        id: id(),
+        id: id('vault'),
         name: name(b.name),
         notes: optionalNotes(b.notes),
         secret: seal(b.secret),

@@ -249,7 +249,7 @@ export function adminAssistant(store, origin, execute) {
         throw new HubError('Thu hồi token hiện tại trước khi tạo token mới', 409);
       const token = 'gh_admin_' + id() + id();
       const record = {
-        id: id(),
+        id: id('admin'),
         hash: digest(token),
         created: new Date().toISOString(),
         lastUsed: null
