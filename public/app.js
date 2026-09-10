@@ -242,6 +242,7 @@ function toast(message) {
 }
 function login(error = '') {
   close();
+  renderChat();
   $('#app').innerHTML =
     `<main class="loginwrap"><div class="loginbrand"><span class="brandmark">g</span>gen-hub</div><section class="card cardpad"><h1>Chào mừng trở lại</h1><p class="subtitle">Đăng nhập để quản lý không gian công cụ.</p><form id="login" style="margin-top:28px"><label class="field">Tài khoản owner<input class="input" name="username" autocomplete="username" required autofocus></label><label class="field">Mật khẩu<input class="input" name="password" type="password" autocomplete="current-password" required></label><p class="errorline" id="login-error">${esc(error)}</p><button class="btn primary" type="submit" style="width:100%">Đăng nhập</button></form><p class="footnote">Tài khoản được tạo trong bước cài đặt trên terminal.</p></section></main>`;
 }
@@ -274,6 +275,227 @@ async function refresh() {
   if (route === 'kanban') await loadKanban();
   activity = new Map();
   render();
+  renderChat();
+}
+let chatOpen = false,
+  chatMessages = [],
+  chatLoading = false;
+
+function executeClientTool(name, args = {}) {
+  if (name === 'navigate') {
+    const routeTarget = String(args.route || '').trim();
+    if (
+      !/^(overview|mcps|agents|vault|audit|kanban|settings)(:([a-zA-Z0-9_-]{1,64}))?$/.test(
+        routeTarget
+      )
+    ) {
+      console.warn('Blocked invalid navigation route:', routeTarget);
+      return;
+    }
+    const [base, sub] = routeTarget.split(':');
+    if (sub && base === 'settings') {
+      selected.settings = sub;
+    } else if (sub && (base === 'mcps' || base === 'agents' || base === 'vault')) {
+      selected[base] = sub;
+    }
+    location.hash = routeTarget;
+  } else if (name === 'open_modal') {
+    const kind = String(args.kind || '').trim();
+    const id = args.id ? String(args.id).trim() : undefined;
+    const allowedModals = [
+      'add',
+      'connect',
+      'onboard',
+      'credential',
+      'password',
+      'pin-setup',
+      'admin-create',
+      'vault-new',
+      'vault-edit'
+    ];
+    if (!allowedModals.includes(kind)) {
+      console.warn('Blocked disallowed modal kind:', kind);
+      return;
+    }
+    if (id && !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) {
+      console.warn('Blocked invalid modal id:', id);
+      return;
+    }
+    if (/^(do-|delete|remove|disconnect|revoke|reveal)/i.test(kind)) {
+      console.warn('Safety blocked destructive action in chat tool:', kind);
+      return;
+    }
+    act(kind, id ? [id] : []);
+  } else if (name === 'highlight') {
+    const selector = String(args.selector || '').trim();
+    if (!selector || selector.length > 120) return;
+    if (/<|>|javascript:|expression\(|url\(|data:/i.test(selector)) return;
+    const applyHighlight = () => {
+      try {
+        const elements = document.querySelectorAll(selector);
+        if (elements && elements.length > 0) {
+          elements.forEach(el => {
+            el.classList.add('chat-highlight-pulse');
+            setTimeout(() => el.classList.remove('chat-highlight-pulse'), 4000);
+          });
+          elements[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      } catch (err) {
+        console.warn('Invalid selector for highlight:', selector, err);
+      }
+    };
+    applyHighlight();
+    setTimeout(applyHighlight, 120);
+  }
+}
+
+function formatChatMarkdown(text) {
+  return esc(text)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\n/g, '<br>');
+}
+
+function renderToolBadges(toolCalls) {
+  if (!Array.isArray(toolCalls) || !toolCalls.length) return '';
+  return toolCalls
+    .map(tc => {
+      if (tc.name === 'navigate') {
+        return `<div class="chat-action-badge">${I('arrow')} Đã chuyển tới: <code>${esc(tc.arguments?.route)}</code></div>`;
+      }
+      if (tc.name === 'open_modal') {
+        return `<div class="chat-action-badge">${I('plug')} Đã mở: <code>${esc(tc.arguments?.kind)}</code></div>`;
+      }
+      if (tc.name === 'highlight') {
+        return `<div class="chat-action-badge">${I('shield')} Đã khoanh vùng: <code>${esc(tc.arguments?.selector)}</code></div>`;
+      }
+      return '';
+    })
+    .join('');
+}
+
+function renderChat() {
+  const dock = $('#chat-dock');
+  if (!dock) return;
+  if (!state) {
+    dock.classList.add('hidden');
+    return;
+  }
+  dock.classList.remove('hidden');
+
+  if (!chatOpen) {
+    dock.className = 'chat-dock closed';
+    dock.innerHTML = `<button type="button" class="chat-toggle-btn" data-action="chat-toggle" aria-label="Mở Trợ lý Gen-hub" title="Trợ lý ảo Gen-hub">${I('bot')}</button>`;
+    return;
+  }
+
+  dock.className = 'chat-dock open';
+  const isConfigured = !!state.llm?.configured;
+  const subtitle = isConfigured
+    ? `${esc(state.llm.provider)} · ${esc(state.llm.model)}`
+    : 'Chưa cấu hình LLM';
+
+  let bodyContent = '';
+  if (!isConfigured) {
+    bodyContent = `<div class="chat-unconfigured">
+      <div class="avatar-bot" style="width:40px;height:40px;border-radius:10px;background:var(--accent);color:#14201e;display:grid;place-items:center;margin:0 auto 12px">${I('bot')}</div>
+      <h3>Chưa cấu hình LLM</h3>
+      <p>Trợ lý cần kết nối OpenAI, Anthropic, Gemini hoặc Ollama để định hướng và khoanh vùng giao diện.</p>
+      <button type="button" class="btn primary small" data-action="chat-go-settings">Cấu hình ngay trong Cài đặt</button>
+    </div>`;
+  } else if (chatMessages.length === 0) {
+    bodyContent = `<div class="chat-welcome">
+      <div class="inline" style="gap:8px;margin-bottom:8px">
+        <div class="avatar-bot" style="width:26px;height:26px;border-radius:6px;background:var(--accent);color:#14201e;display:grid;place-items:center">${I('bot')}</div>
+        <strong>Xin chào!</strong>
+      </div>
+      <p>Tôi có thể giúp bạn điều hướng các trang, tìm kiếm MCP, mở tính năng hoặc hướng dẫn thao tác trên Gen-hub.</p>
+      <div class="chat-chips">
+        <button type="button" class="chat-chip" data-action="chat-quick:Dẫn tôi đến trang MCP & kết nối">Quản lý MCP</button>
+        <button type="button" class="chat-chip" data-action="chat-quick:Làm sao để kết nối Agent mới?">Kết nối Agent</button>
+        <button type="button" class="chat-chip" data-action="chat-quick:Dẫn tôi đến Cài đặt bảo mật">Cài đặt bảo mật</button>
+        <button type="button" class="chat-chip" data-action="chat-quick:Đi tới trang Nhật ký hoạt động">Xem nhật ký</button>
+      </div>
+    </div>`;
+  } else {
+    bodyContent = chatMessages
+      .map(m => {
+        if (m.role === 'user') {
+          return `<div class="chat-msg user"><div class="chat-bubble">${esc(m.content)}</div></div>`;
+        }
+        return `<div class="chat-msg assistant">
+          <div class="chat-bubble">
+            <div>${formatChatMarkdown(m.content)}</div>
+            ${renderToolBadges(m.tool_calls)}
+          </div>
+        </div>`;
+      })
+      .join('');
+
+    if (chatLoading) {
+      bodyContent += `<div class="chat-msg assistant loading"><div class="chat-bubble"><span class="dot"></span> Trợ lý đang xử lý…</div></div>`;
+    }
+  }
+
+  dock.innerHTML = `<div class="chat-panel" role="region" aria-label="Khung chat trợ lý">
+    <div class="chat-head">
+      <div class="chat-head-title">
+        <span class="avatar-bot">${I('bot')}</span>
+        <div>
+          <span>Trợ lý Gen-hub</span>
+          <span class="chat-head-sub">${subtitle}</span>
+        </div>
+      </div>
+      <div class="chat-head-actions">
+        ${chatMessages.length ? `<button type="button" class="iconbutton" data-action="chat-clear" aria-label="Xóa lịch sử chat" title="Xóa lịch sử">${I('refresh')}</button>` : ''}
+        <button type="button" class="iconbutton" data-action="chat-toggle" aria-label="Thu nhỏ chat" title="Thu nhỏ">${I('close')}</button>
+      </div>
+    </div>
+    <div class="chat-body" id="chat-body">${bodyContent}</div>
+    <div class="chat-foot">
+      <form class="chat-form" id="chat-form">
+        <input type="text" id="chat-input" class="input" placeholder="${isConfigured ? 'Hỏi hoặc yêu cầu điều hướng…' : 'Cần cấu hình LLM trước khi chat'}" ${!isConfigured || chatLoading ? 'disabled' : ''} autocomplete="off">
+        <button type="submit" class="btn primary" aria-label="Gửi" ${!isConfigured || chatLoading ? 'disabled' : ''}>${I('arrow')}</button>
+      </form>
+    </div>
+  </div>`;
+
+  const body = dock.querySelector('#chat-body');
+  if (body) body.scrollTop = body.scrollHeight;
+}
+
+async function sendChatMessage(text) {
+  if (!text || !text.trim() || chatLoading) return;
+  const userMsg = { role: 'user', content: text.trim() };
+  chatMessages.push(userMsg);
+  chatLoading = true;
+  renderChat();
+
+  try {
+    const res = await api('chat', 'POST', {
+      messages: chatMessages.slice(-15),
+      currentRoute: route
+    });
+
+    if (res.message) {
+      chatMessages.push(res.message);
+      if (Array.isArray(res.message.tool_calls)) {
+        for (const tc of res.message.tool_calls) {
+          executeClientTool(tc.name, tc.arguments);
+        }
+      }
+    }
+  } catch (err) {
+    chatMessages.push({
+      role: 'assistant',
+      content: 'Lỗi: ' + (err.message || 'Không thể liên lạc với trợ lý'),
+      tool_calls: []
+    });
+  } finally {
+    chatLoading = false;
+    renderChat();
+  }
 }
 async function boot() {
   try {
@@ -768,10 +990,43 @@ function systemUpdatesSettings() {
 
   return `<h2>Cập nhật hệ thống</h2><p class="footnote">Gen-hub tự động kiểm tra định kỳ mỗi 30 phút và tự cập nhật khi commit mới trên main đã qua CI.</p><div style="margin:16px 0">${statusBadge}</div><div class="divider"></div><div class="detailgrid"><div><dt>Phiên bản đang chạy</dt><dd>${u.updatedAt ? esc('v' + formatVersion(u.updatedAt)) + ' · ' : ''}<code title="${esc(u.revision || '')}">${esc(shortCur)}</code></dd></div><div><dt>Cập nhật lần gần nhất</dt><dd>${esc(curDateStr)}</dd></div><div><dt>Kiểm tra GitHub gần nhất</dt><dd>${esc(checkedDateStr)}</dd></div><div><dt>Bản mới nhất trên main</dt><dd>${u.latestRevision ? `<code title="${esc(u.latestRevision)}">${esc(shortLatest)}</code>` : '—'}</dd></div></div>${u.latestCommitMessage ? `<div style="margin-bottom:18px"><p class="footnote" style="margin-bottom:4px">Thông điệp commit mới nhất trên GitHub:</p><blockquote style="margin:0;padding:8px 12px;background:#f7faf7;border-left:3px solid #28754f;border-radius:4px;font-size:12px">${esc(u.latestCommitMessage)}</blockquote></div>` : ''}${u.error ? `<p class="errorline" style="margin-bottom:18px">${esc(u.error)}</p>` : ''}${u.nextRetryAt ? `<p class="footnote">Thử lại từ: ${date(u.nextRetryAt)}</p>` : ''}<div class="actions" style="margin-top:20px">${btn('Kiểm tra cập nhật ngay', 'check-update', 'primary', 'refresh')}</div>`;
 }
+function llmSettings() {
+  const cfg = state.llm || {};
+  return `<h2>Trợ lý chat & LLM (BYOC)</h2>
+    <p class="footnote" style="margin-bottom:20px">Kết nối mô hình ngôn ngữ lớn để trợ lý có thể trả lời câu hỏi, định hướng các trang và khoanh vùng tính năng trực quan. Khóa API được mã hóa an toàn trên máy chủ Gen-hub, không bao giờ gửi về trình duyệt hay xuất hiện trong nhật ký.</p>
+    <form id="llm-config">
+      <label class="field">Nhà cung cấp (Provider)
+        <select name="provider" id="llm-provider" required>
+          <option value="openai" ${cfg.provider === 'openai' ? 'selected' : ''}>OpenAI / Tương thích OpenAI</option>
+          <option value="anthropic" ${cfg.provider === 'anthropic' ? 'selected' : ''}>Anthropic Claude</option>
+          <option value="gemini" ${cfg.provider === 'gemini' ? 'selected' : ''}>Google Gemini</option>
+          <option value="ollama" ${cfg.provider === 'ollama' ? 'selected' : ''}>Ollama (Local)</option>
+        </select>
+      </label>
+      <label class="field">Mô hình (Model)
+        <input class="input" name="model" id="llm-model" value="${esc(cfg.model || '')}" placeholder="vd: gpt-4o, claude-3-5-sonnet-20241022, gemini-1.5-flash, llama3.2" required maxlength="100">
+        <small>Tên model do nhà cung cấp hỗ trợ.</small>
+      </label>
+      <label class="field">Base URL (tùy chọn)
+        <input class="input" name="baseUrl" id="llm-baseurl" value="${esc(cfg.baseUrl || '')}" placeholder="Mặc định theo provider hoặc http://localhost:11434" maxlength="256">
+        <small>Để trống nếu dùng endpoint mặc định. Với Ollama, nhập http://localhost:11434.</small>
+      </label>
+      <label class="field">Khóa API (API Key)
+        <input class="input" type="password" name="apiKey" id="llm-apikey" autocomplete="new-password" placeholder="${cfg.hasKey ? 'Đã lưu API key (để trống nếu không đổi)' : 'Nhập API key của bạn'}">
+        <small>${cfg.hasKey ? 'API key đang được mã hóa an toàn. Chỉ nhập nếu muốn thay đổi key mới.' : 'Bắt buộc với OpenAI, Anthropic, Gemini. Không bắt buộc với Ollama.'}</small>
+      </label>
+      <div class="actions" style="margin-top:24px">
+        <button class="btn primary" type="submit">Lưu cấu hình LLM</button>
+        <button class="btn" type="button" data-action="llm-test">${I('refresh')} Kiểm tra kết nối</button>
+      </div>
+    </form>
+    ${cfg.configured ? `<div class="divider"></div><p class="footnote">Trạng thái: <strong>Đã cấu hình</strong> (${esc(cfg.provider)} · ${esc(cfg.model)})${cfg.updatedAt ? ` · Cập nhật: ${date(cfg.updatedAt)}` : ''}</p>` : ''}`;
+}
 function settings() {
   const groups = [
     ['general', 'Không gian cá nhân'],
     ['security', 'Bảo mật'],
+    ['llm', 'Trợ lý chat & LLM'],
     ['assistant', 'Trợ lý quản trị'],
     ['updates', 'Cập nhật hệ thống']
   ];
@@ -787,10 +1042,12 @@ function settings() {
   const content =
     group === 'security'
       ? `<h2>Bảo mật</h2><p class="footnote">Agent mới luôn cần owner duyệt. Credential được mã hóa tại Hub.</p><div class="divider"></div>${btn('Đổi mật khẩu owner', 'password', '', 'lock')}${pinSettings()}`
-      : group === 'assistant'
-        ? adminAssistantSettings()
-        : group === 'updates'
-          ? systemUpdatesSettings()
+      : group === 'llm'
+        ? llmSettings()
+        : group === 'assistant'
+          ? adminAssistantSettings()
+          : group === 'updates'
+            ? systemUpdatesSettings()
           : tab === 'endpoint'
             ? `<h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code>`
             : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
@@ -1387,6 +1644,61 @@ async function act(action, args) {
     );
     return;
   }
+  if (action === 'llm-test') {
+    const form = $('#llm-config');
+    const provider = form?.querySelector('[name="provider"]')?.value || state.llm?.provider;
+    const model = form?.querySelector('[name="model"]')?.value || state.llm?.model;
+    const baseUrl = form?.querySelector('[name="baseUrl"]')?.value || state.llm?.baseUrl;
+    const apiKey = form?.querySelector('[name="apiKey"]')?.value || '';
+    toast('Đang kiểm tra kết nối với LLM…');
+    try {
+      const res = await api('llm/test', 'POST', { provider, model, baseUrl, apiKey });
+      if (res.ok) {
+        toast(res.message || 'Kết nối LLM thành công!');
+      } else {
+        toast('Lỗi kết nối: ' + (res.error || 'Không thành công'));
+      }
+    } catch (err) {
+      toast('Lỗi kết nối: ' + err.message);
+    }
+    return;
+  }
+  if (action === 'chat-toggle') {
+    chatOpen = !chatOpen;
+    renderChat();
+    if (chatOpen) {
+      setTimeout(() => {
+        const input = $('#chat-input');
+        if (input && !input.disabled) input.focus();
+        const body = $('#chat-body');
+        if (body) body.scrollTop = body.scrollHeight;
+      }, 50);
+    }
+    return;
+  }
+  if (action === 'chat-clear') {
+    chatMessages = [];
+    renderChat();
+    return;
+  }
+  if (action === 'chat-quick') {
+    const text = args.join(':');
+    if (text) sendChatMessage(text);
+    return;
+  }
+  if (action === 'chat-go-settings') {
+    selected.settings = 'llm';
+    location.hash = 'settings';
+    render();
+    setTimeout(() => {
+      const form = $('#llm-config');
+      if (form) {
+        form.classList.add('chat-highlight-pulse');
+        setTimeout(() => form.classList.remove('chat-highlight-pulse'), 4000);
+      }
+    }, 100);
+    return;
+  }
 }
 document.addEventListener('click', async e => {
   if (notifOpen && !e.target.closest('.notif-wrapper')) {
@@ -1561,6 +1873,25 @@ document.addEventListener('submit', async e => {
       close();
       login();
       toast('Đã đổi mật khẩu, hãy đăng nhập lại');
+    }
+    if (f.id === 'llm-config') {
+      const data = {
+        provider: b.provider,
+        model: b.model.trim(),
+        baseUrl: b.baseUrl ? b.baseUrl.trim() : '',
+        ...(b.apiKey ? { apiKey: b.apiKey.trim() } : {})
+      };
+      await api('llm', 'PATCH', data);
+      await refresh();
+      toast('Đã lưu cấu hình LLM trợ lý');
+    }
+    if (f.id === 'chat-form') {
+      const input = $('#chat-input');
+      if (input && input.value.trim()) {
+        const text = input.value.trim();
+        input.value = '';
+        sendChatMessage(text);
+      }
     }
   } catch (err) {
     if (f.id === 'login') $('#login-error').textContent = err.message;

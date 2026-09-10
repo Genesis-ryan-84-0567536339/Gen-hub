@@ -1,0 +1,497 @@
+import { HubError } from './net.mjs';
+import { redact } from './store.mjs';
+import { filterValidToolCalls } from './chat-validator.mjs';
+
+export const CHAT_TOOLS_OPENAI = [
+  {
+    type: 'function',
+    function: {
+      name: 'navigate',
+      description: 'Điều hướng giao diện SPA tới một trang hoặc mục cụ thể trong Gen-hub',
+      parameters: {
+        type: 'object',
+        properties: {
+          route: {
+            type: 'string',
+            description:
+              'Tên trang hoặc mục (overview, mcps, agents, vault, audit, kanban, settings, mcps:<id>, agents:<id>, settings:security, settings:assistant, settings:llm)'
+          }
+        },
+        required: ['route'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'open_modal',
+      description:
+        'Mở hộp thoại giao diện để hỗ trợ owner thực hiện thao tác (chỉ mở form, không tự động xác nhận)',
+      parameters: {
+        type: 'object',
+        properties: {
+          kind: {
+            type: 'string',
+            description:
+              'Loại modal: add (thêm MCP), connect (kết nối agent), onboard (hướng dẫn), credential (kết nối MCP), password (đổi mật khẩu), pin-setup (đặt PIN), admin-create (tạo admin token), vault-new (thêm secret), vault-edit (sửa secret)'
+          },
+          id: {
+            type: 'string',
+            description: 'ID đối tượng liên quan nếu cần (ví dụ MCP id hoặc secret id)'
+          }
+        },
+        required: ['kind'],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'highlight',
+      description:
+        'Khoanh vùng và làm nổi bật (pulse/outline) phần tử UI trên màn hình để hướng dẫn trực quan cho owner',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: {
+            type: 'string',
+            description:
+              'CSS selector của phần tử cần khoanh vùng (ví dụ: [data-action="add"], #search, nav a[href="#mcps"])'
+          }
+        },
+        required: ['selector'],
+        additionalProperties: false
+      }
+    }
+  }
+];
+
+export const CHAT_TOOLS_ANTHROPIC = CHAT_TOOLS_OPENAI.map(t => ({
+  name: t.function.name,
+  description: t.function.description,
+  input_schema: t.function.parameters
+}));
+
+export const CHAT_TOOLS_GEMINI = CHAT_TOOLS_OPENAI.map(t => ({
+  name: t.function.name,
+  description: t.function.description,
+  parameters: t.function.parameters
+}));
+
+function buildSystemPrompt(store, currentRoute) {
+  const mcps =
+    store
+      .list('mcp')
+      .map(m => `${m.name} [id:${m.id}, trạng thái:${m.status}]`)
+      .join('; ') || 'Chưa có MCP';
+  const agents =
+    store
+      .list('agent')
+      .map(a => `${a.name} [id:${a.id}, trạng thái:${a.status}]`)
+      .join('; ') || 'Chưa có agent';
+  const secrets =
+    store
+      .list('vault')
+      .map(v => `${v.name} [id:${v.id}]`)
+      .join('; ') || 'Không có secret';
+
+  return `Bạn là Trợ lý giao diện thông minh của Gen-hub, hỗ trợ chủ sở hữu (owner) điều hướng và sử dụng hệ thống.
+Thông tin hệ thống hiện tại:
+- Trang hiện tại: ${currentRoute || 'overview'}
+- Danh sách MCP: ${mcps}
+- Danh sách Agent: ${agents}
+- Danh sách Secret trong Vault: ${secrets}
+
+Các trang có sẵn trong hệ thống:
+- overview: Tổng quan kết nối, thống kê hoạt động, endpoint
+- mcps: Quản lý MCP & kết nối (thêm MCP, kết nối dịch vụ, xem và công bố tool)
+- agents: Quản lý Agent & quyền (kết nối agent, cấp quyền tool, thu hồi)
+- vault: Kho bí mật (quản lý secret, phân quyền đọc cho agent)
+- audit: Nhật ký hoạt động (lịch sử gọi tool, chi tiết input/output)
+- kanban: Bảng Kanban quản lý công việc từ GitHub issue
+- settings: Cài đặt (cài đặt chung, bảo mật PIN, trợ lý quản trị, LLM trợ lý, cập nhật)
+
+Bạn có 3 công cụ:
+1. navigate(route): Điều hướng người dùng tới trang hoặc mục phù hợp.
+2. open_modal(kind, id): Mở hộp thoại chức năng để hỗ trợ (add, connect, onboard, credential, password, pin-setup, admin-create, vault-new, vault-edit). TUYỆT ĐỐI không thể thực hiện các thao tác xác nhận hay xóa dữ liệu.
+3. highlight(selector): Khoanh vùng phần tử UI liên quan trên trang để người dùng dễ nhìn thấy.
+
+Nguyên tắc an toàn:
+- Luôn giải thích rõ ràng, ngắn gọn bằng tiếng Việt.
+- Khi người dùng muốn xem hoặc thao tác gì, hãy dùng công cụ navigate và highlight để dẫn đường và làm nổi bật nút bấm/khu vực cần thao tác.
+- Tuyệt đối không giả mạo hành động xác nhận của người dùng.`;
+}
+
+export function createChatService(store, origin) {
+  const kind = 'llm';
+
+  function getConfig() {
+    const record = store.get(kind, 'config');
+    return {
+      configured: !!record?.configured,
+      provider: record?.provider || '',
+      model: record?.model || '',
+      baseUrl: record?.baseUrl || '',
+      hasKey: !!record?.sealedKey,
+      updatedAt: record?.updatedAt || null
+    };
+  }
+
+  function getInternalConfig() {
+    const record = store.get(kind, 'config');
+    if (!record || !record.configured) return null;
+    let apiKey = '';
+    if (record.sealedKey) {
+      try {
+        apiKey = store.unseal(record.sealedKey)?.apiKey || '';
+      } catch {
+        apiKey = '';
+      }
+    }
+    return {
+      provider: record.provider,
+      model: record.model,
+      baseUrl: record.baseUrl,
+      apiKey
+    };
+  }
+
+  function saveConfig(b, actor = 'owner') {
+    const validProviders = ['openai', 'anthropic', 'gemini', 'ollama'];
+    if (!validProviders.includes(b.provider)) {
+      throw new HubError(
+        'Provider không hợp lệ. Chọn một trong: openai, anthropic, gemini, ollama'
+      );
+    }
+    if (typeof b.model !== 'string' || !b.model.trim() || b.model.length > 100) {
+      throw new HubError('Tên mô hình (model) không được để trống và tối đa 100 ký tự');
+    }
+
+    let baseUrl = typeof b.baseUrl === 'string' ? b.baseUrl.trim() : '';
+    if (baseUrl && !/^https?:\/\/.+/i.test(baseUrl)) {
+      throw new HubError('Base URL phải là địa chỉ HTTP hoặc HTTPS hợp lệ');
+    }
+
+    const existing = store.get(kind, 'config');
+    let sealedKey = null;
+
+    if (typeof b.apiKey === 'string' && b.apiKey.trim()) {
+      if (b.apiKey.length > 1024) throw new HubError('API key vượt quá giới hạn độ dài');
+      sealedKey = store.seal({ apiKey: b.apiKey.trim() });
+    } else if (existing?.sealedKey) {
+      sealedKey = existing.sealedKey;
+    } else if (b.provider !== 'ollama') {
+      throw new HubError('API key là bắt buộc đối với nhà cung cấp này');
+    }
+
+    const record = {
+      provider: b.provider,
+      model: b.model.trim(),
+      baseUrl,
+      sealedKey,
+      configured: true,
+      updatedAt: new Date().toISOString()
+    };
+
+    store.put(kind, 'config', record);
+    store.audit('owner', 'hub', 'llm.save_config', 'success', redact(b), {
+      configured: true,
+      provider: record.provider,
+      model: record.model
+    });
+
+    return getConfig();
+  }
+
+  async function testConnection(b = {}) {
+    const provider = b.provider || store.get(kind, 'config')?.provider;
+    const model = b.model || store.get(kind, 'config')?.model;
+    const baseUrl = b.baseUrl !== undefined ? b.baseUrl : store.get(kind, 'config')?.baseUrl;
+    let apiKey = b.apiKey;
+    if (!apiKey) {
+      const stored = getInternalConfig();
+      if (stored) apiKey = stored.apiKey;
+    }
+
+    if (!provider || !model) {
+      throw new HubError('Cần cung cấp provider và model để kiểm tra kết nối');
+    }
+
+    if (provider !== 'ollama' && !apiKey) {
+      throw new HubError('Cần API key để kiểm tra kết nối');
+    }
+
+    const testMessages = [{ role: 'user', content: 'Xin chào' }];
+    try {
+      const result = await dispatchLlmCall({
+        provider,
+        model,
+        baseUrl,
+        apiKey,
+        systemPrompt: 'Bạn là trợ lý kiểm tra kết nối. Hãy trả lời ngắn gọn.',
+        messages: testMessages,
+        tools: [],
+        timeoutMs: 15000
+      });
+      return { ok: true, message: result.content ? 'Kết nối thành công!' : 'Đã nhận phản hồi' };
+    } catch (err) {
+      return { ok: false, error: err.message || 'Không thể kết nối với LLM' };
+    }
+  }
+
+  async function chat(b, actor = 'owner', req) {
+    const config = getInternalConfig();
+    if (!config) {
+      throw new HubError(
+        'LLM chưa được cấu hình. Vui lòng thiết lập trong Cài đặt trước khi chat.',
+        400
+      );
+    }
+
+    if (!Array.isArray(b.messages) || b.messages.length === 0) {
+      throw new HubError('Danh sách tin nhắn (messages) không hợp lệ');
+    }
+
+    if (b.messages.length > 30) {
+      throw new HubError('Lịch sử tin nhắn vượt quá giới hạn');
+    }
+
+    const cleanMessages = [];
+    for (const m of b.messages) {
+      if (!m || typeof m !== 'object' || !['user', 'assistant'].includes(m.role)) {
+        throw new HubError('Tin nhắn không đúng định dạng role (user hoặc assistant)');
+      }
+      if (typeof m.content !== 'string' || m.content.length > 4000) {
+        throw new HubError('Nội dung tin nhắn không hợp lệ hoặc vượt quá 4000 ký tự');
+      }
+      cleanMessages.push({ role: m.role, content: m.content });
+    }
+
+    const currentRoute = typeof b.currentRoute === 'string' ? b.currentRoute : 'overview';
+    const systemPrompt = buildSystemPrompt(store, currentRoute);
+
+    const started = performance.now();
+    try {
+      const { content, tool_calls } = await dispatchLlmCall({
+        provider: config.provider,
+        model: config.model,
+        baseUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        systemPrompt,
+        messages: cleanMessages,
+        tools: CHAT_TOOLS_OPENAI,
+        timeoutMs: 25000
+      });
+
+      const validTools = filterValidToolCalls(tool_calls);
+
+      store.audit(
+        actor,
+        'hub',
+        'chat.message',
+        'success',
+        redact({ messageCount: cleanMessages.length, currentRoute }),
+        redact({ toolCalls: validTools.map(t => t.name), contentPreview: content.slice(0, 100) }),
+        performance.now() - started
+      );
+
+      return {
+        message: {
+          role: 'assistant',
+          content,
+          tool_calls: validTools
+        }
+      };
+    } catch (err) {
+      store.audit(
+        actor,
+        'hub',
+        'chat.message',
+        'error',
+        redact({ messageCount: cleanMessages.length, currentRoute }),
+        { error: err.message },
+        performance.now() - started
+      );
+      throw new HubError(err.message || 'Lỗi khi gọi mô hình ngôn ngữ', 502);
+    }
+  }
+
+  return {
+    getConfig,
+    saveConfig,
+    testConnection,
+    chat
+  };
+}
+
+/**
+ * Dispatch request to the appropriate LLM provider.
+ */
+export async function dispatchLlmCall({
+  provider,
+  model,
+  baseUrl,
+  apiKey,
+  systemPrompt,
+  messages,
+  tools = CHAT_TOOLS_OPENAI,
+  timeoutMs = 25000
+}) {
+  const signal = AbortSignal.timeout(timeoutMs);
+
+  if (provider === 'openai' || provider === 'ollama') {
+    let url = baseUrl || (provider === 'ollama' ? 'http://localhost:11434/v1' : 'https://api.openai.com/v1');
+    url = url.replace(/\/+$/, '');
+    if (!url.endsWith('/v1') && provider === 'ollama') {
+      url += '/v1';
+    }
+    const endpoint = `${url}/chat/completions`;
+
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (apiKey) {
+      headers['Authorization'] = `Bearer ${apiKey}`;
+    }
+
+    const payload = {
+      model,
+      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      temperature: 0.2
+    };
+    if (tools && tools.length > 0) {
+      payload.tools = tools;
+    }
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`LLM ${provider} lỗi [${res.status}]: ${errText.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const choice = data.choices?.[0];
+    const content = choice?.message?.content || '';
+    const rawTools = (choice?.message?.tool_calls || []).map(tc => {
+      let parsedArgs = {};
+      try {
+        parsedArgs =
+          typeof tc.function?.arguments === 'string'
+            ? JSON.parse(tc.function.arguments)
+            : tc.function?.arguments || {};
+      } catch {}
+      return {
+        name: tc.function?.name,
+        arguments: parsedArgs
+      };
+    });
+
+    return { content, tool_calls: rawTools };
+  }
+
+  if (provider === 'anthropic') {
+    let url = (baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
+    const endpoint = `${url}/v1/messages`;
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey || '',
+      'anthropic-version': '2023-06-01'
+    };
+
+    const anthropicTools = CHAT_TOOLS_ANTHROPIC;
+    const payload = {
+      model,
+      system: systemPrompt,
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      max_tokens: 1024,
+      temperature: 0.2
+    };
+    if (tools && tools.length > 0) {
+      payload.tools = anthropicTools;
+    }
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Anthropic API lỗi [${res.status}]: ${errText.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const textBlocks = (data.content || []).filter(c => c.type === 'text');
+    const content = textBlocks.map(c => c.text).join('\n');
+    const rawTools = (data.content || [])
+      .filter(c => c.type === 'tool_use')
+      .map(tc => ({
+        name: tc.name,
+        arguments: tc.input || {}
+      }));
+
+    return { content, tool_calls: rawTools };
+  }
+
+  if (provider === 'gemini') {
+    let url = (baseUrl || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
+    const endpoint = `${url}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey || '')}`;
+
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    const contents = messages.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }]
+    }));
+
+    const payload = {
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents,
+      generationConfig: { temperature: 0.2 }
+    };
+    if (tools && tools.length > 0) {
+      payload.tools = [{ function_declarations: CHAT_TOOLS_GEMINI }];
+    }
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Gemini API lỗi [${res.status}]: ${errText.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const candidate = data.candidates?.[0];
+    const parts = candidate?.content?.parts || [];
+    const textParts = parts.filter(p => typeof p.text === 'string');
+    const content = textParts.map(p => p.text).join('\n');
+    const rawTools = parts
+      .filter(p => p.functionCall)
+      .map(p => ({
+        name: p.functionCall.name,
+        arguments: p.functionCall.args || {}
+      }));
+
+    return { content, tool_calls: rawTools };
+  }
+
+  throw new Error(`Nhà cung cấp LLM không được hỗ trợ: ${provider}`);
+}
