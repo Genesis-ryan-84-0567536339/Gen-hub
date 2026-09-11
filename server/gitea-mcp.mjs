@@ -682,14 +682,14 @@ export const GITEA_TOOLS = [
   // --- Search ---
   defineTool(
     'search_repositories',
-    'Tìm kiếm kho mã nguồn trên Gitea theo từ khóa.',
+    'Tìm kiếm kho mã nguồn trên Gitea theo từ khóa hoặc liệt kê tất cả.',
     {
-      q: string('Từ khóa tìm kiếm'),
+      q: string('Từ khóa tìm kiếm (bỏ trống để liệt kê tất cả kho mã nguồn)'),
       page: integer('Số trang', 1),
       limit: integer('Số kết quả mỗi trang', 1),
       topic: string('Lọc theo chủ đề topic')
     },
-    ['q'],
+    [],
     false
   ),
   defineTool(
@@ -1337,6 +1337,10 @@ async function callGiteaTool(name, args = {}, { url, token, allowPrivate, reques
         state: i.state,
         user: { username: i.user?.username || i.user?.login },
         labels: (i.labels || []).map(l => (typeof l === 'object' ? l.name : l)),
+        assignees: (Array.isArray(i.assignees) ? i.assignees : i.assignee ? [i.assignee] : []).map(a =>
+          typeof a === 'string' ? { username: a } : { username: a?.username || a?.login || '' }
+        ),
+        pull_request: i.pull_request || null,
         created_at: i.created_at,
         updated_at: i.updated_at
       }));
@@ -1738,12 +1742,17 @@ async function callGiteaTool(name, args = {}, { url, token, allowPrivate, reques
 
     // --- Search ---
     case 'search_repositories': {
-      checkRequiredStrings(args, ['q']);
-      const params = new URLSearchParams({ q: args.q.trim() });
+      const params = new URLSearchParams();
+      if (args.q && typeof args.q === 'string' && args.q.trim()) {
+        params.set('q', args.q.trim());
+      }
       if (args.page) params.set('page', String(args.page));
       if (args.limit) params.set('limit', String(args.limit));
-      if (args.topic) params.set('topic', args.topic.trim());
-      const targetUrl = `${base}/repos/search?${params.toString()}`;
+      if (args.topic && typeof args.topic === 'string' && args.topic.trim()) {
+        params.set('topic', args.topic.trim());
+      }
+      const q = params.toString() ? `?${params.toString()}` : '';
+      const targetUrl = `${base}/repos/search${q}`;
       result = await requestGitea(targetUrl, { method: 'GET', token, request: doRequest });
       break;
     }
