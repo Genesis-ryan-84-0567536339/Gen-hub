@@ -96,10 +96,14 @@ test('Fixed UI Chat Dock & Visual Guidance (Issue #24)', async t => {
   // 6. Configure LLM via settings form
   await page.fill('#llm-model', 'gpt-4o');
   await page.fill('#llm-apikey', 'sk-mock-key-12345');
+  const patchResponse = page.waitForResponse(
+    r => r.url().includes('/api/llm') && r.request().method() === 'PATCH'
+  );
   await page.click('#llm-config button[type="submit"]');
+  assert.equal((await patchResponse).status(), 200);
 
-  const toast = page.locator('#toast');
-  await toast.waitFor({ state: 'visible', timeout: 3000 });
+  const toast = page.locator('#toast.show');
+  await toast.waitFor({ state: 'visible', timeout: 5000 });
   assert.match(await toast.innerText(), /Đã lưu cấu hình LLM/);
 
   // 7. Test chat interaction with mocked API route
@@ -138,7 +142,11 @@ test('Fixed UI Chat Dock & Visual Guidance (Issue #24)', async t => {
 
   // Type message and submit
   await chatInput.fill('Dẫn tôi đến trang MCP và chỉ cho tôi nút thêm mới');
+  const chatResponse = page.waitForResponse(
+    r => r.url().includes('/api/chat') && r.request().method() === 'POST'
+  );
   await page.click('#chat-form button[type="submit"]');
+  assert.equal((await chatResponse).status(), 200);
 
   // Verify assistant response rendered
   const assistantBubble = page.locator('.chat-msg.assistant .chat-bubble');
