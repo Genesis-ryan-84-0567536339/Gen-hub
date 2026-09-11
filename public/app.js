@@ -1,7 +1,8 @@
 import { kanbanPage, kanbanCards } from './kanban.js';
-import { auditStats, pieArc } from './audit-stats.js';
+import { auditStats, isToolCall, pieArc } from './audit-stats.js';
 import { connectionGuide } from './connection-guides.js';
 import { getNotifications, timeAgo } from './notifications.js';
+import { normalizeSettings } from './settings.js';
 ('use strict');
 const $ = s => document.querySelector(s),
   esc = v =>
@@ -272,6 +273,7 @@ setInterval(() => {
 }, 120000);
 async function refresh() {
   state = await api('state');
+  if (state?.settings) state.settings = normalizeSettings(state.settings);
   if (route === 'kanban') await loadKanban();
   activity = new Map();
   render();
@@ -571,7 +573,7 @@ function overview() {
     day = v =>
       new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(v)),
     today = day(Date.now()),
-    calls = logs.filter(l => l.actor !== 'owner' && day(l.created) === today),
+    calls = logs.filter(l => isToolCall(l) && day(l.created) === today),
     connected = state.mcps.filter(m => m.status === 'connected').length,
     tools = state.mcps.reduce(
       (s, m) =>
@@ -1027,6 +1029,7 @@ function llmSettings() {
     ${cfg.configured ? `<div class="divider"></div><p class="footnote">Trạng thái: <strong>Đã cấu hình</strong> (${esc(cfg.provider)} · ${esc(cfg.model)})${cfg.updatedAt ? ` · Cập nhật: ${date(cfg.updatedAt)}` : ''}</p>` : ''}`;
 }
 function settings() {
+  const s = normalizeSettings(state.settings);
   const groups = [
     ['general', 'Không gian cá nhân'],
     ['security', 'Bảo mật'],
@@ -1054,13 +1057,13 @@ function settings() {
             ? systemUpdatesSettings()
             : tab === 'endpoint'
               ? `<h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code>`
-              : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
+              : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(s.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
                   [
                     [7, '7 ngày'],
                     [30, '30 ngày'],
                     [90, '90 ngày']
                   ],
-                  state.settings.retention
+                  s.effectiveRetentionDays
                 )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><h3>Bắt đầu sử dụng</h3><p class="footnote">Thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}`;
   return (
     head('Cài đặt', 'Thông tin Hub, truy cập và nhật ký.') +
@@ -1070,7 +1073,7 @@ function settings() {
 function adminAssistantSettings() {
   const a = state.adminAssistant || {};
   const adminAgents = (state.agents || []).filter(ag => ag.isAdmin && ag.status === 'active');
-  return `<section class="card cardpad" style="margin-top:24px"><h2>Trợ lý AI quản trị</h2><p class="footnote">Quyền quản trị toàn bộ Hub như owner. Để kết nối trợ lý (như Claude Code hoặc agent MCP), thêm endpoint bên dưới vào client; khi duyệt trên trình duyệt, tick "Cấp quyền Trợ lý quản trị" và nhập mật khẩu owner để xác nhận.</p><div class="codecopy"><code>${esc(a.endpoint || state.origin + '/mcp/admin')}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><div class="divider"></div><h3>Agent quản trị đang hoạt động (${adminAgents.length})</h3>${adminAgents.length ? `<div class="entity-list" style="margin-top:12px">${adminAgents.map(ag => `<div class="listrow"><div><b>${esc(ag.name)}</b> <span class="mono">#${esc(shortAgentId(ag))}</span><p class="footnote">Tạo: ${date(ag.created)} · Dùng gần nhất: ${date(ag.last)}</p></div><div class="actions">${btn('Quản lý agent', 'select:agents:' + ag.id, 'small')}</div></div>`).join('')}</div>` : '<p class="footnote">Chưa có agent nào được cấp quyền quản trị qua OAuth.</p>'}${a.active && !adminAgents.length ? `<div class="divider"></div><p>Token quản trị riêng cũ: Đang hoạt động · #${esc(a.id ? a.id.slice(-8) : '')}</p>${btn('Thu hồi token trợ lý', 'admin-revoke', 'danger')}` : ''}</section>`;
+  return `<section class="card cardpad" style="margin-top:24px"><h2>Trợ lý AI quản trị</h2><p class="footnote">Quyền quản trị toàn bộ Hub như owner. Để kết nối trợ lý (như Claude Code hoặc agent MCP), thêm endpoint bên dưới vào client; khi duyệt trên trình duyệt, tick "Cấp quyền Trợ lý quản trị" và nhập mật khẩu owner để xác nhận.</p><div class="codecopy"><code>${esc(a.endpoint || state.origin + '/mcp/admin')}</code><button class="iconbutton" data-action="copyendpoint:admin" aria-label="Sao chép">${I('copy')}</button></div><div class="divider"></div><h3>Agent quản trị đang hoạt động (${adminAgents.length})</h3>${adminAgents.length ? `<div class="entity-list" style="margin-top:12px">${adminAgents.map(ag => `<div class="listrow"><div><b>${esc(ag.name)}</b> <span class="mono">#${esc(shortAgentId(ag))}</span><p class="footnote">Tạo: ${date(ag.created)} · Dùng gần nhất: ${date(ag.last)}</p></div><div class="actions">${btn('Quản lý agent', 'select:agents:' + ag.id, 'small')}</div></div>`).join('')}</div>` : '<p class="footnote">Chưa có agent nào được cấp quyền quản trị qua OAuth.</p>'}${a.active && !adminAgents.length ? `<div class="divider"></div><p>Token quản trị riêng cũ: Đang hoạt động · #${esc(a.id ? a.id.slice(-8) : '')}</p>${btn('Thu hồi token trợ lý', 'admin-revoke', 'danger')}` : ''}</section>`;
 }
 function show(title, sub, body, footer = '', sheet = false) {
   modalVersion++;
@@ -1370,7 +1373,7 @@ function download(name, data) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(u), 1000);
 }
-async function act(action, args) {
+async function act(action, args, el = null) {
   const id = args[0];
   if (action === 'select') return selectEntity(id, args[1]);
   if (action === 'detail-tab') {
@@ -1506,7 +1509,17 @@ async function act(action, args) {
     login();
     return;
   }
-  if (action === 'copyendpoint') return copy(state.endpoint);
+  if (action === 'copyendpoint') {
+    const isExplicitAdmin = id === 'admin';
+    const codeText = el?.closest('.codecopy')?.querySelector('code')?.textContent?.trim();
+    if (isExplicitAdmin) {
+      const adminEndpoint =
+        state.adminAssistant?.endpoint ||
+        (state.origin ? state.origin + '/mcp/admin' : '/mcp/admin');
+      return copy(codeText || adminEndpoint);
+    }
+    return copy(codeText || state.endpoint);
+  }
   if (action === 'copytoken') return copy(modalContext.token);
   if (action === 'onboard') return onboarding();
   if (action === 'onboard-done' || action === 'onboard-add') {
@@ -1718,7 +1731,7 @@ document.addEventListener('click', async e => {
   el.disabled = true;
   const [a, ...args] = el.dataset.action.split(':');
   try {
-    await act(a, args);
+    await act(a, args, el);
   } catch (err) {
     toast(err.message);
   } finally {

@@ -12,7 +12,9 @@ import {
   digest,
   passwordHash,
   passwordCheck,
-  redact
+  redact,
+  normalizeSettings,
+  VALID_RETENTIONS
 } from './store.mjs';
 import { HubError, assertSchema, jsonRequest, request } from './net.mjs';
 import { catalog, provider } from './catalog.mjs';
@@ -604,11 +606,7 @@ export function createHub({
         security: { pinConfigured: !!store.get('security', 'pin')?.hash },
         agents,
         logs: store.logs(200).map(redact),
-        settings: store.get('settings', 'main') || {
-          name: 'Gen-hub',
-          retention: 30,
-          onboarded: false
-        },
+        settings: normalizeSettings(store.get('settings', 'main')),
         origin,
         endpoint: origin + '/mcp',
         catalog,
@@ -636,13 +634,13 @@ export function createHub({
       const old = store.get('settings', 'main') || {};
       if (b.name !== undefined) old.name = text(b.name, 60);
       if (b.retention !== undefined) {
-        if (![7, 30, 90].includes(b.retention)) throw new HubError('Thời gian lưu không hợp lệ');
+        if (!VALID_RETENTIONS.includes(b.retention)) throw new HubError('Thời gian lưu không hợp lệ');
         old.retention = b.retention;
       }
       if (b.onboarded !== undefined) old.onboarded = !!b.onboarded;
       store.put('settings', 'main', old);
       audit('settings.update', b);
-      return respond(200, old);
+      return respond(200, normalizeSettings(old));
     }
     if (resource === 'llm') {
       if (method === 'GET') return respond(200, chatService.getConfig());
@@ -1116,6 +1114,7 @@ export function createHub({
         '/kanban.js': 'kanban.js',
         '/audit-stats.js': 'audit-stats.js',
         '/notifications.js': 'notifications.js',
+        '/settings.js': 'settings.js',
         '/styles.css': 'styles.css'
       };
       if (!files[p]) throw new HubError('Không tìm thấy trang', 404);

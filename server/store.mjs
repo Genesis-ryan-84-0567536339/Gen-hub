@@ -10,6 +10,8 @@ import {
   scryptSync,
   timingSafeEqual
 } from 'node:crypto';
+import { normalizeSettings, DEFAULT_SETTINGS, VALID_RETENTIONS } from '../public/settings.js';
+export { normalizeSettings, DEFAULT_SETTINGS, VALID_RETENTIONS };
 export const id = type => {
   const num = randomInt(0, 100000).toString().padStart(5, '0');
   return type ? `${type}-${num}` : num;
@@ -150,7 +152,8 @@ export function openStore(dir) {
     const now = Date.now();
     for (const kind of ['session', 'flow', 'code', 'oauthstate', 'client', 'token', 'owner-oidc-flow', 'owner-oidc-code', 'owner-oidc-token'])
       for (const r of list(kind)) if (r.expires && r.expires < now) del(kind, r.id);
-    const days = get('settings', 'main')?.retention || 30;
+    const settings = normalizeSettings(get('settings', 'main'));
+    const days = settings.effectiveRetentionDays;
     db.prepare('DELETE FROM audit WHERE created < ?').run(
       new Date(now - days * 86400000).toISOString()
     );

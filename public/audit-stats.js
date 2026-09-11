@@ -25,6 +25,16 @@ export function pieArc(cx, cy, R, r, startFrac, endFrac) {
   return `M ${x0} ${y0} A ${R} ${R} 0 ${large} 1 ${x1} ${y1} L ${x2} ${y2} A ${r} ${r} 0 ${large} 0 ${x3} ${y3} Z`;
 }
 
+export function isToolCall(log) {
+  if (!log || typeof log !== 'object') return false;
+  const actor = typeof log.actor === 'string' ? log.actor.trim() : '';
+  if (!actor || actor === 'owner' || actor === 'system' || actor.startsWith('admin-assistant:')) {
+    return false;
+  }
+  if (log.mcp === 'hub') return false;
+  return true;
+}
+
 export function auditStats(logs, hours = 168, now = Date.now()) {
   const step = hours <= 24 ? 3600000 : 86400000;
   // Daily buckets follow the console's GMT+7 timezone.
@@ -40,9 +50,7 @@ export function auditStats(logs, hours = 168, now = Date.now()) {
   for (const log of logs) {
     const timestamp = Date.parse(log.created);
     if (
-      log.actor === 'owner' ||
-      log.actor.startsWith('admin-assistant:') ||
-      log.mcp === 'hub' ||
+      !isToolCall(log) ||
       timestamp > now ||
       timestamp < now - hours * 3600000
     )
