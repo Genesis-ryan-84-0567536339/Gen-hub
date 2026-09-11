@@ -502,7 +502,10 @@ async function boot() {
     const s = await api('session');
     csrf = s.csrf;
     await refresh();
-    if (route.startsWith('gitea/')) { location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6))); return; }
+    if (route.startsWith('gitea/')) {
+      location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6)));
+      return;
+    }
     if (route.startsWith('consent/')) await consent(route.slice(8));
     else if (!state.settings.onboarded) onboarding();
   } catch (e) {
@@ -606,7 +609,7 @@ function overview() {
         btn('Thêm MCP', 'add', 'primary', 'plus')
     ) +
     renderUpdateBanner() +
-    `<section class="stats">${[
+    `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><span class="endpointbar-sub">Chỉ tool bạn cấp mới được agent thấy và dùng.</span>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section><section class="stats">${[
       ['MCP đã kết nối', connected, '/ ' + state.mcps.length, 'plug'],
       ['Agent đã duyệt', state.agents.filter(a => a.status === 'active').length, 'agent', 'bot'],
       ['Tool đang cung cấp', tools, 'tool', 'shield'],
@@ -618,7 +621,7 @@ function overview() {
       )
       .join(
         ''
-      )}</section><div class="dashboardgrid"><section class="card"><div class="cardhead"><h2>Hoạt động công cụ</h2><span class="badge gray">12 giờ gần đây</span></div><div class="cardpad"><div class="pie-row">${smallPie('MCP theo lượt gọi', sortDesc(byMcpCalls), 'lượt')}${smallPie('Tool theo lượt gọi', sortDesc(byToolCalls), 'lượt')}${smallPie('MCP theo dung lượng', sortDesc(byMcpBytes), 'byte')}</div>${!byKey.size ? '<p class="footnote">Chưa có lượt gọi công cụ trong 12 giờ qua.</p>' : '<p class="footnote">Dung lượng tính theo byte JSON input/output đã redact (không phải token LLM).</p>'}</div></section><section class="card endpointcard"><div class="cardhead"><h2>Một endpoint cho mọi agent</h2>${I('link')}</div><div class="cardpad"><p class="subtitle" style="margin-bottom:25px">Composite MCP có xác thực và phân quyền riêng.</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Chỉ các tool bạn cấp mới được agent nhìn thấy và sử dụng.</p><div style="margin-top:25px">${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</div></div></section></div><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
+      )}</section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Hoạt động công cụ</h2><span class="badge gray">12 giờ gần đây</span></div><div class="cardpad"><div class="pie-row">${smallPie('MCP theo lượt gọi', sortDesc(byMcpCalls), 'lượt')}${smallPie('Tool theo lượt gọi', sortDesc(byToolCalls), 'lượt')}${smallPie('MCP theo dung lượng', sortDesc(byMcpBytes), 'byte')}</div>${!byKey.size ? '<p class="footnote">Chưa có lượt gọi công cụ trong 12 giờ qua.</p>' : '<p class="footnote">Dung lượng tính theo byte JSON input/output đã redact (không phải token LLM).</p>'}</div></section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
       state.mcps
         .filter(m => m.status !== 'connected')
         .map(
@@ -1049,16 +1052,16 @@ function settings() {
           ? adminAssistantSettings()
           : group === 'updates'
             ? systemUpdatesSettings()
-          : tab === 'endpoint'
-            ? `<h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code>`
-            : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
-                [
-                  [7, '7 ngày'],
-                  [30, '30 ngày'],
-                  [90, '90 ngày']
-                ],
-                state.settings.retention
-              )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><h3>Bắt đầu sử dụng</h3><p class="footnote">Thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}`;
+            : tab === 'endpoint'
+              ? `<h2>Domain & endpoint</h2><p class="footnote" style="margin-bottom:20px">${esc(state.origin)}</p><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Domain, DNS, Caddy và tunnel được thiết lập bằng TUI. Dùng lệnh gen-hub status trên máy để xem dịch vụ.</p><div class="divider"></div><p class="jsonlabel">OAuth callback cho dịch vụ</p><code class="mono">${esc(state.origin)}/oauth/callback</code>`
+              : `<h2>Không gian cá nhân</h2><form id="settings" style="margin-top:23px"><label class="field">Tên Hub<input class="input" name="name" value="${esc(state.settings.name)}" required maxlength="60"></label><label class="field">Lưu nhật ký<select name="retention">${options(
+                  [
+                    [7, '7 ngày'],
+                    [30, '30 ngày'],
+                    [90, '90 ngày']
+                  ],
+                  state.settings.retention
+                )}</select></label><button class="btn primary" type="submit">Lưu thay đổi</button></form><div class="divider"></div><h3>Bắt đầu sử dụng</h3><p class="footnote">Thêm MCP, kết nối và cấp quyền agent.</p>${btn('Mở hướng dẫn', 'onboard', '', 'info')}`;
   return (
     head('Cài đặt', 'Thông tin Hub, truy cập và nhật ký.') +
     `<div class="entity-layout"><aside class="card entity-list" aria-label="Nhóm cài đặt">${groups.map(([key, label]) => `<button class="entity-row ${group === key ? 'selected' : ''}" data-action="select:settings:${key}" ${group === key ? 'aria-current="true"' : ''}><strong>${label}</strong></button>`).join('')}</aside><section class="card entity-detail cardpad">${tabBar(tabs, tab)}<div role="tabpanel" id="detail-panel" aria-labelledby="detail-tab-${tab}">${content}</div></section></div>`
@@ -1776,7 +1779,10 @@ document.addEventListener('submit', async e => {
       const r = await api('login', 'POST', b);
       csrf = r.csrf;
       await refresh();
-      if (route.startsWith('gitea/')) { location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6))); return; }
+      if (route.startsWith('gitea/')) {
+        location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6)));
+        return;
+      }
       if (route.startsWith('consent/')) await consent(route.slice(8));
       else if (!state.settings.onboarded) onboarding();
     }
@@ -1977,7 +1983,10 @@ window.addEventListener('hashchange', async () => {
   close();
   if (state) {
     render();
-    if (route.startsWith('gitea/')) { location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6))); return; }
+    if (route.startsWith('gitea/')) {
+      location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6)));
+      return;
+    }
     if (route.startsWith('consent/'))
       try {
         await consent(route.slice(8));
