@@ -21,7 +21,13 @@ import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
 import { GITHUB_MCP_URL, githubEndpoint, githubPublished } from './github-mcp.mjs';
 import { ownerOidcService, OWNER_OIDC_CLIENT } from './owner-oidc.mjs';
-import { DEFAULT_GITEA_URL, giteaBaseUrl, giteaEndpoint, giteaPublished, isDefaultGiteaUrl } from './gitea-mcp.mjs';
+import {
+  DEFAULT_GITEA_URL,
+  giteaBaseUrl,
+  giteaEndpoint,
+  giteaPublished,
+  isDefaultGiteaUrl
+} from './gitea-mcp.mjs';
 import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
@@ -634,7 +640,8 @@ export function createHub({
       const old = store.get('settings', 'main') || {};
       if (b.name !== undefined) old.name = text(b.name, 60);
       if (b.retention !== undefined) {
-        if (!VALID_RETENTIONS.includes(b.retention)) throw new HubError('Thời gian lưu không hợp lệ');
+        if (!VALID_RETENTIONS.includes(b.retention))
+          throw new HubError('Thời gian lưu không hợp lệ');
         old.retention = b.retention;
       }
       if (b.onboarded !== undefined) old.onboarded = !!b.onboarded;
@@ -924,13 +931,11 @@ export function createHub({
         }
       }
       if (b.since !== undefined) {
-        if (!Number.isFinite(Date.parse(b.since)))
-          throw new HubError('Thời gian không hợp lệ');
+        if (!Number.isFinite(Date.parse(b.since))) throw new HubError('Thời gian không hợp lệ');
         filters.since = new Date(b.since).toISOString();
       }
       if (b.until !== undefined) {
-        if (!Number.isFinite(Date.parse(b.until)))
-          throw new HubError('Thời gian không hợp lệ');
+        if (!Number.isFinite(Date.parse(b.until))) throw new HubError('Thời gian không hợp lệ');
         filters.until = new Date(b.until).toISOString();
       }
       if (b.minLatency !== undefined) {
@@ -947,14 +952,12 @@ export function createHub({
       }
       if (b.id !== undefined) {
         const logId = Number(b.id);
-        if (!Number.isInteger(logId) || logId < 1)
-          throw new HubError('ID nhật ký không hợp lệ');
+        if (!Number.isInteger(logId) || logId < 1) throw new HubError('ID nhật ký không hợp lệ');
         filters.id = logId;
       }
       if (b.cursor !== undefined) {
         const cursor = Number(b.cursor);
-        if (!Number.isInteger(cursor) || cursor < 1)
-          throw new HubError('Con trỏ không hợp lệ');
+        if (!Number.isInteger(cursor) || cursor < 1) throw new HubError('Con trỏ không hợp lệ');
         filters.cursor = cursor;
       }
       if (b.q !== undefined) {
@@ -979,9 +982,7 @@ export function createHub({
         b.format === 'page' ||
         b.format === 'paged' ||
         b.includePayload === 'false' ||
-        b.includePayload === false ||
-        b.tool === 'list_issues' ||
-        (typeof b.actor === 'string' && b.actor === 'Agy3');
+        b.includePayload === false;
 
       const defaultLimit = isPaged ? 50 : 5000;
       const limit = b.limit === undefined ? defaultLimit : Number(b.limit);
@@ -1074,27 +1075,51 @@ export function createHub({
       if (p.startsWith('/oidc/owner/')) {
         rate('owner-oidc:' + req.socket.remoteAddress, 120);
         const route = p.slice('/oidc/owner/'.length);
-        if (req.method === 'GET' && route === '.well-known/openid-configuration') return send(res, 200, ownerOidc.metadata());
+        if (req.method === 'GET' && route === '.well-known/openid-configuration')
+          return send(res, 200, ownerOidc.metadata());
         if (req.method === 'GET' && route === 'jwks') return send(res, 200, ownerOidc.jwks());
         if (req.method === 'GET' && route === 'authorize') {
-          if ([...u.searchParams.keys()].some(k => u.searchParams.getAll(k).length !== 1)) throw new HubError('invalid_request');
-          return send(res, 302, undefined, { Location: ownerOidc.authorize(Object.fromEntries(u.searchParams), req) });
+          if ([...u.searchParams.keys()].some(k => u.searchParams.getAll(k).length !== 1))
+            throw new HubError('invalid_request');
+          return send(res, 302, undefined, {
+            Location: ownerOidc.authorize(Object.fromEntries(u.searchParams), req)
+          });
         }
-        if (req.method === 'GET' && route === 'resume') return send(res, 302, undefined, { Location: ownerOidc.resume(u.searchParams.get('flow') || '', req) });
-        if (req.method === 'POST' && route === 'token') return send(res, 200, ownerOidc.exchange(await body(req), req));
-        if (req.method === 'GET' && route === 'userinfo') return send(res, 200, ownerOidc.userinfo(req));
+        if (req.method === 'GET' && route === 'resume')
+          return send(res, 302, undefined, {
+            Location: ownerOidc.resume(u.searchParams.get('flow') || '', req)
+          });
+        if (req.method === 'POST' && route === 'token')
+          return send(res, 200, ownerOidc.exchange(await body(req), req));
+        if (req.method === 'GET' && route === 'userinfo')
+          return send(res, 200, ownerOidc.userinfo(req));
         if (route === 'logout') {
           if (req.method === 'GET') {
-            if (u.searchParams.get('client_id') !== OWNER_OIDC_CLIENT ||
-                u.searchParams.get('post_logout_redirect_uri') !== origin + '/gitea/') throw new HubError('invalid_request');
+            if (
+              u.searchParams.get('client_id') !== OWNER_OIDC_CLIENT ||
+              u.searchParams.get('post_logout_redirect_uri') !== origin + '/gitea/'
+            )
+              throw new HubError('invalid_request');
             const s = auth.session(req);
             if (!s) return send(res, 302, undefined, { Location: '/gitea/' });
-            return send(res, 200, '<!doctype html><html lang="vi"><meta charset="utf-8"><title>Đăng xuất Hub</title><h1>Đã đăng xuất Gitea</h1><p>Đăng xuất cả phiên Hub trong trình duyệt này?</p><form method="post" action="/oidc/owner/logout"><input type="hidden" name="csrf" value="' + s.csrf + '"><button>Đăng xuất Hub</button></form><a href="/">Giữ phiên Hub</a></html>', { 'Content-Type': 'text/html; charset=utf-8' });
+            return send(
+              res,
+              200,
+              '<!doctype html><html lang="vi"><meta charset="utf-8"><title>Đăng xuất Hub</title><h1>Đã đăng xuất Gitea</h1><p>Đăng xuất cả phiên Hub trong trình duyệt này?</p><form method="post" action="/oidc/owner/logout"><input type="hidden" name="csrf" value="' +
+                s.csrf +
+                '"><button>Đăng xuất Hub</button></form><a href="/">Giữ phiên Hub</a></html>',
+              { 'Content-Type': 'text/html; charset=utf-8' }
+            );
           }
           if (req.method === 'POST') {
-            const b = await body(req), s = auth.owner(req);
-            if (req.headers.origin !== origin || b.csrf !== s.csrf) throw new HubError('Phiên yêu cầu không hợp lệ', 403);
-            return send(res, 303, undefined, { Location: '/gitea/', 'Set-Cookie': auth.logout(req) });
+            const b = await body(req),
+              s = auth.owner(req);
+            if (req.headers.origin !== origin || b.csrf !== s.csrf)
+              throw new HubError('Phiên yêu cầu không hợp lệ', 403);
+            return send(res, 303, undefined, {
+              Location: '/gitea/',
+              'Set-Cookie': auth.logout(req)
+            });
           }
         }
         throw new HubError('Not found', 404);
