@@ -835,6 +835,15 @@ function checkRequiredStrings(obj, keys) {
   }
 }
 
+// Internal HTTP failures retain the upstream status until tool-specific
+// handling has finished. Only giteaCall converts unhandled failures to HubError.
+class GiteaHttpError extends Error {
+  constructor(status) {
+    super('Gitea API trả HTTP ' + status);
+    this.upstreamStatus = status;
+  }
+}
+
 async function _requestGitea(url, { method = 'GET', token, body, allowPrivate = false, request: doRequest = request } = {}) {
   if (!token) throw new HubError('MCP chưa có credential', 401);
   const headers = {
@@ -852,13 +861,8 @@ async function _requestGitea(url, { method = 'GET', token, body, allowPrivate = 
     allowPrivate: effectiveAllowPrivate
   });
 
-  if (r.status !== undefined) {
-    if (r.status === 401) throw new HubError('MCP yêu cầu xác thực lại', 401);
-    if (r.status === 403) throw new HubError('Gitea API từ chối truy cập (403)', 403);
-    if (r.status === 404) throw new HubError('Không tìm thấy tài nguyên trên Gitea (404)', 404);
-    if (r.status < 200 || r.status >= 300) {
-      throw new HubError('Gitea API trả HTTP ' + r.status, 502);
-    }
+  if (r.status !== undefined && (r.status < 200 || r.status >= 300)) {
+    throw new GiteaHttpError(r.status);
   }
 
   return r.json ?? (r.text ? JSON.parse(r.text) : r);
@@ -866,7 +870,23 @@ async function _requestGitea(url, { method = 'GET', token, body, allowPrivate = 
 
 export const requestGitea = _requestGitea;
 
-export async function giteaCall(name, args = {}, { url, token, allowPrivate, request: doRequest = request } = {}) {
+export async function giteaCall(name, args = {}, options = {}) {
+  try {
+    return await callGiteaTool(name, args, options);
+  } catch (err) {
+    if (!(err instanceof GiteaHttpError)) throw err;
+    const status = err.upstreamStatus;
+    const message = status === 401 ? 'MCP yêu cầu xác thực lại'
+      : status === 403 ? 'Gitea API từ chối truy cập (403)'
+      : status === 404 ? 'Không tìm thấy tài nguyên trên Gitea (404)'
+      : err.message;
+    const error = new HubError(message, [401, 403, 404].includes(status) ? status : 502);
+    error.upstreamStatus = status;
+    throw error;
+  }
+}
+
+async function callGiteaTool(name, args = {}, { url, token, allowPrivate, request: doRequest = request } = {}) {
   const toolDef = GITEA_TOOLS.find(t => t.name === name);
   if (!toolDef) throw new HubError('Tool không hỗ trợ: ' + name, 404);
 
@@ -933,7 +953,7 @@ export async function giteaCall(name, args = {}, { url, token, allowPrivate, req
           });
           if (existing?.sha) sha = existing.sha;
         } catch (err) {
-          if (err.status !== 404) throw err;
+          if (!(err instanceof GiteaHttpError) || err.upstreamStatus !== 404) throw err;
         }
       }
 
@@ -1683,7 +1703,7 @@ export async function giteaCall(name, args = {}, { url, token, allowPrivate, req
         await requestGitea(targetUrl, { method: 'GET', token, request: doRequest });
         result = { is_collaborator: true, user: args.collaborator.trim() };
       } catch (err) {
-        if (err.status === 404) {
+        if (err instanceof GiteaHttpError && err.upstreamStatus === 404) {
           result = { is_collaborator: false, user: args.collaborator.trim() };
         } else {
           throw err;
