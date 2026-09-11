@@ -36,6 +36,12 @@ import { vaultService } from './vault.mjs';
 import { kanbanService } from './kanban.mjs';
 import { githubRetryAt } from './github-rate.mjs';
 import { createChatService } from './llm.mjs';
+import {
+  collectAllRows,
+  buildManifest,
+  renderJSONL,
+  renderCSV
+} from './export-audit.mjs';
 const pub = fileURLToPath(new URL('../public/', import.meta.url));
 const cleanMcp = ({ secret, ...m }) => ({ ...m, hasCredential: !!secret });
 
@@ -939,11 +945,12 @@ export function createHub({
       });
     }
     if (resource === 'logs' && !write) {
-      if (mid && mid !== 'summary') {
+      if (mid && mid !== 'summary' && mid !== 'export') {
         const item = store.log(Number(mid));
         if (!item) throw new HubError('Không tìm thấy bản ghi nhật ký', 404);
         return respond(200, redact(item));
       }
+
       const filters = {};
       for (const [key, allowed] of Object.entries({
         eventKind: ['tool_call', 'admin_action', 'auth', 'system', 'unclassified'],
@@ -1068,6 +1075,67 @@ export function createHub({
         if (duration <= 0 || duration > 90 * 86400000)
           throw new HubError('Khoảng tổng hợp cần lớn hơn 0 và tối đa 90 ngày');
         return respond(200, store.summary(filters));
+      }
+
+      if (mid === 'export') {
+        // --- Export endpoint: /api/logs/export ---
+        // Reuses the same `filters` object built above (including the
+        // classification filters from the operations dashboard) so export
+        // always matches exactly what the audit page shows, then pages
+        // through ALL results (up to hardLimit) and returns a downloadable
+        // file (JSONL or CSV) with an embedded manifest.
+        const EXPORT_HARD_LIMIT = 50000;
+        const format = b.format === 'csv' ? 'csv' : 'jsonl';
+        // For CSV export payload is excluded; for JSONL payload is included.
+        const includePayload = format === 'jsonl';
+
+        const { rows, truncated } = collectAllRows(
+          store,
+          filters,
+          redact,
+          EXPORT_HARD_LIMIT,
+          includePayload
+        );
+
+        // Describe filters for the manifest (human-readable, no credentials).
+        const EXPORT_FILTER_KEYS = [
+          'tool', 'mcp', 'actor', 'status', 'since', 'until', 'before',
+          'minLatency', 'maxLatency', 'id', 'q', 'secret',
+          'eventKind', 'actorType', 'policyDecision', 'outcome', 'errorCategory'
+        ];
+        const filterSummary = {};
+        for (const key of EXPORT_FILTER_KEYS) {
+          if (filters[key] !== undefined) filterSummary[key] = filters[key];
+        }
+
+        const settings = normalizeSettings(store.get('settings', 'main'));
+        const manifest = buildManifest({
+          filters: filterSummary,
+          totalRows: rows.length,
+          truncated,
+          hardLimit: EXPORT_HARD_LIMIT,
+          retentionDays: settings.effectiveRetentionDays,
+          format
+        });
+
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        if (format === 'csv') {
+          const body = renderCSV(rows, manifest);
+          return respond(200, body, {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': `attachment; filename="gen-hub-audit-${ts}.csv"`,
+            'X-Export-Truncated': String(truncated),
+            'X-Export-Total-Rows': String(rows.length)
+          });
+        } else {
+          const body = renderJSONL(rows, manifest);
+          return respond(200, body, {
+            'Content-Type': 'application/x-ndjson; charset=utf-8',
+            'Content-Disposition': `attachment; filename="gen-hub-audit-${ts}.jsonl"`,
+            'X-Export-Truncated': String(truncated),
+            'X-Export-Total-Rows': String(rows.length)
+          });
+        }
       }
 
       const isPaged =
