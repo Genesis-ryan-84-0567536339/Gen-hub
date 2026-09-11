@@ -1,7 +1,9 @@
 import { secret, uniqueId, digest, passwordCheck } from './store.mjs';
 import { createHash } from 'node:crypto';
-import { OWNER_SESSION_SECONDS } from './owner-oidc.mjs';
 import { HubError } from './net.mjs';
+// Hub's own owner session stays short-lived; Gitea's independent 30-day session (owner-oidc.mjs)
+// is a separate, deliberately longer-lived tradeoff scoped to that system only.
+const HUB_SESSION_SECONDS = 12 * 3600;
 export function authService(store, origin) {
   const cookieName = origin.startsWith('https:') ? '__Host-genhub' : 'genhub';
   function session(req) {
@@ -33,9 +35,14 @@ export function authService(store, origin) {
     )
       throw new HubError('Tên đăng nhập hoặc mật khẩu không đúng', 401);
     const raw = secret() + secret(),
-      s = { id: digest(raw), csrf: secret(), created: Date.now(), expires: Date.now() + OWNER_SESSION_SECONDS * 1000 };
+      s = {
+        id: digest(raw),
+        csrf: secret(),
+        created: Date.now(),
+        expires: Date.now() + HUB_SESSION_SECONDS * 1000
+      };
     store.put('session', s.id, s);
-    return { cookie: cookie(raw, OWNER_SESSION_SECONDS), csrf: s.csrf };
+    return { cookie: cookie(raw, HUB_SESSION_SECONDS), csrf: s.csrf };
   }
   function issue(agent, client, resource) {
     const access = secret('token') + secret(),

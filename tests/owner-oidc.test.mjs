@@ -64,7 +64,9 @@ test('Owner OIDC: metadata discovery and JWKS public key endpoint', async t => {
   assert.equal(pubKey.asymmetricKeyType, 'rsa');
 });
 
-test('Owner OIDC: 30-day session lifetime for Hub owner', async t => {
+test("Owner OIDC: Hub session stays short-lived (12h), independent from Gitea's 30-day session", async t => {
+  // OWNER_SESSION_SECONDS describes Gitea's own session length (see docs/GITEA_OPERATIONS.md
+  // and scripts/gitea.py's SESSION_LIFE_TIME) — it must never widen Hub's own owner login.
   assert.equal(OWNER_SESSION_SECONDS, 30 * 24 * 60 * 60);
 
   const x = await fixture(t);
@@ -75,13 +77,13 @@ test('Owner OIDC: 30-day session lifetime for Hub owner', async t => {
   assert.equal(loginRes.status, 200);
 
   const setCookie = loginRes.headers.get('set-cookie');
-  assert.ok(setCookie.includes('Max-Age=2592000'), 'Cookie Max-Age must be 2592000s (30 days)');
+  assert.ok(setCookie.includes('Max-Age=43200'), 'Hub cookie Max-Age must stay 43200s (12h)');
 
   const sessions = x.hub.store.list('session');
   assert.ok(sessions.length > 0);
   const s = sessions[sessions.length - 1];
   const ttlSeconds = Math.round((s.expires - s.created) / 1000);
-  assert.equal(ttlSeconds, 30 * 24 * 60 * 60);
+  assert.equal(ttlSeconds, 12 * 3600);
 });
 
 test('Owner OIDC: authorization flow when logged in vs not logged in, and resumption', async t => {
@@ -149,43 +151,61 @@ test('Owner OIDC: parameter validation on authorize', async t => {
   const callback = x.origin + '/gitea/user/oauth2/' + OWNER_OIDC_SOURCE + '/callback';
 
   // Wrong client_id -> 400
-  const badClient = await x.call('/oidc/owner/authorize?' + new URLSearchParams({
-    client_id: 'wrong-client',
-    redirect_uri: callback,
-    response_type: 'code',
-    scope: 'openid'
-  }));
+  const badClient = await x.call(
+    '/oidc/owner/authorize?' +
+      new URLSearchParams({
+        client_id: 'wrong-client',
+        redirect_uri: callback,
+        response_type: 'code',
+        scope: 'openid'
+      })
+  );
   assert.equal(badClient.status, 400);
 
   // Wrong redirect_uri -> 400
-  const badRedirect = await x.call('/oidc/owner/authorize?' + new URLSearchParams({
-    client_id: OWNER_OIDC_CLIENT,
-    redirect_uri: 'https://attacker.example/callback',
-    response_type: 'code',
-    scope: 'openid'
-  }));
+  const badRedirect = await x.call(
+    '/oidc/owner/authorize?' +
+      new URLSearchParams({
+        client_id: OWNER_OIDC_CLIENT,
+        redirect_uri: 'https://attacker.example/callback',
+        response_type: 'code',
+        scope: 'openid'
+      })
+  );
   assert.equal(badRedirect.status, 400);
 
   // Missing openid scope -> 400
-  const missingOpenid = await x.call('/oidc/owner/authorize?' + new URLSearchParams({
-    client_id: OWNER_OIDC_CLIENT,
-    redirect_uri: callback,
-    response_type: 'code',
-    scope: 'profile email'
-  }));
+  const missingOpenid = await x.call(
+    '/oidc/owner/authorize?' +
+      new URLSearchParams({
+        client_id: OWNER_OIDC_CLIENT,
+        redirect_uri: callback,
+        response_type: 'code',
+        scope: 'profile email'
+      })
+  );
   assert.equal(missingOpenid.status, 400);
 
   // Disallowed scope -> 400
-  const badScope = await x.call('/oidc/owner/authorize?' + new URLSearchParams({
-    client_id: OWNER_OIDC_CLIENT,
-    redirect_uri: callback,
-    response_type: 'code',
-    scope: 'openid admin_all'
-  }));
+  const badScope = await x.call(
+    '/oidc/owner/authorize?' +
+      new URLSearchParams({
+        client_id: OWNER_OIDC_CLIENT,
+        redirect_uri: callback,
+        response_type: 'code',
+        scope: 'openid admin_all'
+      })
+  );
   assert.equal(badScope.status, 400);
 
   // Parameter pollution (duplicate keys) -> 400
-  const polluted = await x.call('/oidc/owner/authorize?client_id=' + OWNER_OIDC_CLIENT + '&client_id=evil&redirect_uri=' + encodeURIComponent(callback) + '&response_type=code&scope=openid');
+  const polluted = await x.call(
+    '/oidc/owner/authorize?client_id=' +
+      OWNER_OIDC_CLIENT +
+      '&client_id=evil&redirect_uri=' +
+      encodeURIComponent(callback) +
+      '&response_type=code&scope=openid'
+  );
   assert.equal(polluted.status, 400);
 });
 
@@ -195,19 +215,23 @@ test('Owner OIDC: token exchange, RS256 ID Token verification, userinfo, and sin
   const callback = x.origin + '/gitea/user/oauth2/' + OWNER_OIDC_SOURCE + '/callback';
 
   // Obtain code
-  const authRes = await x.call('/oidc/owner/authorize?' + new URLSearchParams({
-    client_id: OWNER_OIDC_CLIENT,
-    redirect_uri: callback,
-    response_type: 'code',
-    scope: 'openid profile email groups',
-    state: 'test-state-789',
-    nonce: 'test-nonce-101'
-  }));
+  const authRes = await x.call(
+    '/oidc/owner/authorize?' +
+      new URLSearchParams({
+        client_id: OWNER_OIDC_CLIENT,
+        redirect_uri: callback,
+        response_type: 'code',
+        scope: 'openid profile email groups',
+        state: 'test-state-789',
+        nonce: 'test-nonce-101'
+      })
+  );
   const code = new URL(authRes.headers.get('location')).searchParams.get('code');
   assert.ok(code);
 
   // Exchange via HTTP Basic Auth (client_secret_basic)
-  const basicAuth = 'Basic ' + Buffer.from(OWNER_OIDC_CLIENT + ':' + creds.client_secret).toString('base64');
+  const basicAuth =
+    'Basic ' + Buffer.from(OWNER_OIDC_CLIENT + ':' + creds.client_secret).toString('base64');
   const tokenRes = await fetch(x.origin + '/oidc/owner/token', {
     method: 'POST',
     headers: {
@@ -248,7 +272,11 @@ test('Owner OIDC: token exchange, RS256 ID Token verification, userinfo, and sin
   assert.ok(jwt.payload.auth_time > 0);
 
   // Verify at_hash
-  const expectedAtHash = createHash('sha256').update(tokens.access_token).digest().subarray(0, 16).toString('base64url');
+  const expectedAtHash = createHash('sha256')
+    .update(tokens.access_token)
+    .digest()
+    .subarray(0, 16)
+    .toString('base64url');
   assert.equal(jwt.payload.at_hash, expectedAtHash);
 
   // Verify signature with public key from JWKS
@@ -302,14 +330,17 @@ test('Owner OIDC: client authentication and PKCE validation', async t => {
   const verifier = 'a'.repeat(43);
   const challenge = createHash('sha256').update(verifier).digest('base64url');
 
-  const authRes = await x.call('/oidc/owner/authorize?' + new URLSearchParams({
-    client_id: OWNER_OIDC_CLIENT,
-    redirect_uri: callback,
-    response_type: 'code',
-    scope: 'openid profile',
-    code_challenge: challenge,
-    code_challenge_method: 'S256'
-  }));
+  const authRes = await x.call(
+    '/oidc/owner/authorize?' +
+      new URLSearchParams({
+        client_id: OWNER_OIDC_CLIENT,
+        redirect_uri: callback,
+        response_type: 'code',
+        scope: 'openid profile',
+        code_challenge: challenge,
+        code_challenge_method: 'S256'
+      })
+  );
   const code = new URL(authRes.headers.get('location')).searchParams.get('code');
 
   // Wrong client secret -> 401
@@ -362,24 +393,43 @@ test('Owner OIDC: RP-Initiated logout and security boundaries', async t => {
   provisionOwnerOidc(x.hub.store, x.origin);
 
   // 1. GET /oidc/owner/logout with invalid client or redirect_uri fails
-  const badLogout = await fetch(x.origin + '/oidc/owner/logout?client_id=bad&post_logout_redirect_uri=https://evil.com');
+  const badLogout = await fetch(
+    x.origin + '/oidc/owner/logout?client_id=bad&post_logout_redirect_uri=https://evil.com'
+  );
   assert.equal(badLogout.status, 400);
 
   // 2. GET /oidc/owner/logout without session redirects 302 to /gitea/
-  const unauthedLogout = await fetch(x.origin + '/oidc/owner/logout?client_id=' + OWNER_OIDC_CLIENT + '&post_logout_redirect_uri=' + encodeURIComponent(x.origin + '/gitea/'), {
-    redirect: 'manual'
-  });
+  const unauthedLogout = await fetch(
+    x.origin +
+      '/oidc/owner/logout?client_id=' +
+      OWNER_OIDC_CLIENT +
+      '&post_logout_redirect_uri=' +
+      encodeURIComponent(x.origin + '/gitea/'),
+    {
+      redirect: 'manual'
+    }
+  );
   assert.equal(unauthedLogout.status, 302);
   assert.equal(unauthedLogout.headers.get('location'), '/gitea/');
 
   // 3. GET /oidc/owner/logout with session shows confirmation page
-  const loginRes = await x.call('/api/login', 'POST', { username: 'owner', password: 'owner-password-123' });
+  const loginRes = await x.call('/api/login', 'POST', {
+    username: 'owner',
+    password: 'owner-password-123'
+  });
   const cookie = loginRes.headers.get('set-cookie').split(';')[0];
   const csrf = loginRes.data.csrf;
-  const getLogout = await fetch(x.origin + '/oidc/owner/logout?client_id=' + OWNER_OIDC_CLIENT + '&post_logout_redirect_uri=' + encodeURIComponent(x.origin + '/gitea/'), {
-    headers: { Cookie: cookie },
-    redirect: 'manual'
-  });
+  const getLogout = await fetch(
+    x.origin +
+      '/oidc/owner/logout?client_id=' +
+      OWNER_OIDC_CLIENT +
+      '&post_logout_redirect_uri=' +
+      encodeURIComponent(x.origin + '/gitea/'),
+    {
+      headers: { Cookie: cookie },
+      redirect: 'manual'
+    }
+  );
   assert.equal(getLogout.status, 200);
   assert.ok(getLogout.headers.get('content-type').includes('text/html'));
   const html = await getLogout.text();

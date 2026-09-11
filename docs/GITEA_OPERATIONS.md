@@ -25,17 +25,17 @@ Cấu hình theo tài liệu chính thức [Docker rootless](https://docs.gitea.
 
 ## Các lệnh vòng đời
 
-| Lệnh | Hành vi Gitea |
-| --- | --- |
-| `status` | URL, bootstrap còn thiếu/đã xong, trạng thái container/health |
-| `doctor` | Volume đúng installation, app.ini/SQLite tồn tại, dung lượng, database/cache health nội bộ và qua HTTPS, admin đã bootstrap |
-| `doctor --fix` | Giữ dữ liệu và image đã pin, dựng lại config/container; dừng nếu mất volume hoặc chưa bootstrap |
-| `backup <file>` | Tạm dừng Gitea, archive cả hai volume, kiểm SQLite integrity, snapshot Hub và config, khởi động lại Gitea cả khi backup lỗi |
-| `update` | Backup trước đổi runtime; giữ nguyên image Gitea đang cài độc lập với revision Hub |
-| `rollback` | Backup trước quay runtime; chỉ cho phép cùng image/volume Gitea, từ chối quay về release chưa có Gitea hoặc có image/storage khác |
-| `restart` | Khởi động lại tất cả service, đợi healthy và kiểm bootstrap; có gián đoạn Git/HTTP |
-| `uninstall` | Dừng container/network và updater; giữ cả hai named volume cùng backup |
-| `uninstall --purge` | Xác nhận domain, kiểm nhãn trước khi xóa đúng volume Gitea; giữ volume ứng dụng khác, Docker và backup lưu ngoài installation |
+| Lệnh                | Hành vi Gitea                                                                                                                     |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `status`            | URL, bootstrap còn thiếu/đã xong, trạng thái container/health                                                                     |
+| `doctor`            | Volume đúng installation, app.ini/SQLite tồn tại, dung lượng, database/cache health nội bộ và qua HTTPS, admin đã bootstrap       |
+| `doctor --fix`      | Giữ dữ liệu và image đã pin, dựng lại config/container; dừng nếu mất volume hoặc chưa bootstrap                                   |
+| `backup <file>`     | Tạm dừng Gitea, archive cả hai volume, kiểm SQLite integrity, snapshot Hub và config, khởi động lại Gitea cả khi backup lỗi       |
+| `update`            | Backup trước đổi runtime; giữ nguyên image Gitea đang cài độc lập với revision Hub                                                |
+| `rollback`          | Backup trước quay runtime; chỉ cho phép cùng image/volume Gitea, từ chối quay về release chưa có Gitea hoặc có image/storage khác |
+| `restart`           | Khởi động lại tất cả service, đợi healthy và kiểm bootstrap; có gián đoạn Git/HTTP                                                |
+| `uninstall`         | Dừng container/network và updater; giữ cả hai named volume cùng backup                                                            |
+| `uninstall --purge` | Xác nhận domain, kiểm nhãn trước khi xóa đúng volume Gitea; giữ volume ứng dụng khác, Docker và backup lưu ngoài installation     |
 
 Không có lệnh nâng phiên bản/schema Gitea trong PR này. Image Gitea thay đổi cần một quy trình migration riêng có backup/restore được kiểm thử; không tự hạ binary trên database đã nâng cấp. Rollback về bản Hub trước khi tích hợp Gitea bị chặn vì CLI cũ không quản lý được storage mới.
 
@@ -68,8 +68,9 @@ Gen-hub tích hợp OpenID Connect (OIDC) Identity Provider tối giản, phục
   - Client ID: `genhub-gitea`.
   - Nguồn xác thực trong Gitea: `genhub-owner`.
   - Không mở dynamic client registration; client secret và private key được sinh cục bộ bởi CLI quản trị và lưu mã hóa (sealed) trong cơ sở dữ liệu Hub.
-- **Thời gian sống phiên (TTL 30 ngày)**:
-  - Phiên đăng nhập của owner trên Hub và phiên web/cookie của Gitea (`GITEA__session__SESSION_LIFE_TIME`) đều được cấu hình là **30 ngày** (2.592.000 giây / 720 giờ).
+- **Thời gian sống phiên**:
+  - Phiên web/cookie của Gitea (`GITEA__session__SESSION_LIFE_TIME`) là **30 ngày** (2.592.000 giây) — quyết định riêng cho Gitea.
+  - Phiên đăng nhập owner trên chính Hub **giữ nguyên 12 giờ** như trước, không đổi theo Gitea — đăng nhập Hub gần đây là đủ để bắt đầu SSO sang Gitea, token trao cho Gitea vẫn bị giới hạn bởi thời hạn còn lại của phiên Hub tại thời điểm trao đổi.
 - **Giới hạn bảo mật đã biết (Known Limitation)**:
   - Gitea 1.27.3 **không hỗ trợ** API back-channel logout hoặc cơ chế thu hồi web session từ xa qua IdP.
   - Khi owner đổi mật khẩu hoặc bị thu hồi quyền trên Hub, phiên web Gitea đang mở trên trình duyệt của owner **không bị hủy tức thời** từ phía IdP, mà tiếp tục có hiệu lực tối đa tới **30 ngày** kể từ lần đăng nhập gần nhất (hết TTL đã cấu hình).
