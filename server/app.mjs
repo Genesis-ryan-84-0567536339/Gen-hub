@@ -895,12 +895,16 @@ export function createHub({
         return respond(200, getUpdateStatus());
       }
     }
-    if (resource === 'kanban' && !mid) {
-      if (method === 'GET') {
+    if (resource === 'kanban') {
+      if (!mid && method === 'GET') {
         rate('kanban:' + actor, 60);
         return respond(200, await kanban.read());
       }
-      if (method === 'PATCH') return respond(200, kanban.configure(b, actor));
+      if (!mid && method === 'PATCH') return respond(200, kanban.configure(b, actor));
+      if (mid === 'archive-done' && method === 'POST') {
+        rate('kanban:' + actor, 60);
+        return respond(200, await kanban.archiveDone(actor));
+      }
     }
     throw new HubError('Không tìm thấy API', 404);
   }

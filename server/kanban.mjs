@@ -67,8 +67,18 @@ function payload(result) {
 export function kanbanService(store, connectors) {
   let cache = null,
     pending = null;
-  const config = () =>
-    store.get('kanban', 'config') || { repository: defaultRepository, connectorId: '' };
+  const config = () => {
+    const raw = store.get('kanban', 'config') || {};
+    return {
+      repository: typeof raw.repository === 'string' ? raw.repository : defaultRepository,
+      connectorId: typeof raw.connectorId === 'string' ? raw.connectorId : '',
+      archived: Array.isArray(raw.archived) ? raw.archived : [],
+      doneObservedAt:
+        raw.doneObservedAt && typeof raw.doneObservedAt === 'object' && !Array.isArray(raw.doneObservedAt)
+          ? { ...raw.doneObservedAt }
+          : {}
+    };
+  };
 
   function source(c) {
     const m = store.get('mcp', c.connectorId);
@@ -105,20 +115,111 @@ export function kanbanService(store, connectors) {
         throw new HubError('Repo phải có dạng owner/repository');
       repository = b.repository.trim();
     }
-    const value = { repository, connectorId: b.connectorId };
+    const current = config();
+    const value = {
+      repository,
+      connectorId: b.connectorId,
+      archived: current.archived,
+      doneObservedAt: current.doneObservedAt
+    };
     source(value);
     store.put('kanban', 'config', value);
-    store.audit(actor, 'hub', 'kanban.configure', 'success', value, {});
+    store.audit(actor, 'hub', 'kanban.configure', 'success', { repository, connectorId: b.connectorId }, {});
     cache = null;
     return value;
   }
 
-  async function read() {
+  const AUTO_ARCHIVE_MS = 24 * 60 * 60 * 1000;
+
+  function sortIssues(issues, provider) {
+    return provider === 'gitea-mcp'
+      ? [...issues].sort((a, b) => {
+          const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+          const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+          if (tB !== tA) return tB - tA;
+          return b.number - a.number;
+        })
+      : [...issues].sort((a, b) => b.number - a.number);
+  }
+
+  function processArchiveAndTracking(foundMap, now = Date.now()) {
+    const c = config();
+    const archivedSet = new Set(c.archived);
+    const doneObservedAt = { ...c.doneObservedAt };
+    let changed = false;
+
+    for (const [id, item] of foundMap) {
+      if (item.column === 'Done') {
+        if (archivedSet.has(id)) {
+          if (doneObservedAt[id]) {
+            delete doneObservedAt[id];
+            changed = true;
+          }
+        } else {
+          if (!doneObservedAt[id]) {
+            doneObservedAt[id] = new Date(now).toISOString();
+            changed = true;
+          } else {
+            const observedTime = new Date(doneObservedAt[id]).getTime();
+            if (now - observedTime >= AUTO_ARCHIVE_MS) {
+              archivedSet.add(id);
+              delete doneObservedAt[id];
+              changed = true;
+            }
+          }
+        }
+      } else {
+        if (doneObservedAt[id]) {
+          delete doneObservedAt[id];
+          changed = true;
+        }
+        if (archivedSet.has(id)) {
+          archivedSet.delete(id);
+          changed = true;
+        }
+      }
+    }
+
+    for (const id of Object.keys(doneObservedAt)) {
+      if (!foundMap.has(id)) {
+        delete doneObservedAt[id];
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      const current = config();
+      const updated = {
+        ...current,
+        archived: [...archivedSet],
+        doneObservedAt
+      };
+      store.put('kanban', 'config', updated);
+      c.archived = updated.archived;
+      c.doneObservedAt = updated.doneObservedAt;
+    }
+
+    const visible = [...foundMap.values()].filter(item => !archivedSet.has(item.id));
+    return { visible, config: c };
+  }
+
+  async function read(now = Date.now()) {
     const c = config();
     if (!c.connectorId) return { config: c, columns, issues: [], configured: false };
     const m = source(c);
-    const key = JSON.stringify([c, m.secret, m.credentialVersion]);
-    if (cache?.key === key && Date.now() < cache.nextCheck) return cache.value;
+    const key = JSON.stringify([
+      { repository: c.repository, connectorId: c.connectorId },
+      m.secret,
+      m.credentialVersion
+    ]);
+    if (cache?.key === key && now < cache.nextCheck) {
+      if (cache.rawFound) {
+        const { visible, config: updatedCfg } = processArchiveAndTracking(cache.rawFound, now);
+        const sorted = sortIssues(visible, m.provider);
+        return { ...cache.value, config: updatedCfg, issues: sorted };
+      }
+      return cache.value;
+    }
     if (pending?.key === key) return pending.promise;
     const promise = (async () => {
       try {
@@ -242,34 +343,39 @@ export function kanbanService(store, connectors) {
 
         // Never publish results from a credential/configuration that changed during the request.
         const latest = source(config());
-        if (JSON.stringify([config(), latest.secret, latest.credentialVersion]) !== key)
+        const currentCfg = config();
+        if (
+          currentCfg.repository !== c.repository ||
+          currentCfg.connectorId !== c.connectorId ||
+          latest.secret !== m.secret ||
+          latest.credentialVersion !== m.credentialVersion
+        )
           throw new HubError('Cấu hình Kanban vừa thay đổi; mở lại bảng', 409);
 
-        const sortedIssues =
-          m.provider === 'gitea-mcp'
-            ? [...found.values()].sort((a, b) => {
-                const tA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-                const tB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-                if (tB !== tA) return tB - tA;
-                return b.number - a.number;
-              })
-            : [...found.values()].sort((a, b) => b.number - a.number);
+        const { visible, config: updatedCfg } = processArchiveAndTracking(found, now);
+        const sortedIssues = sortIssues(visible, m.provider);
 
         const value = {
-          config: c,
+          config: updatedCfg,
           columns,
           configured: true,
           issues: sortedIssues,
-          fetchedAt: new Date().toISOString(),
+          fetchedAt: new Date(now).toISOString(),
           stale: false,
           truncated,
           error: null
         };
-        cache = { key, nextCheck: Date.now() + 120000, value };
+        cache = { key, nextCheck: now + 120000, value, rawFound: found };
         return value;
       } catch (e) {
         const latest = source(config());
-        if (JSON.stringify([config(), latest.secret, latest.credentialVersion]) !== key)
+        const currentCfg = config();
+        if (
+          currentCfg.repository !== c.repository ||
+          currentCfg.connectorId !== c.connectorId ||
+          latest.secret !== m.secret ||
+          latest.credentialVersion !== m.credentialVersion
+        )
           throw new HubError('Cấu hình Kanban vừa thay đổi; mở lại bảng', 409);
         // Show a clearly dated snapshot on transient errors, never a partially fetched board.
         const isGitea = m?.provider === 'gitea-mcp';
@@ -283,8 +389,8 @@ export function kanbanService(store, connectors) {
               ? e.message
               : `Không thể đồng bộ issue ${isGitea ? 'Gitea' : 'GitHub'}; thử lại sau`
         };
-        if (JSON.stringify(config()) === JSON.stringify(c))
-          cache = { key, nextCheck: Date.now() + 120000, value };
+        if (currentCfg.repository === c.repository && currentCfg.connectorId === c.connectorId)
+          cache = { key, nextCheck: now + 120000, value, rawFound: cache?.rawFound };
         return value;
       }
     })();
@@ -295,5 +401,42 @@ export function kanbanService(store, connectors) {
       if (pending?.promise === promise) pending = null;
     }
   }
-  return { config, configure, read };
+
+  async function archiveDone(actor = 'owner') {
+    const c = config();
+    if (!c.connectorId) throw new HubError('Chưa cấu hình nguồn Kanban', 400);
+
+    const data = await read();
+    const current = config();
+    const archivedSet = new Set(current.archived || []);
+    const doneObservedAt = { ...(current.doneObservedAt || {}) };
+
+    const doneIssues = (data.issues || []).filter(i => i.column === 'Done');
+    for (const issue of doneIssues) {
+      archivedSet.add(issue.id);
+      delete doneObservedAt[issue.id];
+    }
+
+    const updated = {
+      ...current,
+      archived: [...archivedSet],
+      doneObservedAt
+    };
+    store.put('kanban', 'config', updated);
+    store.audit(actor, 'hub', 'kanban.archive_done', 'success', { count: doneIssues.length }, {});
+
+    if (cache?.value) {
+      cache.value = {
+        ...cache.value,
+        config: updated,
+        issues: (cache.value.issues || []).filter(i => !archivedSet.has(i.id))
+      };
+    } else {
+      cache = null;
+    }
+
+    return { ok: true, archivedCount: doneIssues.length };
+  }
+
+  return { config, configure, read, archiveDone };
 }
