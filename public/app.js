@@ -1487,6 +1487,12 @@ async function act(action, args, el = null) {
     return;
   }
   if (action === 'kanban-refresh') return loadKanban();
+  if (action === 'kanban-archive-done') {
+    const res = await api('kanban/archive-done', 'POST');
+    kanbanData = null;
+    await loadKanban();
+    return toast(`Đã chuyển lưu trữ ${res?.archivedCount ?? 0} issue cột Done`);
+  }
   if (action === 'close') return close();
   if (action === 'menu') {
     document.querySelector('.sidebar').classList.toggle('open');
