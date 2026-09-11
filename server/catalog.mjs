@@ -1,3 +1,5 @@
+import { giteaTools } from './gitea-mcp.mjs';
+
 const s = description => ({ type: 'string', description });
 const n = (description, maximum = 100) => ({ type: 'integer', description, minimum: 1, maximum });
 const tool = (name, description, props = {}, required = [], write = false, scopes = []) => ({
@@ -95,6 +97,17 @@ export const catalog = [
     guide: 'https://github.com/github/github-mcp-server',
     tokenGuide: 'https://github.com/settings/personal-access-tokens/new',
     tools: []
+  },
+  {
+    id: 'gitea-mcp',
+    name: 'Gitea MCP (pilot)',
+    description:
+      'Kho mã nguồn Gitea tự host; quản lý mã nguồn, PR và issue qua REST API. Owner công bố từng tool.',
+    category: 'Phát triển',
+    auth: 'PAT',
+    guide: 'https://docs.gitea.com/development/api-usage',
+    tokenGuide: 'https://docs.gitea.com/development/api-usage',
+    tools: giteaTools()
   },
   {
     id: 'drive',

@@ -1,6 +1,7 @@
 import { jsonRequest, request, HubError } from './net.mjs';
 import { provider } from './catalog.mjs';
 import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs';
+import { giteaTools, giteaCall, giteaBaseUrl, isDefaultGiteaUrl } from './gitea-mcp.mjs';
 const enc = encodeURIComponent;
 const query = o => {
   const q = new URLSearchParams();
@@ -45,7 +46,7 @@ export function checkToolPermissions(m, tools = [], { headers = {}, credential =
     }));
   }
 
-  if (providerId === 'github-mcp') {
+  if (providerId === 'github-mcp' || providerId === 'gitea-mcp') {
     const scopeHeader = headers['x-oauth-scopes'] || credential.scope;
     if (scopeHeader !== undefined && scopeHeader !== null) {
       const tokenScopes = (typeof scopeHeader === 'string' ? scopeHeader.split(/[\s,]+/) : [])
@@ -479,11 +480,21 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
       } else if (m.provider === 'figma') {
         probeUrl = 'https://api.figma.com/v1/me';
         probeHeaders = { 'X-Figma-Token': token };
+      } else if (m.provider === 'gitea-mcp') {
+        probeUrl = `${giteaBaseUrl(m.url)}/user`;
+        probeHeaders = {
+          Accept: 'application/json',
+          Authorization: 'token ' + token
+        };
       }
       let responseHeaders = {};
       if (probeUrl) {
         try {
-          const r = await doRequest(probeUrl, { headers: probeHeaders, method: 'GET' });
+          const r = await doRequest(probeUrl, {
+            headers: probeHeaders,
+            method: 'GET',
+            allowPrivate: m.provider === 'gitea-mcp' ? (isDefaultGiteaUrl(m.url) ? true : !!m.allowPrivate) : m.allowPrivate
+          });
           responseHeaders = r.headers || {};
         } catch (err) {
           if (m.provider === 'github' && err.status === 403) {
@@ -536,6 +547,11 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
           m,
           async session => (await rpc(m, 'tools/call', { name: t, arguments: a }, session)).result
         );
+      }
+      if (m.provider === 'gitea-mcp') {
+        const c = await credential(m);
+        const token = c.access_token || c.token;
+        return await giteaCall(t, a, { url: m.url, token, allowPrivate: m.allowPrivate, request: doRequest });
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(await call(m, t, a)) }],
