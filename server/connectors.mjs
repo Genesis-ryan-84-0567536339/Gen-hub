@@ -1,7 +1,7 @@
 import { jsonRequest, request, HubError } from './net.mjs';
 import { provider } from './catalog.mjs';
 import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs';
-import { giteaTools, giteaCall, giteaBaseUrl } from './gitea-mcp.mjs';
+import { giteaTools, giteaCall, giteaBaseUrl, isDefaultGiteaUrl } from './gitea-mcp.mjs';
 const enc = encodeURIComponent;
 const query = o => {
   const q = new URLSearchParams();
@@ -493,7 +493,7 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
           const r = await doRequest(probeUrl, {
             headers: probeHeaders,
             method: 'GET',
-            allowPrivate: m.provider === 'gitea-mcp' ? true : m.allowPrivate
+            allowPrivate: m.provider === 'gitea-mcp' ? (isDefaultGiteaUrl(m.url) ? true : !!m.allowPrivate) : m.allowPrivate
           });
           responseHeaders = r.headers || {};
         } catch (err) {
@@ -551,7 +551,7 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
       if (m.provider === 'gitea-mcp') {
         const c = await credential(m);
         const token = c.access_token || c.token;
-        return await giteaCall(t, a, { url: m.url, token, request: doRequest });
+        return await giteaCall(t, a, { url: m.url, token, allowPrivate: m.allowPrivate, request: doRequest });
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(await call(m, t, a)) }],

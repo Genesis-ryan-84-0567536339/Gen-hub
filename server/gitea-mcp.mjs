@@ -9,6 +9,40 @@ export function giteaBaseUrl(url = DEFAULT_GITEA_URL) {
   return `${clean}/api/v1`;
 }
 
+export function isDefaultGiteaUrl(url) {
+  if (!url) return true;
+  try {
+    const parsed = new URL(giteaBaseUrl(url));
+    const defaultParsed = new URL(DEFAULT_GITEA_URL);
+    return (
+      parsed.protocol === defaultParsed.protocol &&
+      parsed.hostname.toLowerCase() === defaultParsed.hostname.toLowerCase() &&
+      (parsed.port || (parsed.protocol === 'https:' ? '443' : '80')) ===
+        (defaultParsed.port || (defaultParsed.protocol === 'https:' ? '443' : '80')) &&
+      parsed.pathname.replace(/\/+$/, '') === defaultParsed.pathname.replace(/\/+$/, '')
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function isDefaultGiteaTarget(url) {
+  try {
+    const parsed = new URL(url);
+    const defaultParsed = new URL(DEFAULT_GITEA_URL);
+    return (
+      parsed.protocol === defaultParsed.protocol &&
+      parsed.hostname.toLowerCase() === defaultParsed.hostname.toLowerCase() &&
+      (parsed.port || (parsed.protocol === 'https:' ? '443' : '80')) ===
+        (defaultParsed.port || (defaultParsed.protocol === 'https:' ? '443' : '80')) &&
+      (parsed.pathname === defaultParsed.pathname ||
+        parsed.pathname.startsWith(defaultParsed.pathname + '/'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function giteaEndpoint(m) {
   const u = giteaBaseUrl(m?.url);
   try {
@@ -365,6 +399,29 @@ export const GITEA_TOOLS = [
     },
     ['owner', 'repo', 'issue_number'],
     false
+  ),
+  defineTool(
+    'update_issue',
+    'Cập nhật thông tin issue (tiêu đề, nội dung, trạng thái open/closed, người được giao, milestone).',
+    {
+      ...repoProps,
+      issue_number: integer('Số thứ tự / chỉ mục của issue'),
+      title: string('Tiêu đề mới của issue'),
+      body: string('Nội dung mới của issue'),
+      state: {
+        type: 'string',
+        enum: ['open', 'closed'],
+        description: 'Trạng thái của issue (open hoặc closed)'
+      },
+      assignees: {
+        type: 'array',
+        description: 'Danh sách username được giao phụ trách issue',
+        items: string()
+      },
+      milestone: integer('ID của milestone gắn với issue', 0)
+    },
+    ['owner', 'repo', 'issue_number'],
+    true
   ),
   defineTool(
     'add_issue_comment',
@@ -778,7 +835,7 @@ function checkRequiredStrings(obj, keys) {
   }
 }
 
-async function requestGitea(url, { method = 'GET', token, body, request: doRequest = request } = {}) {
+async function _requestGitea(url, { method = 'GET', token, body, allowPrivate = false, request: doRequest = request } = {}) {
   if (!token) throw new HubError('MCP chưa có credential', 401);
   const headers = {
     Accept: 'application/json',
@@ -786,11 +843,13 @@ async function requestGitea(url, { method = 'GET', token, body, request: doReque
     ...(body !== undefined ? { 'Content-Type': 'application/json' } : {})
   };
 
+  const effectiveAllowPrivate = isDefaultGiteaTarget(url) || !!allowPrivate;
+
   const r = await doRequest(url, {
     method,
     headers,
     body,
-    allowPrivate: true
+    allowPrivate: effectiveAllowPrivate
   });
 
   if (r.status !== undefined) {
@@ -805,13 +864,25 @@ async function requestGitea(url, { method = 'GET', token, body, request: doReque
   return r.json ?? (r.text ? JSON.parse(r.text) : r);
 }
 
-export async function giteaCall(name, args = {}, { url, token, request: doRequest = request } = {}) {
+export const requestGitea = _requestGitea;
+
+export async function giteaCall(name, args = {}, { url, token, allowPrivate, request: doRequest = request } = {}) {
   const toolDef = GITEA_TOOLS.find(t => t.name === name);
   if (!toolDef) throw new HubError('Tool không hỗ trợ: ' + name, 404);
 
   assertSchema(toolDef.inputSchema, args);
 
   const base = giteaBaseUrl(url);
+  const effectiveAllowPrivate = isDefaultGiteaUrl(base) || !!allowPrivate;
+
+  const requestGitea = (targetUrl, opts = {}) =>
+    _requestGitea(targetUrl, {
+      token,
+      allowPrivate: effectiveAllowPrivate,
+      request: doRequest,
+      ...opts
+    });
+
   const enc = encodeURIComponent;
   const owner = args.owner ? enc(args.owner.trim()) : '';
   const repo = args.repo ? enc(args.repo.trim()) : '';
@@ -1268,6 +1339,61 @@ export async function giteaCall(name, args = {}, { url, token, request: doReques
         comments: i.comments,
         created_at: i.created_at,
         updated_at: i.updated_at
+      };
+      break;
+    }
+
+    case 'update_issue': {
+      checkRequiredStrings(args, ['owner', 'repo']);
+      const num = Number(args.issue_number);
+      if (!Number.isInteger(num) || num <= 0) throw new HubError('issue_number phải là số nguyên dương');
+
+      const payload = {};
+      if (args.title !== undefined) {
+        if (typeof args.title !== 'string' || !args.title.trim()) {
+          throw new HubError('title không được rỗng');
+        }
+        payload.title = args.title.trim();
+      }
+      if (args.body !== undefined) {
+        if (typeof args.body !== 'string') throw new HubError('body phải là chuỗi');
+        payload.body = args.body;
+      }
+      if (args.state !== undefined) {
+        if (!['open', 'closed'].includes(args.state)) {
+          throw new HubError("state phải là 'open' hoặc 'closed'");
+        }
+        payload.state = args.state;
+      }
+      if (args.assignees !== undefined) {
+        if (!Array.isArray(args.assignees) || args.assignees.some(v => typeof v !== 'string' || !v.trim())) {
+          throw new HubError('assignees phải là mảng tên người dùng hợp lệ');
+        }
+        payload.assignees = args.assignees.map(a => a.trim());
+      }
+      if (args.milestone !== undefined) {
+        const ms = Number(args.milestone);
+        if (!Number.isInteger(ms) || ms < 0) throw new HubError('milestone phải là số nguyên không âm');
+        payload.milestone = ms;
+      }
+
+      const targetUrl = `${base}/repos/${owner}/${repo}/issues/${num}`;
+      const res = await requestGitea(targetUrl, {
+        method: 'PATCH',
+        token,
+        body: payload,
+        request: doRequest
+      });
+      result = {
+        number: res?.number ?? num,
+        title: res?.title,
+        body: res?.body,
+        state: res?.state,
+        user: res?.user ? { username: res.user.username || res.user.login } : undefined,
+        assignees: (res?.assignees || []).map(u => ({ username: u.username || u.login })),
+        milestone: res?.milestone ? { id: res.milestone.id, title: res.milestone.title } : null,
+        labels: (res?.labels || []).map(l => (typeof l === 'object' ? l.name : l)),
+        updated_at: res?.updated_at
       };
       break;
     }

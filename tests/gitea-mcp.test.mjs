@@ -10,13 +10,14 @@ import {
   giteaPublished,
   giteaTools,
   giteaCall,
-  GITEA_TOOLS
+  GITEA_TOOLS,
+  isDefaultGiteaUrl
 } from '../server/gitea-mcp.mjs';
 import { connectionGuide } from '../public/connection-guides.js';
 
-test('giteaTools returns 58 standardized tools with published: false and appropriate annotations', () => {
+test('giteaTools returns 59 standardized tools with published: false and appropriate annotations', () => {
   const tools = giteaTools();
-  assert.equal(tools.length, 58);
+  assert.equal(tools.length, 59);
 
   const expectedNames = [
     // Files
@@ -48,6 +49,7 @@ test('giteaTools returns 58 standardized tools with published: false and appropr
     // Issues
     'list_issues',
     'issue_read',
+    'update_issue',
     'add_issue_comment',
     'gitea_issue_create',
     'gitea_issue_close',
@@ -102,14 +104,14 @@ test('giteaTools returns 58 standardized tools with published: false and appropr
   }
 });
 
-test('catalog registers gitea-mcp provider correctly with 58 tools', () => {
+test('catalog registers gitea-mcp provider correctly with 59 tools', () => {
   const p = provider('gitea-mcp');
   assert(p);
   assert.equal(p.id, 'gitea-mcp');
   assert.equal(p.name, 'Gitea MCP (pilot)');
   assert.equal(p.category, 'Phát triển');
   assert.equal(p.auth, 'PAT');
-  assert.equal(p.tools.length, 58);
+  assert.equal(p.tools.length, 59);
   assert(p.tools.every(t => t.published === false));
 });
 
@@ -167,6 +169,16 @@ test('giteaCall enforces credentials and validates input schemas', async () => {
 
   await assert.rejects(
     () => giteaCall('merge_pull_request', { owner: 'o', repo: 'r', pull_number: -1 }, { token: 'pat' }),
+    /ngoài phạm vi|Schema/
+  );
+
+  await assert.rejects(
+    () => giteaCall('update_issue', { owner: 'o', repo: 'r', issue_number: 1, state: 'invalid' }, { token: 'pat' }),
+    /state phải là/
+  );
+
+  await assert.rejects(
+    () => giteaCall('update_issue', { owner: 'o', repo: 'r', issue_number: -5 }, { token: 'pat' }),
     /ngoài phạm vi|Schema/
   );
 });
@@ -266,6 +278,23 @@ test('giteaCall executes broad scope of tools with mock requests', async () => {
 
     if (url.includes('/pulls/10/reviews') && options.method === 'POST') {
       return { status: 200, json: { id: 50, state: options.body.event, body: options.body.body } };
+    }
+
+    if (url.includes('/issues/42') && options.method === 'PATCH') {
+      return {
+        status: 200,
+        json: {
+          number: 42,
+          title: options.body.title || 'Bug report',
+          body: options.body.body || 'Fixed description',
+          state: options.body.state || 'closed',
+          user: { username: 'reporter' },
+          assignees: (options.body.assignees || []).map(u => ({ username: u })),
+          milestone: options.body.milestone ? { id: options.body.milestone, title: 'v1.0' } : null,
+          labels: [{ name: 'bug' }],
+          updated_at: '2026-09-11T00:00:00Z'
+        }
+      };
     }
 
     if (url.includes('/labels') && options.method === 'GET') {
@@ -430,6 +459,25 @@ test('giteaCall executes broad scope of tools with mock requests', async () => {
   const rReview = await giteaCall('create_pr_review', { ...repoArgs, pull_number: 10, event: 'APPROVED', body: 'Looks good' }, opts);
   assert.equal(rReview.isError, false);
 
+  // Issues
+  const rUpdateIssue = await giteaCall('update_issue', {
+    ...repoArgs,
+    issue_number: 42,
+    title: 'Updated Title',
+    body: 'Updated Body',
+    state: 'closed',
+    assignees: ['dev1'],
+    milestone: 10
+  }, opts);
+  assert.equal(rUpdateIssue.isError, false);
+  const updatedData = JSON.parse(rUpdateIssue.content[0].text);
+  assert.equal(updatedData.number, 42);
+  assert.equal(updatedData.title, 'Updated Title');
+  assert.equal(updatedData.state, 'closed');
+  assert.equal(updatedData.body, 'Updated Body');
+  assert.deepEqual(updatedData.assignees, [{ username: 'dev1' }]);
+  assert.equal(updatedData.milestone.id, 10);
+
   // Labels
   const rLabels = await giteaCall('list_repo_labels', repoArgs, opts);
   assert.equal(rLabels.isError, false);
@@ -572,22 +620,21 @@ test('full Hub lifecycle: add gitea-mcp, configure token, sync, publish tool, ca
   assert.equal(m.url, DEFAULT_GITEA_URL);
   assert.equal(m.allowPrivate, true);
   assert.equal(m.status, 'disconnected');
-  assert.equal(m.tools.length, 58);
+  assert.equal(m.tools.length, 59);
   assert(m.tools.every(t => t.published === false));
 
-  // 2. Set credential with custom URL
-  const customUrl = 'http://gitea-custom:3000/api/v1';
+  // 2. Set credential for internal Gitea
   const synced = await adminCall('connector_set_token', {
     id: m.id,
-    token: 'pat-token-999',
-    url: customUrl
+    token: 'pat-token-999'
   });
 
-  assert.equal(probedUrl, 'http://gitea-custom:3000/api/v1/user');
+  assert.equal(probedUrl, 'http://gitea:3000/api/v1/user');
   assert.equal(probeHeaders.Authorization, 'token pat-token-999');
   assert.equal(synced.status, 'connected');
-  assert.equal(synced.url, customUrl);
-  assert.equal(synced.tools.length, 58);
+  assert.equal(synced.url, DEFAULT_GITEA_URL);
+  assert.equal(synced.allowPrivate, true);
+  assert.equal(synced.tools.length, 59);
   assert(synced.tools.every(t => t.published === false));
   assert(synced.tools.every(t => t.permission?.status === 'ok'));
 
@@ -639,7 +686,7 @@ test('full Hub lifecycle: add gitea-mcp, configure token, sync, publish tool, ca
   const createdIssue = JSON.parse(rpcRes.data.result.content[0].text);
   assert.equal(createdIssue.number, 42);
   assert.equal(createdIssue.title, 'Automated Bug Report');
-  assert.equal(calledUrl, 'http://gitea-custom:3000/api/v1/repos/test-org/test-repo/issues');
+  assert.equal(calledUrl, 'http://gitea:3000/api/v1/repos/test-org/test-repo/issues');
 
   // 7. Verify audit log
   const logs = (await x.call('/api/logs')).data;
@@ -651,4 +698,127 @@ test('full Hub lifecycle: add gitea-mcp, configure token, sync, publish tool, ca
   assert.equal(callLog.input.owner, 'test-org');
   assert.equal(callLog.input.repo, 'test-repo');
   assert(!JSON.stringify(callLog).includes('pat-token-999'));
+});
+
+test('gitea-mcp SSRF prevention and allowPrivate handling', async t => {
+  // 1. Helper function checks
+  assert.equal(isDefaultGiteaUrl(DEFAULT_GITEA_URL), true);
+  assert.equal(isDefaultGiteaUrl('http://gitea:3000'), true);
+  assert.equal(isDefaultGiteaUrl('http://gitea:3000/api/v1'), true);
+  assert.equal(isDefaultGiteaUrl('http://gitea:3000/api/v1/'), true);
+  assert.equal(isDefaultGiteaUrl(), true);
+  assert.equal(isDefaultGiteaUrl(''), true);
+
+  assert.equal(isDefaultGiteaUrl('http://192.168.1.100:3000/api/v1'), false);
+  assert.equal(isDefaultGiteaUrl('http://10.0.0.5/api/v1'), false);
+  assert.equal(isDefaultGiteaUrl('http://169.254.169.254/latest/meta-data'), false);
+  assert.equal(isDefaultGiteaUrl('https://gitea.example.com/api/v1'), false);
+
+  // 2. Default Gitea URL automatically allows private network
+  let capturedOpts = null;
+  const mockInspect = async (url, opts) => {
+    capturedOpts = opts;
+    return { status: 200, json: { id: 1, name: 'repo' } };
+  };
+
+  await giteaCall('get_repository', { owner: 'o', repo: 'r' }, {
+    url: DEFAULT_GITEA_URL,
+    token: 'tok',
+    request: mockInspect
+  });
+  assert.equal(capturedOpts.allowPrivate, true, 'Default URL must auto-enable allowPrivate');
+
+  // Also when url option is omitted (defaults to DEFAULT_GITEA_URL)
+  capturedOpts = null;
+  await giteaCall('get_repository', { owner: 'o', repo: 'r' }, {
+    token: 'tok',
+    request: mockInspect
+  });
+  assert.equal(capturedOpts.allowPrivate, true, 'Omitted URL defaults to default Gitea and enables allowPrivate');
+
+  // 3. Custom URL pointing to private network without allowPrivate has allowPrivate = false
+  capturedOpts = null;
+  await giteaCall('get_repository', { owner: 'o', repo: 'r' }, {
+    url: 'http://192.168.1.100:3000/api/v1',
+    token: 'tok',
+    allowPrivate: false,
+    request: mockInspect
+  });
+  assert.equal(capturedOpts.allowPrivate, false, 'Custom private URL without allowPrivate must have allowPrivate: false');
+
+  // Custom URL without specifying allowPrivate also defaults to false
+  capturedOpts = null;
+  await giteaCall('get_repository', { owner: 'o', repo: 'r' }, {
+    url: 'http://192.168.1.100:3000/api/v1',
+    token: 'tok',
+    request: mockInspect
+  });
+  assert.equal(capturedOpts.allowPrivate, false, 'Custom private URL with omitted allowPrivate must have allowPrivate: false');
+
+  // 4. Custom URL with explicit allowPrivate: true gets allowPrivate = true
+  capturedOpts = null;
+  await giteaCall('get_repository', { owner: 'o', repo: 'r' }, {
+    url: 'http://192.168.1.100:3000/api/v1',
+    token: 'tok',
+    allowPrivate: true,
+    request: mockInspect
+  });
+  assert.equal(capturedOpts.allowPrivate, true, 'Custom private URL with explicit allowPrivate: true gets allowPrivate: true');
+
+  // 5. Verification against real Hub network layer:
+  // Custom private IP request fails SSRF check when allowPrivate is not set
+  await assert.rejects(
+    () => giteaCall('get_repository', { owner: 'o', repo: 'r' }, {
+      url: 'http://192.168.1.100:3000/api/v1',
+      token: 'tok'
+    }),
+    /Địa chỉ mạng riêng chưa được owner cho phép/
+  );
+
+  await assert.rejects(
+    () => giteaCall('get_repository', { owner: 'o', repo: 'r' }, {
+      url: 'http://10.0.0.5/api/v1',
+      token: 'tok'
+    }),
+    /Địa chỉ mạng riêng chưa được owner cho phép/
+  );
+
+  // 6. Hub lifecycle check: connector_add / POST /api/mcps and credential endpoint
+  const x = await fixture(t);
+
+  // 6a. Default URL auto-sets allowPrivate: true
+  const addDefaultRes = await x.call('/api/mcps', 'POST', {
+    provider: 'gitea-mcp',
+    name: 'Default Gitea'
+  });
+  assert.equal(addDefaultRes.status, 201);
+  assert.equal(addDefaultRes.data.allowPrivate, true);
+
+  // 6b. Custom URL without allowPrivate -> allowPrivate: false
+  const addCustomRes = await x.call('/api/mcps', 'POST', {
+    provider: 'gitea-mcp',
+    name: 'Custom Gitea',
+    url: 'http://192.168.1.100:3000/api/v1'
+  });
+  assert.equal(addCustomRes.status, 201);
+  assert.equal(addCustomRes.data.allowPrivate, false);
+
+  // 6c. Custom URL with allowPrivate: true -> allowPrivate: true
+  const addCustomAllowedRes = await x.call('/api/mcps', 'POST', {
+    provider: 'gitea-mcp',
+    name: 'Custom Allowed Gitea',
+    url: 'http://192.168.1.100:3000/api/v1',
+    allowPrivate: true
+  });
+  assert.equal(addCustomAllowedRes.status, 201);
+  assert.equal(addCustomAllowedRes.data.allowPrivate, true);
+
+  // 6d. Updating credential with custom private URL without allowPrivate -> disables allowPrivate
+  // and sync attempt with real request rejects with SSRF error
+  const credUpdateRes = await x.call(`/api/mcps/${addDefaultRes.data.id}/credential`, 'POST', {
+    url: 'http://192.168.1.100:3000/api/v1',
+    token: 'some-token'
+  });
+  assert.equal(credUpdateRes.status, 400);
+  assert.match(credUpdateRes.data.error, /mạng riêng/);
 });

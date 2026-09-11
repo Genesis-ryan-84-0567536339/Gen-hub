@@ -19,7 +19,7 @@ import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
 import { GITHUB_MCP_URL, githubEndpoint, githubPublished } from './github-mcp.mjs';
 import { ownerOidcService, OWNER_OIDC_CLIENT } from './owner-oidc.mjs';
-import { DEFAULT_GITEA_URL, giteaBaseUrl, giteaEndpoint, giteaPublished } from './gitea-mcp.mjs';
+import { DEFAULT_GITEA_URL, giteaBaseUrl, giteaEndpoint, giteaPublished, isDefaultGiteaUrl } from './gitea-mcp.mjs';
 import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
@@ -702,7 +702,7 @@ export function createHub({
       if (m.provider === 'gitea-mcp') {
         m.url = giteaBaseUrl(b.url || DEFAULT_GITEA_URL);
         giteaEndpoint(m);
-        m.allowPrivate = true;
+        m.allowPrivate = isDefaultGiteaUrl(m.url) ? true : !!b.allowPrivate;
       }
       store.put('mcp', mid, m);
       audit('mcp.add', { name: m.name, provider: m.provider }, { id: mid }, mid);
@@ -741,6 +741,11 @@ export function createHub({
         if (m.provider === 'gitea-mcp' && b.url) {
           m.url = giteaBaseUrl(b.url);
           giteaEndpoint(m);
+          m.allowPrivate = isDefaultGiteaUrl(m.url)
+            ? true
+            : b.allowPrivate !== undefined
+              ? !!b.allowPrivate
+              : false;
         }
         m.credentialVersion = (m.credentialVersion || 0) + 1;
         m.secret = store.seal({ token });
