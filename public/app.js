@@ -1783,7 +1783,10 @@ document.addEventListener('submit', async e => {
       toast('Đã lưu quyền đọc secret');
     }
     if (f.id === 'kanban-config') {
-      await api('kanban', 'PATCH', { repository: b.repository.trim(), connectorId: b.connectorId });
+      const selectedMcp = (state?.mcps || []).find(m => m.id === b.connectorId);
+      const isGitea = selectedMcp?.provider === 'gitea-mcp';
+      const repository = isGitea ? '' : (b.repository || '').trim();
+      await api('kanban', 'PATCH', { repository, connectorId: b.connectorId });
       kanbanData = null;
       await loadKanban();
       toast('Đã lưu nguồn Kanban');
@@ -1927,13 +1930,16 @@ document.addEventListener('submit', async e => {
 });
 function updateResults() {
   const el = $('#results');
-  if (el)
+  if (el) {
+    const repoFilter = $('#kanban-filter-repo')?.value || '';
+    const agentFilter = $('#kanban-filter-agent')?.value || '';
     el.innerHTML =
       route === 'kanban'
-        ? kanbanCards(kanbanData, filter)
+        ? kanbanCards(kanbanData, filter, { repo: repoFilter, agent: agentFilter })
         : ['mcps', 'agents', 'vault'].includes(route)
           ? entityResults(route)
           : logTable(logFilter());
+  }
 }
 document.addEventListener('input', e => {
   if (e.target.name === 'url' && e.target.form?.id === 'remote')
@@ -1967,6 +1973,26 @@ document.addEventListener('keydown', e => {
   tabs[next].click();
 });
 document.addEventListener('change', e => {
+  if (e.target.id === 'kanban-connector-select') {
+    const opt = e.target.selectedOptions[0];
+    const prov = opt?.dataset?.provider;
+    const group = $('#kanban-repo-group');
+    const input = $('#kanban-repo-input');
+    if (group && input) {
+      if (prov === 'gitea-mcp') {
+        group.style.display = 'none';
+        input.removeAttribute('required');
+      } else {
+        group.style.display = '';
+        input.setAttribute('required', '');
+      }
+    }
+    return;
+  }
+  if (e.target.id === 'kanban-filter-repo' || e.target.id === 'kanban-filter-agent') {
+    updateResults();
+    return;
+  }
   if (e.target.id === 'activity-hours') {
     activityHours = Number(e.target.value);
     activity = new Map();
