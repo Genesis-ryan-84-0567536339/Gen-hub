@@ -84,8 +84,8 @@ export function createHub({
     auth = authService(store, origin),
     up = connector || connectorService(store),
     limits = new Map();
-  const kanban = kanbanService(store, up);
   const chatService = createChatService(store, origin);
+  const kanban = kanbanService(store, up);
   const ownerOidc = ownerOidcService(store, auth, origin);
 
   const currentRevision = revision !== undefined ? revision : detectRevision();
