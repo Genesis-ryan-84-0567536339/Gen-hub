@@ -24,6 +24,7 @@ import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
 import { kanbanService } from './kanban.mjs';
 import { githubRetryAt } from './github-rate.mjs';
+import { createChatService } from './llm.mjs';
 const pub = fileURLToPath(new URL('../public/', import.meta.url));
 const cleanMcp = ({ secret, ...m }) => ({ ...m, hasCredential: !!secret });
 
@@ -83,6 +84,7 @@ export function createHub({
     auth = authService(store, origin),
     up = connector || connectorService(store),
     limits = new Map();
+  const chatService = createChatService(store, origin);
   const kanban = kanbanService(store, up);
   const ownerOidc = ownerOidcService(store, auth, origin);
 
@@ -605,6 +607,7 @@ export function createHub({
         endpoint: origin + '/mcp',
         catalog,
         adminAssistant: assistant.status(),
+        llm: chatService.getConfig(),
         owner: store.get('owner', 'main').username,
         update: getUpdateStatus()
       });
@@ -634,6 +637,22 @@ export function createHub({
       store.put('settings', 'main', old);
       audit('settings.update', b);
       return respond(200, old);
+    }
+    if (resource === 'llm') {
+      if (method === 'GET') return respond(200, chatService.getConfig());
+      if (method === 'PATCH' || method === 'POST') {
+        if (mid === 'test' || action === 'test') {
+          const res = await chatService.testConnection(b);
+          return respond(200, res);
+        }
+        const updated = chatService.saveConfig(b, actor);
+        return respond(200, updated);
+      }
+      throw new HubError('Không tìm thấy API', 404);
+    }
+    if (resource === 'chat' && method === 'POST') {
+      const res = await chatService.chat(b, actor, req);
+      return respond(200, res);
     }
     if (resource === 'password' && method === 'POST') {
       const o = store.get('owner', 'main');
@@ -1111,6 +1130,7 @@ export function createHub({
     auth,
     allowed,
     checkRemoteUpdate,
+    chatService,
     close: () => {
       clearInterval(timer);
       clearInterval(updateTimer);
