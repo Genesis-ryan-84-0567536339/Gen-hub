@@ -280,6 +280,7 @@ async function boot() {
     const s = await api('session');
     csrf = s.csrf;
     await refresh();
+    if (route.startsWith('gitea/')) { location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6))); return; }
     if (route.startsWith('consent/')) await consent(route.slice(8));
     else if (!state.settings.onboarded) onboarding();
   } catch (e) {
@@ -1459,6 +1460,7 @@ document.addEventListener('submit', async e => {
       const r = await api('login', 'POST', b);
       csrf = r.csrf;
       await refresh();
+      if (route.startsWith('gitea/')) { location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6))); return; }
       if (route.startsWith('consent/')) await consent(route.slice(8));
       else if (!state.settings.onboarded) onboarding();
     }
@@ -1640,6 +1642,7 @@ window.addEventListener('hashchange', async () => {
   close();
   if (state) {
     render();
+    if (route.startsWith('gitea/')) { location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6))); return; }
     if (route.startsWith('consent/'))
       try {
         await consent(route.slice(8));
