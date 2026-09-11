@@ -295,6 +295,53 @@ let chatOpen = false,
   chatMessages = [],
   chatLoading = false;
 
+const CHAT_WIDTH_MIN = 300,
+  CHAT_WIDTH_MAX = 720,
+  CHAT_WIDTH_DEFAULT = 380;
+function loadChatWidth() {
+  try {
+    const saved = Number(localStorage.getItem('genhub_chat_width'));
+    if (Number.isFinite(saved) && saved >= CHAT_WIDTH_MIN && saved <= CHAT_WIDTH_MAX) return saved;
+  } catch {}
+  return CHAT_WIDTH_DEFAULT;
+}
+function saveChatWidth(width) {
+  try {
+    localStorage.setItem('genhub_chat_width', String(width));
+  } catch {}
+}
+function setChatWidth(width) {
+  const clamped = Math.min(
+    CHAT_WIDTH_MAX,
+    Math.max(CHAT_WIDTH_MIN, Math.min(width, window.innerWidth - 40))
+  );
+  document.documentElement.style.setProperty('--chat-width', clamped + 'px');
+  return clamped;
+}
+function startChatResize(startEvent) {
+  startEvent.preventDefault();
+  const startX = startEvent.clientX;
+  const startWidth =
+    parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chat-width')) ||
+    CHAT_WIDTH_DEFAULT;
+  document.body.classList.add('chat-rail-dragging');
+  startEvent.target.classList.add('active');
+  let finalWidth = startWidth;
+  const onMove = e => {
+    finalWidth = setChatWidth(startWidth + (startX - e.clientX));
+  };
+  const onUp = () => {
+    document.body.classList.remove('chat-rail-dragging');
+    startEvent.target.classList.remove('active');
+    saveChatWidth(finalWidth);
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+setChatWidth(loadChatWidth());
+
 function executeClientTool(name, args = {}) {
   if (name === 'navigate') {
     const routeTarget = String(args.route || '').trim();
@@ -400,11 +447,13 @@ function renderChat() {
 
   if (!chatOpen) {
     dock.className = 'chat-dock closed';
+    document.body.classList.remove('chat-rail-open');
     dock.innerHTML = `<button type="button" class="chat-toggle-btn" data-action="chat-toggle" aria-label="Mở Trợ lý Gen-hub" title="Trợ lý ảo Gen-hub">${I('bot')}</button>`;
     return;
   }
 
   dock.className = 'chat-dock open';
+  document.body.classList.add('chat-rail-open');
   const isConfigured = !!state.llm?.configured;
   const subtitle = isConfigured
     ? `${esc(state.llm.provider)} · ${esc(state.llm.model)}`
@@ -453,6 +502,7 @@ function renderChat() {
   }
 
   dock.innerHTML = `<div class="chat-panel" role="region" aria-label="Khung chat trợ lý">
+    <div class="chat-resize-handle" aria-hidden="true" title="Kéo để đổi chiều rộng"></div>
     <div class="chat-head">
       <div class="chat-head-title">
         <span class="avatar-bot">${I('bot')}</span>
@@ -477,6 +527,8 @@ function renderChat() {
 
   const body = dock.querySelector('#chat-body');
   if (body) body.scrollTop = body.scrollHeight;
+  const handle = dock.querySelector('.chat-resize-handle');
+  if (handle) handle.addEventListener('mousedown', startChatResize);
 }
 
 async function sendChatMessage(text) {

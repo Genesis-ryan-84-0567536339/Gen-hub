@@ -83,9 +83,18 @@ details.toolgroup[open] summary .chevron{transform:rotate(180deg)}
 .kanban-labels .badge { white-space: normal; }
 @media (max-width: 700px) { .kanban-board { grid-template-columns: 1fr; } }
 
-/* Fixed UI Chat Dock & Highlighting (Issue #24) */
+/* Fixed UI Chat Dock & Highlighting (Issue #24) — persistent resizable right column when open */
+:root { --chat-width: 380px; }
 .chat-dock { position: fixed; bottom: 22px; right: 24px; z-index: 99; }
 .chat-dock.hidden { display: none; }
+.chat-dock.open {
+  position: fixed; top: 0; right: 0; bottom: 0; left: auto;
+  width: var(--chat-width); min-width: 300px; max-width: min(720px, calc(100vw - 40px));
+  z-index: 100;
+}
+body.chat-rail-open .shell { margin-right: var(--chat-width); transition: margin-right 0.15s ease; }
+body.chat-rail-dragging .shell { transition: none; }
+body.chat-rail-dragging { cursor: ew-resize; user-select: none; }
 .chat-toggle-btn {
   width: 50px; height: 50px; border-radius: 50%; background: #245a3f; color: #fff;
   display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 18px rgba(20, 32, 30, 0.28);
@@ -94,15 +103,19 @@ details.toolgroup[open] summary .chevron{transform:rotate(180deg)}
 .chat-toggle-btn:hover { background: #18442e; transform: scale(1.06); box-shadow: 0 6px 24px rgba(20, 32, 30, 0.35); }
 .chat-toggle-btn .icon { width: 24px; height: 24px; }
 .chat-panel {
-  position: fixed; bottom: 22px; right: 24px; width: 380px; height: 540px;
-  max-width: calc(100vw - 28px); max-height: calc(100vh - 90px);
-  background: #ffffff; border: 1px solid var(--line); border-radius: 14px;
-  box-shadow: 0 16px 48px rgba(16, 35, 25, 0.22); display: flex; flex-direction: column;
-  overflow: hidden; animation: chatSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); z-index: 100;
+  position: relative; width: 100%; height: 100%;
+  background: #ffffff; border-left: 1px solid var(--line);
+  box-shadow: -8px 0 28px rgba(16, 35, 25, 0.12); display: flex; flex-direction: column;
+  overflow: hidden; animation: chatSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+.chat-resize-handle {
+  position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; cursor: ew-resize; z-index: 101;
+  background: transparent;
+}
+.chat-resize-handle:hover, .chat-resize-handle.active { background: rgba(40, 117, 79, 0.25); }
 @keyframes chatSlideIn {
-  from { opacity: 0; transform: translateY(16px) scale(0.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 .chat-head {
   display: flex; align-items: center; justify-content: space-between; padding: 13px 16px;
