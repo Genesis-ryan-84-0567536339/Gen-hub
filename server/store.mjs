@@ -64,6 +64,15 @@ export function openStore(dir) {
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
  CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL,id TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(kind,id));
  CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT,created TEXT NOT NULL,actor TEXT NOT NULL,mcp TEXT NOT NULL,tool TEXT NOT NULL,status TEXT NOT NULL,latency INTEGER NOT NULL,payload TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit(created);
+ CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit(actor);
+ CREATE INDEX IF NOT EXISTS idx_audit_mcp ON audit(mcp);
+ CREATE INDEX IF NOT EXISTS idx_audit_tool ON audit(tool);
+ CREATE INDEX IF NOT EXISTS idx_audit_status ON audit(status);
+ CREATE INDEX IF NOT EXISTS idx_audit_actor_id ON audit(actor, id DESC);
+ CREATE INDEX IF NOT EXISTS idx_audit_mcp_id ON audit(mcp, id DESC);
+ CREATE INDEX IF NOT EXISTS idx_audit_tool_id ON audit(tool, id DESC);
+ CREATE INDEX IF NOT EXISTS idx_audit_status_id ON audit(status, id DESC);
  PRAGMA user_version=1;`);
   const seal = v => {
     const iv = randomBytes(12),
@@ -107,34 +116,132 @@ export function openStore(dir) {
         Math.round(latency),
         seal({ input, output, reason })
       );
+  const log = id => {
+    const row = db
+      .prepare(
+        'SELECT id, created, actor, mcp, tool, status, latency, payload FROM audit WHERE id = ?'
+      )
+      .get(id);
+    if (!row) return null;
+    const { payload, ...meta } = row;
+    try {
+      return { ...meta, ...unseal(payload) };
+    } catch {
+      return { ...meta, input: {}, output: {}, reason: '' };
+    }
+  };
   const logs = (limit = 200, filters = {}) => {
     const clauses = [],
       values = [];
-    for (const key of ['actor', 'mcp', 'tool']) {
-      if (filters[key] !== undefined) {
-        clauses.push(`${key} = ?`);
-        values.push(filters[key]);
+    if (filters.id !== undefined) {
+      clauses.push('id = ?');
+      values.push(filters.id);
+    }
+    if (filters.cursor !== undefined) {
+      clauses.push('id < ?');
+      values.push(filters.cursor);
+    }
+    if (filters.actor !== undefined) {
+      if (Array.isArray(filters.actor)) {
+        if (filters.actor.length === 0) {
+          clauses.push('0 = 1');
+        } else {
+          clauses.push(`actor IN (${filters.actor.map(() => '?').join(',')})`);
+          values.push(...filters.actor);
+        }
+      } else {
+        clauses.push('actor = ?');
+        values.push(filters.actor);
+      }
+    }
+    if (filters.mcp !== undefined) {
+      clauses.push('mcp = ?');
+      values.push(filters.mcp);
+    }
+    if (filters.tool !== undefined) {
+      clauses.push('tool = ?');
+      values.push(filters.tool);
+    }
+    if (filters.status !== undefined) {
+      if (filters.status === 'ok' || filters.status === 'success') {
+        clauses.push("status IN ('success', 'ok')");
+      } else {
+        clauses.push('status = ?');
+        values.push(filters.status);
       }
     }
     if (filters.since) {
       clauses.push('created >= ?');
       values.push(filters.since);
     }
-    if (filters.secret) clauses.push("mcp = 'vault' AND tool = 'vault.read'");
-    // Secret IDs live inside encrypted payloads. Filter while iterating, before LIMIT.
+    if (filters.until) {
+      clauses.push('created <= ?');
+      values.push(filters.until);
+    }
+    if (filters.minLatency !== undefined) {
+      clauses.push('latency >= ?');
+      values.push(filters.minLatency);
+    }
+    if (filters.maxLatency !== undefined) {
+      clauses.push('latency <= ?');
+      values.push(filters.maxLatency);
+    }
+    if (filters.q) {
+      const q = filters.q;
+      if (/^\d+$/.test(q)) {
+        clauses.push('(id = ? OR tool LIKE ? OR actor LIKE ?)');
+        values.push(Number(q), `%${q}%`, `%${q}%`);
+      } else {
+        clauses.push('(tool LIKE ? OR actor LIKE ?)');
+        values.push(`%${q}%`, `%${q}%`);
+      }
+    }
+    if (filters.secret) {
+      clauses.push("mcp = 'vault' AND tool = 'vault.read'");
+    }
+
+    const includePayload =
+      filters.includePayload ??
+      (!filters.paginate && !filters.cursor && filters.includePayload !== false);
+    const cols = includePayload
+      ? 'id, created, actor, mcp, tool, status, latency, payload'
+      : 'id, created, actor, mcp, tool, status, latency';
+
+    const fetchLimit = limit + 1;
     const query =
-      'SELECT * FROM audit' +
+      `SELECT ${cols} FROM audit` +
       (clauses.length ? ' WHERE ' + clauses.join(' AND ') : '') +
       ' ORDER BY id DESC' +
       (filters.secret ? '' : ' LIMIT ?');
-    if (!filters.secret) values.push(limit);
-    const rows = [];
-    for (const { payload, ...r } of db.prepare(query).iterate(...values)) {
-      const data = unseal(payload);
-      if (filters.secret && data.input?.id !== filters.secret) continue;
-      rows.push({ ...r, ...data });
-      if (rows.length >= limit) break;
+    if (!filters.secret) values.push(fetchLimit);
+
+    const rawRows = [];
+    for (const r of db.prepare(query).iterate(...values)) {
+      if (includePayload || filters.secret) {
+        let data = {};
+        try {
+          data = unseal(r.payload);
+        } catch {}
+        if (filters.secret && data.input?.id !== filters.secret) continue;
+        const { payload, ...meta } = r;
+        rawRows.push(includePayload ? { ...meta, ...data } : meta);
+      } else {
+        rawRows.push(r);
+      }
+      if (rawRows.length >= fetchLimit) break;
     }
+
+    const hasMore = rawRows.length > limit;
+    const rows = hasMore ? rawRows.slice(0, limit) : rawRows;
+    const nextCursor = rows.length ? rows[rows.length - 1].id : null;
+
+    if (filters.paginate) {
+      return { rows, nextCursor: hasMore ? nextCursor : null, hasMore };
+    }
+
+    rows.rows = rows;
+    rows.nextCursor = hasMore ? nextCursor : null;
+    rows.hasMore = hasMore;
     return rows;
   };
   const tx = fn => {
@@ -158,7 +265,7 @@ export function openStore(dir) {
       new Date(now - days * 86400000).toISOString()
     );
   };
-  return { db, get, put, list, del, seal, unseal, audit, logs, tx, clean, close: () => db.close() };
+  return { db, get, put, list, del, seal, unseal, audit, logs, log, tx, clean, close: () => db.close() };
 }
 export function redact(value) {
   if (Array.isArray(value)) return value.map(redact);

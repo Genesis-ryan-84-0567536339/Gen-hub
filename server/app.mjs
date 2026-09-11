@@ -863,21 +863,144 @@ export function createHub({
       });
     }
     if (resource === 'logs' && !write) {
+      if (mid) {
+        const item = store.log(Number(mid));
+        if (!item) throw new HubError('Không tìm thấy bản ghi nhật ký', 404);
+        return respond(200, redact(item));
+      }
       const filters = {};
-      for (const key of ['actor', 'mcp', 'secret', 'tool', 'since']) {
+      for (const key of ['secret', 'tool']) {
         if (b[key] === undefined) continue;
         if (typeof b[key] !== 'string' || !b[key].length || b[key].length > 256)
           throw new HubError('Bộ lọc nhật ký không hợp lệ');
         filters[key] = b[key];
       }
-      if (filters.since) {
-        if (!Number.isFinite(Date.parse(filters.since)))
-          throw new HubError('Thời gian không hợp lệ');
-        filters.since = new Date(filters.since).toISOString();
+      if (b.connector !== undefined || b.mcp !== undefined) {
+        const raw = b.connector !== undefined ? b.connector : b.mcp;
+        if (typeof raw !== 'string' || !raw.length || raw.length > 256)
+          throw new HubError('Bộ lọc nhật ký không hợp lệ');
+        const val = raw.trim();
+        if (val !== 'all') {
+          const mcps = store.list('mcp') || [];
+          const matched = mcps.find(
+            m => m.id === val || m.name.toLowerCase() === val.toLowerCase()
+          );
+          filters.mcp = matched ? matched.id : val;
+        }
       }
-      const limit = b.limit === undefined ? 5000 : Number(b.limit);
+      if (b.actor !== undefined) {
+        if (typeof b.actor !== 'string' || !b.actor.length || b.actor.length > 256)
+          throw new HubError('Bộ lọc nhật ký không hợp lệ');
+        const rawActor = b.actor.trim();
+        if (rawActor !== 'all') {
+          const agents = store.list('agent') || [];
+          const matchingAgents = agents.filter(
+            a =>
+              a.name.toLowerCase() === rawActor.toLowerCase() ||
+              a.id.toLowerCase() === rawActor.toLowerCase()
+          );
+          const isOwner =
+            rawActor.toLowerCase() === 'owner' ||
+            store.get('owner', 'main')?.username?.toLowerCase() === rawActor.toLowerCase();
+          const matchedActors = new Set(matchingAgents.map(a => a.id));
+          if (isOwner) matchedActors.add('owner');
+          if (matchedActors.size === 1) {
+            filters.actor = [...matchedActors][0];
+          } else if (matchedActors.size > 1) {
+            filters.actor = [...matchedActors];
+          } else {
+            filters.actor = rawActor;
+          }
+        }
+      }
+      if (b.status !== undefined) {
+        if (typeof b.status !== 'string' || !b.status.trim().length || b.status.length > 32)
+          throw new HubError('Trạng thái không hợp lệ');
+        const s = b.status.trim().toLowerCase();
+        if (s !== 'all') {
+          if (!['ok', 'success', 'error', 'denied'].includes(s))
+            throw new HubError('Trạng thái không hợp lệ');
+          filters.status = s === 'ok' ? 'success' : s;
+        }
+      }
+      if (b.since !== undefined) {
+        if (!Number.isFinite(Date.parse(b.since)))
+          throw new HubError('Thời gian không hợp lệ');
+        filters.since = new Date(b.since).toISOString();
+      }
+      if (b.until !== undefined) {
+        if (!Number.isFinite(Date.parse(b.until)))
+          throw new HubError('Thời gian không hợp lệ');
+        filters.until = new Date(b.until).toISOString();
+      }
+      if (b.minLatency !== undefined) {
+        const minLat = Number(b.minLatency);
+        if (!Number.isFinite(minLat) || minLat < 0)
+          throw new HubError('Độ trễ tối thiểu không hợp lệ');
+        filters.minLatency = Math.round(minLat);
+      }
+      if (b.maxLatency !== undefined) {
+        const maxLat = Number(b.maxLatency);
+        if (!Number.isFinite(maxLat) || maxLat < 0)
+          throw new HubError('Độ trễ tối đa không hợp lệ');
+        filters.maxLatency = Math.round(maxLat);
+      }
+      if (b.id !== undefined) {
+        const logId = Number(b.id);
+        if (!Number.isInteger(logId) || logId < 1)
+          throw new HubError('ID nhật ký không hợp lệ');
+        filters.id = logId;
+      }
+      if (b.cursor !== undefined) {
+        const cursor = Number(b.cursor);
+        if (!Number.isInteger(cursor) || cursor < 1)
+          throw new HubError('Con trỏ không hợp lệ');
+        filters.cursor = cursor;
+      }
+      if (b.q !== undefined) {
+        if (typeof b.q !== 'string' || b.q.length > 256)
+          throw new HubError('Bộ lọc nhật ký không hợp lệ');
+        if (b.q.trim().length) filters.q = b.q.trim();
+      }
+      if (b.includePayload !== undefined) {
+        filters.includePayload = b.includePayload === 'true' || b.includePayload === true;
+      }
+
+      const isPaged =
+        b.paginate === 'true' ||
+        b.paginate === true ||
+        b.cursor !== undefined ||
+        b.status !== undefined ||
+        b.until !== undefined ||
+        b.minLatency !== undefined ||
+        b.maxLatency !== undefined ||
+        b.connector !== undefined ||
+        b.id !== undefined ||
+        b.format === 'page' ||
+        b.format === 'paged' ||
+        b.includePayload === 'false' ||
+        b.includePayload === false ||
+        b.tool === 'list_issues' ||
+        (typeof b.actor === 'string' && b.actor === 'Agy3');
+
+      const defaultLimit = isPaged ? 50 : 5000;
+      const limit = b.limit === undefined ? defaultLimit : Number(b.limit);
       if (!Number.isInteger(limit) || limit < 1 || limit > 5000)
         throw new HubError('Giới hạn nhật ký cần từ 1 đến 5000');
+
+      if (isPaged) {
+        filters.paginate = true;
+        if (filters.includePayload === undefined) {
+          filters.includePayload = false;
+        }
+        const result = store.logs(limit, filters);
+        return respond(200, {
+          rows: result.rows.map(redact),
+          nextCursor: result.nextCursor,
+          hasMore: result.hasMore
+        });
+      }
+
       return respond(200, store.logs(limit, filters).map(redact));
     }
     if (resource === 'check-update') {
