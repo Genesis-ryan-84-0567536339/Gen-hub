@@ -27,6 +27,7 @@ export function pieArc(cx, cy, R, r, startFrac, endFrac) {
 
 export function isToolCall(log) {
   if (!log || typeof log !== 'object') return false;
+  if (log.eventKind) return log.eventKind === 'tool_call' && log.actorType === 'agent';
   const actor = typeof log.actor === 'string' ? log.actor.trim() : '';
   if (!actor || actor === 'owner' || actor === 'system' || actor.startsWith('admin-assistant:')) {
     return false;
@@ -49,12 +50,7 @@ export function auditStats(logs, hours = 168, now = Date.now()) {
   const tools = new Set();
   for (const log of logs) {
     const timestamp = Date.parse(log.created);
-    if (
-      !isToolCall(log) ||
-      timestamp > now ||
-      timestamp < now - hours * 3600000
-    )
-      continue;
+    if (!isToolCall(log) || timestamp > now || timestamp < now - hours * 3600000) continue;
     const index = Math.floor((timestamp - buckets[0].start) / step);
     if (index < 0 || index >= buckets.length) continue;
     const key =

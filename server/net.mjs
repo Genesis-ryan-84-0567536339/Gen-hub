@@ -141,26 +141,34 @@ export async function jsonRequest(url, options) {
   }
   return r.json ?? { text: r.text };
 }
+export class ValidationError extends HubError {
+  constructor(message) {
+    super(message);
+    this.errorCategory = 'validation';
+  }
+}
 export function assertSchema(schema, args) {
   if (!args || typeof args !== 'object' || Array.isArray(args))
-    throw new HubError('Arguments phải là object');
+    throw new ValidationError('Arguments phải là object');
   for (const k of schema.required || [])
-    if (args[k] === undefined) throw new HubError('Thiếu tham số ' + k);
+    if (args[k] === undefined) throw new ValidationError('Thiếu tham số ' + k);
   for (const [k, v] of Object.entries(args)) {
     const p = schema.properties?.[k];
     if (!p) {
-      if (schema.additionalProperties === false) throw new HubError('Tham số không hỗ trợ: ' + k);
+      if (schema.additionalProperties === false)
+        throw new ValidationError('Tham số không hỗ trợ: ' + k);
       continue;
     }
     if (p.type === 'string' && (typeof v !== 'string' || v.length > 100000))
-      throw new HubError(k + ' phải là chuỗi');
+      throw new ValidationError(k + ' phải là chuỗi');
     if (
       p.type === 'integer' &&
       (!Number.isSafeInteger(v) || v < (p.minimum ?? -Infinity) || v > (p.maximum ?? Infinity))
     )
-      throw new HubError(k + ' ngoài phạm vi');
-    if (p.type === 'boolean' && typeof v !== 'boolean') throw new HubError(k + ' phải là boolean');
+      throw new ValidationError(k + ' ngoài phạm vi');
+    if (p.type === 'boolean' && typeof v !== 'boolean')
+      throw new ValidationError(k + ' phải là boolean');
     if (p.type === 'object' && (!v || typeof v !== 'object' || Array.isArray(v)))
-      throw new HubError(k + ' phải là object');
+      throw new ValidationError(k + ' phải là object');
   }
 }

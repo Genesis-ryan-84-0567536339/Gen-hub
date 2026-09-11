@@ -107,15 +107,15 @@ export function vaultService(store) {
     );
     return metadata(record);
   }
-  function read(sid, actor) {
+  function read(sid, actor, recordAudit = true) {
     try {
       const record = get(sid);
       const value = store.unseal(record.secret).secret;
       // Never put the value in audit, including before generic redaction.
-      store.audit(actor, 'vault', 'vault.read', 'success', { id: sid }, {});
+      if (recordAudit) store.audit(actor, 'vault', 'vault.read', 'success', { id: sid }, {});
       return { id: sid, secret: value };
     } catch (e) {
-      store.audit(actor, 'vault', 'vault.read', 'error', { id: sid }, {});
+      if (recordAudit) store.audit(actor, 'vault', 'vault.read', 'error', { id: sid }, {});
       throw e;
     }
   }

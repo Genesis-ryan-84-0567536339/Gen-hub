@@ -1,3 +1,5 @@
+import { classifyError, errorCategories } from './audit-metrics.mjs';
+import { withAuditTiming, measurePhase } from './audit-timing.mjs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
@@ -443,6 +445,11 @@ export function createHub({
     try {
       a = auth.bearer(req);
     } catch (e) {
+      store.audit('anonymous', 'hub', 'auth.mcp', 'error', {}, {}, undefined, '', {
+        eventKind: 'auth',
+        actorType: 'anonymous',
+        errorCategory: 'authentication'
+      });
       return send(
         res,
         401,
@@ -452,7 +459,16 @@ export function createHub({
         }
       );
     }
-    rate('mcp:' + a.id, 240);
+    try {
+      rate('mcp:' + a.id, 240);
+    } catch (e) {
+      store.audit(a.id, 'hub', 'auth.mcp_rate_limit', 'error', {}, {}, undefined, '', {
+        eventKind: 'auth',
+        actorType: 'agent',
+        errorCategory: 'rate_limit'
+      });
+      throw e;
+    }
     if (req.method !== 'POST') return send(res, 405, { error: 'Sử dụng POST' }, { Allow: 'POST' });
     const rpcError = (code, message, status = 200) =>
       send(res, status, { jsonrpc: '2.0', id: b?.id ?? null, error: { code, message } });
@@ -491,23 +507,61 @@ export function createHub({
     const start = performance.now(),
       name = b.params?.name,
       args = b.params?.arguments ?? {};
-    if (typeof name !== 'string') return rpcError(-32602, 'Missing tool name');
+    if (typeof name !== 'string') {
+      store.audit(a.id, 'hub', 'unknown_tool', 'error', {}, {}, performance.now() - start, '', {
+        eventKind: 'tool_call',
+        actorType: 'agent',
+        errorCategory: 'validation'
+      });
+      return rpcError(-32602, 'Missing tool name');
+    }
     if (name.startsWith('vault__')) {
       const sid = name.slice(7);
       if (!vault.canRead(a, sid)) {
-        store.audit(a.id, 'vault', 'vault.read', 'denied', { id: sid }, {});
+        store.audit(
+          a.id,
+          'vault',
+          'vault.read',
+          'denied',
+          { id: sid },
+          {},
+          performance.now() - start
+        );
         return rpcError(-32602, 'Tool không khả dụng hoặc chưa được cấp quyền');
       }
+      let phase = 'validation';
       try {
         assertSchema({ properties: {}, additionalProperties: false }, args);
-        const output = vault.read(sid, a.id);
+        phase = 'internal';
+        const output = vault.read(sid, a.id, false);
         store.put('agent', a.id, { ...a, last: new Date().toISOString() });
+        store.audit(
+          a.id,
+          'vault',
+          'vault.read',
+          'success',
+          { id: sid },
+          {},
+          performance.now() - start,
+          '',
+          { policyDecision: 'allow' }
+        );
         return result({
           content: [{ type: 'text', text: JSON.stringify(output) }],
           isError: false
         });
-      } catch {
-        store.audit(a.id, 'vault', 'vault.call', 'error', { id: sid }, {});
+      } catch (e) {
+        store.audit(
+          a.id,
+          'vault',
+          'vault.read',
+          'error',
+          { id: sid },
+          {},
+          performance.now() - start,
+          '',
+          { policyDecision: 'allow', errorCategory: classifyError(e, phase) }
+        );
         return result({
           content: [{ type: 'text', text: 'Không thể đọc secret; kiểm tra tham số và nhật ký.' }],
           isError: true
@@ -527,18 +581,27 @@ export function createHub({
         'denied',
         redact(args),
         {},
-        0,
+        performance.now() - start,
         'Tool không được cấp, không công bố hoặc kết nối chưa sẵn sàng'
       );
       return rpcError(-32602, 'Tool không khả dụng hoặc chưa được cấp quyền');
     }
+    let phase = 'validation';
+    const phases = {};
     try {
       assertSchema(t.inputSchema, args);
+      phase = 'internal';
       if (inFlight >= 32) throw new HubError('Hub đang bận, hãy thử lại', 429);
+      // Admission is fail-fast; this Hub has no slot queue.
+      phases.slotWait = 0;
       inFlight++;
       let out;
       try {
-        out = await up.call(m, tn, args);
+        phase = 'upstream';
+        out = await withAuditTiming(phases, () =>
+          measurePhase('connectorTotal', () => up.call(m, tn, args))
+        );
+        phase = 'internal';
       } finally {
         inFlight--;
       }
@@ -555,7 +618,12 @@ export function createHub({
         redact(args),
         redact(out),
         performance.now() - start,
-        'Agent được cấp quyền và tool đang được công bố'
+        'Agent được cấp quyền và tool đang được công bố',
+        {
+          policyDecision: 'allow',
+          errorCategory: out.isError ? 'upstream_tool_conflict' : null,
+          phases
+        }
       );
       return result(out);
     } catch (e) {
@@ -575,7 +643,8 @@ export function createHub({
         redact(args),
         { error: message },
         performance.now() - start,
-        message
+        message,
+        { policyDecision: 'allow', errorCategory: classifyError(e, phase), phases }
       );
       return result({ content: [{ type: 'text', text: message }], isError: true });
     }
@@ -870,12 +939,24 @@ export function createHub({
       });
     }
     if (resource === 'logs' && !write) {
-      if (mid) {
+      if (mid && mid !== 'summary') {
         const item = store.log(Number(mid));
         if (!item) throw new HubError('Không tìm thấy bản ghi nhật ký', 404);
         return respond(200, redact(item));
       }
       const filters = {};
+      for (const [key, allowed] of Object.entries({
+        eventKind: ['tool_call', 'admin_action', 'auth', 'system', 'unclassified'],
+        actorType: ['agent', 'owner', 'admin', 'system', 'anonymous', 'unclassified'],
+        policyDecision: ['allow', 'deny'],
+        outcome: ['success', 'error'],
+        errorCategory: errorCategories
+      })) {
+        if (b[key] !== undefined) {
+          if (!allowed.includes(b[key])) throw new HubError('Phân loại nhật ký không hợp lệ');
+          filters[key] = b[key];
+        }
+      }
       for (const key of ['secret', 'tool']) {
         if (b[key] === undefined) continue;
         if (typeof b[key] !== 'string' || !b[key].length || b[key].length > 256)
@@ -938,6 +1019,10 @@ export function createHub({
         if (!Number.isFinite(Date.parse(b.until))) throw new HubError('Thời gian không hợp lệ');
         filters.until = new Date(b.until).toISOString();
       }
+      if (b.before !== undefined) {
+        if (!Number.isFinite(Date.parse(b.before))) throw new HubError('Thời gian không hợp lệ');
+        filters.before = new Date(b.before).toISOString();
+      }
       if (b.minLatency !== undefined) {
         const minLat = Number(b.minLatency);
         if (!Number.isFinite(minLat) || minLat < 0)
@@ -967,6 +1052,22 @@ export function createHub({
       }
       if (b.includePayload !== undefined) {
         filters.includePayload = b.includePayload === 'true' || b.includePayload === true;
+      }
+
+      if (mid === 'summary') {
+        if (
+          b.secret !== undefined ||
+          b.cursor !== undefined ||
+          b.before !== undefined ||
+          b.includePayload !== undefined
+        )
+          throw new HubError('Tổng hợp chỉ hỗ trợ metadata và khoảng since/until');
+        filters.until ||= new Date().toISOString();
+        filters.since ||= new Date(Date.parse(filters.until) - 86400000).toISOString();
+        const duration = Date.parse(filters.until) - Date.parse(filters.since);
+        if (duration <= 0 || duration > 90 * 86400000)
+          throw new HubError('Khoảng tổng hợp cần lớn hơn 0 và tối đa 90 ngày');
+        return respond(200, store.summary(filters));
       }
 
       const isPaged =
@@ -1202,6 +1303,11 @@ export function createHub({
         try {
           actor = assistant.authenticate(req);
         } catch (e) {
+          store.audit('anonymous', 'hub', 'auth.admin', 'error', {}, {}, undefined, '', {
+            eventKind: 'auth',
+            actorType: 'anonymous',
+            errorCategory: 'authentication'
+          });
           return send(
             res,
             e.status || 401,
@@ -1211,7 +1317,16 @@ export function createHub({
             }
           );
         }
-        rate(actor, 120);
+        try {
+          rate(actor, 120);
+        } catch (e) {
+          store.audit(actor, 'hub', 'auth.admin_rate_limit', 'error', {}, {}, undefined, '', {
+            eventKind: 'auth',
+            actorType: 'admin',
+            errorCategory: 'rate_limit'
+          });
+          throw e;
+        }
         const response = await assistant.rpc(
           req,
           req.method === 'POST' ? await body(req) : {},
@@ -1265,6 +1380,7 @@ export function createHub({
         '/connection-guides.js': 'connection-guides.js',
         '/kanban.js': 'kanban.js',
         '/audit-stats.js': 'audit-stats.js',
+        '/operations.js': 'operations.js',
         '/notifications.js': 'notifications.js',
         '/settings.js': 'settings.js',
         '/styles.css': 'styles.css'

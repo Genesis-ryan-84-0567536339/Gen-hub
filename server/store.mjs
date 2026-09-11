@@ -1,3 +1,11 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+import {
+  auditFields,
+  auditProjection,
+  newClassification,
+  summarizeAudit
+} from './audit-metrics.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
@@ -74,6 +82,25 @@ export function openStore(dir) {
  CREATE INDEX IF NOT EXISTS idx_audit_tool_id ON audit(tool, id DESC);
  CREATE INDEX IF NOT EXISTS idx_audit_status_id ON audit(status, id DESC);
  PRAGMA user_version=1;`);
+  // Additive, nullable metadata only: never backfill or rewrite historical audit rows.
+  const columns = new Set(
+    db
+      .prepare('PRAGMA table_info(audit)')
+      .all()
+      .map(c => c.name)
+  );
+  for (const [name, type] of Object.entries({
+    eventKind: 'TEXT',
+    actorType: 'TEXT',
+    policyDecision: 'TEXT',
+    outcome: 'TEXT',
+    errorCategory: 'TEXT',
+    latencyMeasured: 'INTEGER',
+    operationId: 'TEXT'
+  }))
+    if (!columns.has(name)) db.exec(`ALTER TABLE audit ADD COLUMN ${name} ${type}`);
+  const operationContext = new AsyncLocalStorage();
+  const operation = fn => operationContext.run(randomUUID(), fn);
   const seal = v => {
     const iv = randomBytes(12),
       c = createCipheriv('aes-256-gcm', key, iv),
@@ -102,10 +129,15 @@ export function openStore(dir) {
       .all(kind)
       .map(r => JSON.parse(r.value));
   const del = (kind, id) => db.prepare('DELETE FROM records WHERE kind=? AND id=?').run(kind, id);
-  const audit = (actor, mcp, tool, status, input, output, latency = 0, reason = '') =>
-    db
+  const audit = (actor, mcp, tool, status, input, output, latency, reason = '', meta = {}) => {
+    // Freeze the actor's role at write time; later role changes must not relabel history.
+    const actorRecord = get('agent', actor);
+    const role = actorRecord ? { actorType: actorRecord.isAdmin ? 'admin' : 'agent' } : {};
+    if (actorRecord?.isAdmin && meta.eventKind === 'tool_call') role.eventKind = 'admin_action';
+    const c = newClassification({ actor, mcp, tool, status, latency }, { ...meta, ...role });
+    return db
       .prepare(
-        'INSERT INTO audit(created,actor,mcp,tool,status,latency,payload) VALUES(?,?,?,?,?,?,?)'
+        `INSERT INTO audit(created,actor,mcp,tool,status,latency,payload,eventKind,actorType,policyDecision,outcome,errorCategory,latencyMeasured,operationId) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .run(
         new Date().toISOString(),
@@ -113,13 +145,21 @@ export function openStore(dir) {
         mcp,
         tool,
         status,
-        Math.round(latency),
-        seal({ input, output, reason })
+        Math.round(latency ?? 0),
+        seal({ input, output, reason, ...(meta.phases ? { phases: meta.phases } : {}) }),
+        c.eventKind,
+        c.actorType,
+        c.policyDecision,
+        c.outcome,
+        c.errorCategory,
+        c.latencyMeasured,
+        operationContext.getStore() || randomUUID()
       );
+  };
   const log = id => {
     const row = db
       .prepare(
-        'SELECT id, created, actor, mcp, tool, status, latency, payload FROM audit WHERE id = ?'
+        `SELECT id, created, actor, mcp, tool, status, latency, payload, ${auditProjection} FROM audit WHERE id = ?`
       )
       .get(id);
     if (!row) return null;
@@ -133,6 +173,16 @@ export function openStore(dir) {
   const logs = (limit = 200, filters = {}) => {
     const clauses = [],
       values = [];
+    for (const key of ['eventKind', 'actorType', 'policyDecision', 'outcome', 'errorCategory']) {
+      if (filters[key] !== undefined) {
+        clauses.push(`${auditFields[key]} = ?`);
+        values.push(filters[key]);
+      }
+    }
+    if (filters.before) {
+      clauses.push('created < ?');
+      values.push(filters.before);
+    }
     if (filters.id !== undefined) {
       clauses.push('id = ?');
       values.push(filters.id);
@@ -204,16 +254,17 @@ export function openStore(dir) {
       filters.includePayload ??
       (!filters.paginate && !filters.cursor && filters.includePayload !== false);
     const cols = includePayload
-      ? 'id, created, actor, mcp, tool, status, latency, payload'
-      : 'id, created, actor, mcp, tool, status, latency';
+      ? `id, created, actor, mcp, tool, status, latency, payload, ${auditProjection}`
+      : `id, created, actor, mcp, tool, status, latency, ${auditProjection}`;
 
     const fetchLimit = limit + 1;
     const query =
       `SELECT ${cols} FROM audit` +
       (clauses.length ? ' WHERE ' + clauses.join(' AND ') : '') +
-      ' ORDER BY id DESC' +
-      (filters.secret ? '' : ' LIMIT ?');
-    if (!filters.secret) values.push(fetchLimit);
+      (filters.aggregate ? '' : ' ORDER BY id DESC') +
+      (filters.secret || filters.aggregate ? '' : ' LIMIT ?');
+    if (!filters.secret && !filters.aggregate) values.push(fetchLimit);
+    if (filters.aggregate) return db.prepare(query).iterate(...values);
 
     const rawRows = [];
     for (const r of db.prepare(query).iterate(...values)) {
@@ -244,6 +295,34 @@ export function openStore(dir) {
     rows.hasMore = hasMore;
     return rows;
   };
+  const summary = filters => {
+    const fetchedAt = new Date().toISOString();
+    const effectiveRetentionDays = normalizeSettings(
+      get('settings', 'main')
+    ).effectiveRetentionDays;
+    const retentionBoundary = new Date(
+      Date.now() - effectiveRetentionDays * 86400000
+    ).toISOString();
+    const earliestAvailableAt = db.prepare('SELECT MIN(created) AS value FROM audit').get().value;
+    return summarizeAudit(
+      logs(0, {
+        ...filters,
+        until: undefined,
+        before: filters.until,
+        aggregate: true,
+        includePayload: false
+      }),
+      filters,
+      {
+        fetchedAt,
+        effectiveRetentionDays,
+        earliestAvailableAt,
+        retentionBoundary,
+        incomplete: filters.since < retentionBoundary,
+        coverageStartUnknown: true
+      }
+    );
+  };
   const tx = fn => {
     db.exec('BEGIN IMMEDIATE');
     try {
@@ -257,7 +336,17 @@ export function openStore(dir) {
   };
   const clean = () => {
     const now = Date.now();
-    for (const kind of ['session', 'flow', 'code', 'oauthstate', 'client', 'token', 'owner-oidc-flow', 'owner-oidc-code', 'owner-oidc-token'])
+    for (const kind of [
+      'session',
+      'flow',
+      'code',
+      'oauthstate',
+      'client',
+      'token',
+      'owner-oidc-flow',
+      'owner-oidc-code',
+      'owner-oidc-token'
+    ])
       for (const r of list(kind)) if (r.expires && r.expires < now) del(kind, r.id);
     const settings = normalizeSettings(get('settings', 'main'));
     const days = settings.effectiveRetentionDays;
@@ -265,7 +354,23 @@ export function openStore(dir) {
       new Date(now - days * 86400000).toISOString()
     );
   };
-  return { db, get, put, list, del, seal, unseal, audit, logs, log, tx, clean, close: () => db.close() };
+  return {
+    db,
+    get,
+    put,
+    list,
+    del,
+    seal,
+    unseal,
+    audit,
+    logs,
+    log,
+    summary,
+    operation,
+    tx,
+    clean,
+    close: () => db.close()
+  };
 }
 export function redact(value) {
   if (Array.isArray(value)) return value.map(redact);
