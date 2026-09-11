@@ -366,12 +366,12 @@ export function adminAssistant(store, origin, execute) {
         actor
       });
       const output = response.data ?? {};
-      // Reading audit must not recursively store entire earlier audit payloads.
+      const auditRows = Array.isArray(output) ? output : output.rows || [];
       const auditOutput =
         definition.name === 'audit_list'
-          ? { count: output.length, ids: output.map(l => l.id) }
+          ? { count: auditRows.length, ids: auditRows.map(l => l.id) }
           : definition.name === 'hub_state'
-            ? { ...output, logs: { count: output.logs.length } }
+            ? { ...output, logs: { count: (Array.isArray(output.logs) ? output.logs : output.logs?.rows || []).length } }
             : output;
       store.audit(
         actor,

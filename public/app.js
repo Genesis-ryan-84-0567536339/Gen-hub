@@ -65,6 +65,14 @@ const selected = { agents: null, mcps: null, vault: null, settings: 'general' };
 const detailTabs = { agents: 'info', mcps: 'info', vault: 'info', settings: 'info' };
 let activity = new Map(),
   activityHours = 168;
+let auditLogs = [],
+  auditCursor = null,
+  auditHasMore = false,
+  auditLoading = false,
+  auditError = null,
+  auditFetchGen = 0,
+  auditDebounceTimer = null;
+const logDetailCache = new Map();
 let notifOpen = false,
   notifSnapshotTime = 0;
 const notifStorageKey = () => 'genhub_notifs_read_' + (state?.owner || 'owner');
@@ -275,6 +283,10 @@ async function refresh() {
   state = await api('state');
   if (state?.settings) state.settings = normalizeSettings(state.settings);
   if (route === 'kanban') await loadKanban();
+  if (route === 'audit') {
+    parseAuditHash();
+    await fetchAuditLogs();
+  }
   activity = new Map();
   render();
   renderChat();
@@ -763,7 +775,7 @@ function activityPanel(kind, id, tab) {
     });
     api('logs?' + params)
       .then(rows => {
-        entry.rows = rows;
+        entry.rows = Array.isArray(rows) ? rows : rows.rows || [];
       })
       .catch(error => {
         entry.error = error.message;
@@ -890,7 +902,124 @@ function options(rows, current) {
     )
     .join('');
 }
-function logFilter(logs = state.logs) {
+function syncAuditHash() {
+  if (route !== 'audit') return;
+  const p = new URLSearchParams();
+  if (filter.trim()) p.set('q', filter.trim());
+  if (statusFilter !== 'all') p.set('status', statusFilter);
+  if (agentFilter !== 'all') p.set('actor', agentFilter);
+  if (mcpFilter !== 'all') p.set('mcp', mcpFilter);
+  if (timeFilter !== 'all') p.set('time', timeFilter);
+  const qs = p.toString();
+  const target = '#audit' + (qs ? '?' + qs : '');
+  if (location.hash !== target) {
+    history.replaceState(null, '', target);
+  }
+}
+
+function parseAuditHash() {
+  const hash = location.hash.slice(1);
+  const qIdx = hash.indexOf('?');
+  if (qIdx !== -1) {
+    const search = new URLSearchParams(hash.slice(qIdx + 1));
+    filter = search.get('q') || search.get('tool') || '';
+    statusFilter = search.get('status') || 'all';
+    agentFilter = search.get('actor') || 'all';
+    mcpFilter = search.get('mcp') || search.get('connector') || 'all';
+    timeFilter = search.get('time') || 'all';
+  } else {
+    filter = '';
+    statusFilter = 'all';
+    agentFilter = 'all';
+    mcpFilter = 'all';
+    timeFilter = 'all';
+  }
+}
+
+function buildAuditQueryParams(extra = {}) {
+  const params = new URLSearchParams();
+  if (statusFilter !== 'all') params.set('status', statusFilter);
+  if (agentFilter !== 'all') params.set('actor', agentFilter);
+  if (mcpFilter !== 'all') params.set('mcp', mcpFilter);
+  if (timeFilter !== 'all') {
+    params.set('since', new Date(Date.now() - Number(timeFilter) * 3600000).toISOString());
+  }
+  if (filter.trim()) {
+    const q = filter.trim();
+    if (/^\d+$/.test(q)) {
+      params.set('id', q);
+    } else {
+      params.set('q', q);
+    }
+  }
+  for (const [k, v] of Object.entries(extra)) {
+    if (v !== undefined && v !== null) params.set(k, String(v));
+  }
+  return params;
+}
+
+async function fetchAuditLogs(cursor = null, append = false) {
+  if (route !== 'audit') return;
+  const gen = ++auditFetchGen;
+  auditLoading = true;
+  if (!append) {
+    auditLogs = [];
+    auditCursor = null;
+    auditHasMore = false;
+    auditError = null;
+  }
+  renderAuditResults();
+
+  const params = buildAuditQueryParams({
+    paginate: 'true',
+    includePayload: 'false',
+    limit: 50,
+    ...(cursor ? { cursor } : {})
+  });
+
+  try {
+    const res = await api('logs?' + params);
+    if (gen !== auditFetchGen) return;
+    const newRows = Array.isArray(res) ? res : res.rows || [];
+    if (append) {
+      auditLogs = auditLogs.concat(newRows);
+    } else {
+      auditLogs = newRows;
+    }
+    auditCursor = res.nextCursor ?? null;
+    auditHasMore = !!res.hasMore;
+    auditLoading = false;
+    auditError = null;
+  } catch (err) {
+    if (gen !== auditFetchGen) return;
+    auditLoading = false;
+    auditError = err.message;
+  }
+  renderAuditResults();
+}
+
+function renderAuditResultsHtml() {
+  if (auditError) {
+    return `<p class="errorline" role="alert">${esc(auditError)}</p>`;
+  }
+  if (auditLoading && !auditLogs.length) {
+    return '<p role="status" style="padding:24px;text-align:center">Đang tải nhật ký…</p>';
+  }
+  const table = logTable(auditLogs);
+  const pagination = auditHasMore
+    ? `<div style="padding:16px;text-align:center">${btn(auditLoading ? 'Đang tải…' : 'Tải thêm nhật ký', 'load-more-logs', 'secondary')}</div>`
+    : '';
+  return table + pagination;
+}
+
+function renderAuditResults() {
+  const el = $('#results');
+  if (el && route === 'audit') {
+    el.innerHTML = renderAuditResultsHtml();
+  }
+}
+
+function logFilter(logs = state?.logs || []) {
   return logs.filter(
     l =>
       (l.tool + ' ' + l.actor + ' ' + l.id).toLowerCase().includes(filter.toLowerCase()) &&
@@ -900,7 +1029,12 @@ function logFilter(logs = state.logs) {
       (timeFilter === 'all' || Date.parse(l.created) > Date.now() - Number(timeFilter) * 3600000)
   );
 }
+
 function auditPage() {
+  const initialHtml =
+    auditLogs.length || auditLoading || auditError
+      ? renderAuditResultsHtml()
+      : logTable(state?.logs ? logFilter() : []);
   return (
     head(
       'Nhật ký',
@@ -915,7 +1049,7 @@ function auditPage() {
         ['error', 'Có lỗi']
       ],
       statusFilter
-    )}</select><select id="agentfilter" class="filter" aria-label="Agent">${options([['all', 'Tất cả agent'], ['owner', 'Owner'], ...[...new Set(state.logs.filter(l => l.actor.startsWith('admin-assistant:')).map(l => l.actor))].map(actor => [actor, 'Trợ lý quản trị #' + actor.slice(-8)]), ...state.agents.map(a => [a.id, a.name])], agentFilter)}</select><select id="mcpfilter" class="filter" aria-label="MCP">${options([['all', 'Tất cả MCP'], ['hub', 'Hub'], ...state.mcps.map(m => [m.id, m.name])], mcpFilter)}</select><select id="timefilter" class="filter" aria-label="Thời gian">${options(
+    )}</select><select id="agentfilter" class="filter" aria-label="Agent">${options([['all', 'Tất cả agent'], ['owner', 'Owner'], ...[...new Set((state?.logs || []).filter(l => l.actor.startsWith('admin-assistant:')).map(l => l.actor))].map(actor => [actor, 'Trợ lý quản trị #' + actor.slice(-8)]), ...(state?.agents || []).map(a => [a.id, a.name])], agentFilter)}</select><select id="mcpfilter" class="filter" aria-label="MCP">${options([['all', 'Tất cả MCP'], ['hub', 'Hub'], ...(state?.mcps || []).map(m => [m.id, m.name])], mcpFilter)}</select><select id="timefilter" class="filter" aria-label="Thời gian">${options(
       [
         ['all', 'Tất cả thời gian'],
         ['1', 'Giờ qua'],
@@ -923,7 +1057,7 @@ function auditPage() {
         ['168', '7 ngày qua']
       ],
       timeFilter
-    )}</select></div></div><div class="card" id="results">${logTable(logFilter())}</div><p class="footnote">Hiển thị tối đa 200 bản ghi mới nhất. Xuất JSONL áp dụng cùng bộ lọc trên tối đa 5.000 bản ghi. Trường credential luôn được ẩn.</p>`
+    )}</select></div></div><div class="card" id="results">${initialHtml}</div><p class="footnote">Phân trang con trỏ (cursor) truy vấn trực tiếp từ máy chủ. Xuất JSONL áp dụng cùng bộ lọc trên tối đa 5.000 bản ghi. Trường credential luôn được ẩn.</p>`
   );
 }
 function logTable(rows) {
@@ -1296,12 +1430,36 @@ async function consent(flow) {
     });
   }
 }
-function log(id, tab = 'input') {
-  const l = [...state.logs, ...[...activity.values()].flatMap(v => v.rows || [])].find(
-    l => String(l.id) === String(id)
-  );
-  if (!l) return toast('Hãy làm mới nhật ký rồi thử lại');
+async function log(id, tab = 'input') {
   modalContext = { kind: 'log', id, tab };
+  let l =
+    logDetailCache.get(Number(id)) ||
+    [...(state?.logs || []), ...[...activity.values()].flatMap(v => v.rows || [])].find(
+      x => String(x.id) === String(id) && x.input !== undefined
+    );
+  if (!l) {
+    show(
+      'Chi tiết nhật ký',
+      '#' + id,
+      '<div style="padding:24px;text-align:center"><p role="status">Đang tải chi tiết…</p></div>',
+      btn('Đóng', 'close'),
+      true
+    );
+    try {
+      l = await api('logs/' + id);
+      logDetailCache.set(Number(id), l);
+    } catch (err) {
+      return show(
+        'Chi tiết nhật ký',
+        '#' + id,
+        `<p class="errorline">${esc(err.message)}</p>`,
+        btn('Đóng', 'close'),
+        true
+      );
+    }
+  } else {
+    logDetailCache.set(Number(id), l);
+  }
   const data =
     tab === 'input'
       ? l.input
@@ -1317,7 +1475,7 @@ function log(id, tab = 'input') {
   show(
     'Chi tiết nhật ký',
     '#' + l.id,
-    `<div class="inline" style="justify-content:space-between;margin-bottom:22px"><span class="mono">${esc(l.tool)}</span>${badge(l.status)}</div><dl class="detailgrid"><div><dt>Thời điểm</dt><dd>${date(l.created)}</dd></div><div><dt>Thời gian xử lý</dt><dd>${l.latency} ms</dd></div><div><dt>Người thực hiện</dt><dd>${esc(state.agents.find(a => a.id === l.actor)?.name || l.actor)}</dd></div><div><dt>MCP</dt><dd>${esc(state.mcps.find(m => m.id === l.mcp)?.name || l.mcp)}</dd></div></dl><div class="tabs">${[
+    `<div class="inline" style="justify-content:space-between;margin-bottom:22px"><span class="mono">${esc(l.tool)}</span>${badge(l.status)}</div><dl class="detailgrid"><div><dt>Thời điểm</dt><dd>${date(l.created)}</dd></div><div><dt>Thời gian xử lý</dt><dd>${l.latency} ms</dd></div><div><dt>Người thực hiện</dt><dd>${esc(l.actor === 'owner' ? state?.owner : state?.agents.find(a => a.id === l.actor)?.name || l.actor)}</dd></div><div><dt>MCP</dt><dd>${esc(state?.mcps.find(m => m.id === l.mcp)?.name || (l.mcp === 'hub' ? 'Hub' : l.mcp))}</dd></div></dl><div class="tabs">${[
       ['input', 'Input'],
       ['output', 'Output'],
       ['policy', 'Quyết định cấp quyền']
@@ -1617,10 +1775,13 @@ async function act(action, args, el = null) {
   }
   if (action === 'log') return log(id);
   if (action === 'logtab') return log(modalContext.id, id);
+  if (action === 'load-more-logs') return fetchAuditLogs(auditCursor, true);
   if (action === 'export') {
-    const rows = logFilter(await api('logs'));
-    download('gen-hub-audit.jsonl', rows.map(r => JSON.stringify(r)).join('\n'));
-    return toast('Đã xuất ' + rows.length + ' bản ghi');
+    const params = buildAuditQueryParams({ limit: 5000, includePayload: true, paginate: false });
+    const rows = await api('logs?' + params);
+    const exportRows = Array.isArray(rows) ? rows : rows.rows || [];
+    download('gen-hub-audit.jsonl', exportRows.map(r => JSON.stringify(r)).join('\n'));
+    return toast('Đã xuất ' + exportRows.length + ' bản ghi');
   }
   if (action === 'deny') {
     const r = await api('flows/' + id, 'POST', { approve: false });
@@ -1944,7 +2105,9 @@ function updateResults() {
         ? kanbanCards(kanbanData, filter, { repo: repoFilter, agent: agentFilter })
         : ['mcps', 'agents', 'vault'].includes(route)
           ? entityResults(route)
-          : logTable(logFilter());
+          : route === 'audit'
+            ? renderAuditResultsHtml()
+            : logTable(logFilter());
   }
 }
 document.addEventListener('input', e => {
@@ -1952,7 +2115,15 @@ document.addEventListener('input', e => {
     $('#remote-guide').innerHTML = connectionGuideHtml('remote', e.target.value);
   if (e.target.id === 'search') {
     filter = e.target.value;
-    updateResults();
+    if (route === 'audit') {
+      clearTimeout(auditDebounceTimer);
+      auditDebounceTimer = setTimeout(() => {
+        syncAuditHash();
+        fetchAuditLogs();
+      }, 250);
+    } else {
+      updateResults();
+    }
   }
 });
 document.addEventListener('keydown', e => {
@@ -2014,20 +2185,34 @@ document.addEventListener('change', e => {
   else if (e.target.id === 'mcpfilter') mcpFilter = e.target.value;
   else if (e.target.id === 'timefilter') timeFilter = e.target.value;
   else return;
-  updateResults();
+  if (route === 'audit') {
+    syncAuditHash();
+    fetchAuditLogs();
+  } else {
+    updateResults();
+  }
 });
 window.addEventListener('hashchange', async () => {
-  route = location.hash.slice(1) || 'overview';
+  const rawHash = location.hash.slice(1) || 'overview';
+  const [hashRoute] = rawHash.split('?');
+  route = hashRoute;
   kanbanGeneration++;
   if (state && route === 'kanban') loadKanban();
-  filter = '';
-  statusFilter = 'all';
-  agentFilter = 'all';
-  mcpFilter = 'all';
-  timeFilter = 'all';
+  if (route === 'audit') {
+    parseAuditHash();
+  } else {
+    filter = '';
+    statusFilter = 'all';
+    agentFilter = 'all';
+    mcpFilter = 'all';
+    timeFilter = 'all';
+  }
   close();
   if (state) {
     render();
+    if (route === 'audit') {
+      fetchAuditLogs();
+    }
     if (route.startsWith('gitea/')) {
       location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6)));
       return;
