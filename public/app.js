@@ -1894,14 +1894,6 @@ document.addEventListener('click', async e => {
   }
 });
 document.addEventListener('change', e => {
-  if (e.target.id === 'overview-hours') {
-    overviewHours = Number(e.target.value);
-    overviewSummary = null;
-    overviewError = null;
-    loadOverview();
-    render();
-    return;
-  }
   if (e.target.matches('input[name="permissions"]')) {
     updateGrantCounts(e.target.closest('form') || document);
   }
