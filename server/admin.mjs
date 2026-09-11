@@ -23,6 +23,10 @@ try {
     });
     for (const s of store.list('session')) store.del('session', s.id);
     console.log('Owner đã được lưu.');
+  } else if (cmd === 'gitea-oidc') {
+    const { provisionOwnerOidc } = await import('./owner-oidc.mjs');
+    const rotate = process.argv.includes('--rotate');
+    process.stdout.write(JSON.stringify(provisionOwnerOidc(store, new URL(process.env.PUBLIC_URL).origin, rotate)));
   } else if (cmd === 'backup') {
     const path = process.argv[3];
     if (!path) throw Error('Thiếu đường dẫn');

@@ -148,7 +148,7 @@ export function openStore(dir) {
   };
   const clean = () => {
     const now = Date.now();
-    for (const kind of ['session', 'flow', 'code', 'oauthstate', 'client', 'token'])
+    for (const kind of ['session', 'flow', 'code', 'oauthstate', 'client', 'token', 'owner-oidc-flow', 'owner-oidc-code', 'owner-oidc-token'])
       for (const r of list(kind)) if (r.expires && r.expires < now) del(kind, r.id);
     const days = get('settings', 'main')?.retention || 30;
     db.prepare('DELETE FROM audit WHERE created < ?').run(

@@ -35,8 +35,12 @@ def service(state, images, common):
             'GITEA__service__DISABLE_REGISTRATION': 'true',
             'GITEA__service__REQUIRE_SIGNIN_VIEW': 'true',
             'GITEA__actions__ENABLED': 'false', 'GITEA__packages__ENABLED': 'false',
+            'GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION': 'true',
+            'GITEA__oauth2_client__ACCOUNT_LINKING': 'disabled',
+            'GITEA__oauth2_client__USERNAME': 'preferred_username',
             'GITEA__session__COOKIE_NAME': 'genhub_gitea',
             'GITEA__session__COOKIE_SECURE': 'true',
+            'GITEA__session__SESSION_LIFE_TIME': '2592000',
             'GITEA__log__MODE': 'console', 'GITEA__log__LEVEL': 'Warn',
         },
         'healthcheck': {'test': ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:3000/api/healthz'],
@@ -102,7 +106,42 @@ def bootstrap(path, state, save, unattended=False):
             password = None
     state['gitea_bootstrapped'] = True
     save()
+    sync_sso(path, state)
     require_bootstrap(state, path)
+
+
+def sync_sso(path, state, required=False):
+    """Ensure Gitea has the dedicated genhub-owner OpenID Connect authentication source configured."""
+    from runtime import admin
+    try:
+        proc = admin(path, 'gitea-oidc')
+        raw = proc.stdout.strip()
+        if not raw or not raw.startswith('{'):
+            if required and raw and raw != 'yes':
+                raise RuntimeError('Không lấy được cấu hình OIDC từ Hub.')
+            return
+        oidc = json.loads(raw)
+    except Exception as e:
+        if required:
+            raise RuntimeError('Lỗi cấu hình OIDC Hub: ' + str(e)) from e
+        return
+    res = compose(path, 'exec', '-T', 'gitea', 'gitea', 'admin', 'auth', 'list', capture_output=True)
+    existing_id = None
+    for row in res.stdout.splitlines():
+        parts = row.split()
+        if len(parts) > 1 and parts[1] == 'genhub-owner':
+            existing_id = parts[0]
+            break
+    cmd = ['update-oauth', '--id', existing_id] if existing_id is not None else ['add-oauth', '--name', 'genhub-owner', '--provider', 'openidConnect']
+    try:
+        compose(path, 'exec', '-T', 'gitea', 'gitea', 'admin', 'auth', *cmd,
+                '--key', oidc['client_id'], '--secret', oidc['client_secret'],
+                '--auto-discover-url', oidc['discovery_url'],
+                '--admin-group', 'genhub-owner', '--group-claim-name', 'groups')
+    except Exception:
+        if state.get('domain', '').startswith('localhost'):
+            return
+        raise
 
 
 def check_volumes(state, required=False):
@@ -188,7 +227,7 @@ def enable(state):
     check_volumes(state, required=bool(state.get('gitea_bootstrapped')))
     save = lambda: atomic(CONF / 'install.json', json.dumps(state, indent=2))
     if state.get('gitea_bootstrapped'):
-        verify(path); public_test(state); require_bootstrap(state, path)
+        verify(path); public_test(state); sync_sso(path, state, required=True); require_bootstrap(state, path)
         print('✓ Gitea đã bootstrap; giữ tài khoản và dữ liệu hiện tại.')
         return
     before, before_caddy = path.read_text(), (CONF / 'Caddyfile').read_text()

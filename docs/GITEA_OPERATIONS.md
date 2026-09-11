@@ -25,17 +25,17 @@ Cấu hình theo tài liệu chính thức [Docker rootless](https://docs.gitea.
 
 ## Các lệnh vòng đời
 
-| Lệnh | Hành vi Gitea |
-| --- | --- |
-| `status` | URL, bootstrap còn thiếu/đã xong, trạng thái container/health |
-| `doctor` | Volume đúng installation, app.ini/SQLite tồn tại, dung lượng, database/cache health nội bộ và qua HTTPS, admin đã bootstrap |
-| `doctor --fix` | Giữ dữ liệu và image đã pin, dựng lại config/container; dừng nếu mất volume hoặc chưa bootstrap |
-| `backup <file>` | Tạm dừng Gitea, archive cả hai volume, kiểm SQLite integrity, snapshot Hub và config, khởi động lại Gitea cả khi backup lỗi |
-| `update` | Backup trước đổi runtime; giữ nguyên image Gitea đang cài độc lập với revision Hub |
-| `rollback` | Backup trước quay runtime; chỉ cho phép cùng image/volume Gitea, từ chối quay về release chưa có Gitea hoặc có image/storage khác |
-| `restart` | Khởi động lại tất cả service, đợi healthy và kiểm bootstrap; có gián đoạn Git/HTTP |
-| `uninstall` | Dừng container/network và updater; giữ cả hai named volume cùng backup |
-| `uninstall --purge` | Xác nhận domain, kiểm nhãn trước khi xóa đúng volume Gitea; giữ volume ứng dụng khác, Docker và backup lưu ngoài installation |
+| Lệnh                | Hành vi Gitea                                                                                                                     |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `status`            | URL, bootstrap còn thiếu/đã xong, trạng thái container/health                                                                     |
+| `doctor`            | Volume đúng installation, app.ini/SQLite tồn tại, dung lượng, database/cache health nội bộ và qua HTTPS, admin đã bootstrap       |
+| `doctor --fix`      | Giữ dữ liệu và image đã pin, dựng lại config/container; dừng nếu mất volume hoặc chưa bootstrap                                   |
+| `backup <file>`     | Tạm dừng Gitea, archive cả hai volume, kiểm SQLite integrity, snapshot Hub và config, khởi động lại Gitea cả khi backup lỗi       |
+| `update`            | Backup trước đổi runtime; giữ nguyên image Gitea đang cài độc lập với revision Hub                                                |
+| `rollback`          | Backup trước quay runtime; chỉ cho phép cùng image/volume Gitea, từ chối quay về release chưa có Gitea hoặc có image/storage khác |
+| `restart`           | Khởi động lại tất cả service, đợi healthy và kiểm bootstrap; có gián đoạn Git/HTTP                                                |
+| `uninstall`         | Dừng container/network và updater; giữ cả hai named volume cùng backup                                                            |
+| `uninstall --purge` | Xác nhận domain, kiểm nhãn trước khi xóa đúng volume Gitea; giữ volume ứng dụng khác, Docker và backup lưu ngoài installation     |
 
 Không có lệnh nâng phiên bản/schema Gitea trong PR này. Image Gitea thay đổi cần một quy trình migration riêng có backup/restore được kiểm thử; không tự hạ binary trên database đã nâng cấp. Rollback về bản Hub trước khi tích hợp Gitea bị chặn vì CLI cũ không quản lý được storage mới.
 
@@ -51,3 +51,36 @@ Restore thủ công trên máy phục hồi riêng, từ backup đáng tin cậy
 4. Khởi động Compose với `--wait`, chạy `sudo gen-hub doctor`, đăng nhập cả Hub và Gitea, xác nhận repo/issue, clone qua HTTPS, LFS/attachments cần thiết rồi mới nhận ghi mới.
 
 CI Docker thử tạo private repo + issue, giữ qua recreate, backup lạnh, xóa dữ liệu **trong volume kiểm thử**, restore archive, đọc lại README/issue và kiểm credential không xuất hiện trong log container. Không phục hồi hoặc purge production trong bài kiểm thử.
+
+## SSO OpenID Connect cho Owner và giới hạn bảo mật
+
+Gen-hub tích hợp OpenID Connect (OIDC) Identity Provider tối giản, phục vụ đăng nhập SSO cho owner vào Gitea:
+
+- **Endpoint IdP**: đặt tại prefix `/oidc/owner/`, bao gồm:
+  - `/.well-known/openid-configuration`: metadata discovery cho OIDC.
+  - `/jwks`: công bố RSA public key (RS256, 2048-bit, `kid` cố định theo cặp khóa).
+  - `/authorize`: khởi tạo luồng xác thực mã (authorization code flow). Nếu owner đã có phiên Hub hợp lệ trong trình duyệt, tự động cấp mã một lần và chuyển hướng ngay về Gitea; nếu chưa đăng nhập, chuyển tới modal đăng nhập `/#gitea/<flow>` và phục hồi tiếp luồng sau khi xác thực thành công.
+  - `/resume`: tiếp tục luồng authorization sau khi đăng nhập thành công trên Hub UI.
+  - `/token`: trao đổi auth code một lần lấy ID Token ký RS256 và access token ngắn hạn. Hỗ trợ xác thực client bằng cả HTTP Basic Auth (`client_secret_basic`) và POST body (`client_secret_post`).
+  - `/userinfo`: trả thông tin danh tính owner (`sub`, `preferred_username: genhub-owner`, `name`, `email`, `groups: ['genhub-owner']`).
+  - `/logout`: RP-Initiated Logout (`end_session_endpoint`), cho phép owner đăng xuất cả phiên Hub khi đăng xuất khỏi Gitea.
+- **Client và nguồn xác thực cố định**:
+  - Client ID: `genhub-gitea`.
+  - Nguồn xác thực trong Gitea: `genhub-owner`.
+  - Không mở dynamic client registration; client secret và private key được sinh cục bộ bởi CLI quản trị và lưu mã hóa (sealed) trong cơ sở dữ liệu Hub.
+- **Thời gian sống phiên**:
+  - Phiên web/cookie của Gitea (`GITEA__session__SESSION_LIFE_TIME`) là **30 ngày** (2.592.000 giây) — quyết định riêng cho Gitea.
+  - Phiên đăng nhập owner trên chính Hub **giữ nguyên 12 giờ** như trước, không đổi theo Gitea — đăng nhập Hub gần đây là đủ để bắt đầu SSO sang Gitea, token trao cho Gitea vẫn bị giới hạn bởi thời hạn còn lại của phiên Hub tại thời điểm trao đổi.
+- **Giới hạn bảo mật đã biết (Known Limitation)**:
+  - Gitea 1.27.3 **không hỗ trợ** API back-channel logout hoặc cơ chế thu hồi web session từ xa qua IdP.
+  - Khi owner đổi mật khẩu hoặc bị thu hồi quyền trên Hub, phiên web Gitea đang mở trên trình duyệt của owner **không bị hủy tức thời** từ phía IdP, mà tiếp tục có hiệu lực tối đa tới **30 ngày** kể từ lần đăng nhập gần nhất (hết TTL đã cấu hình).
+  - Quyết định kiến trúc đã chốt: chấp nhận giới hạn phơi nhiễm theo thời gian này (time-bound exposure 30 ngày) thay vì can thiệp trực tiếp/hack vào session store nội bộ của Gitea (dễ vỡ khi Gitea nâng cấp phiên bản).
+  - Khi owner chủ động nhấn đăng xuất (SignOut) trên giao diện Gitea, Gitea chuyển hướng tới `end_session_endpoint` (`/oidc/owner/logout`), cho phép owner xác nhận đăng xuất cả phiên Hub.
+- **Cách ly tài khoản & ranh giới an toàn**:
+  - Gitea giữ cấu hình `DISABLE_REGISTRATION = true`.
+  - Cấu hình `[oauth2_client]` bật `ENABLE_AUTO_REGISTRATION = true`, `ACCOUNT_LINKING = disabled`, `USERNAME = preferred_username` để tài khoản `genhub-owner` được tạo tự động khi đăng nhập SSO lần đầu, không bao giờ liên kết nhầm vào tài khoản kỹ thuật `genhub-admin`.
+  - Mật khẩu owner không bao giờ chuyển sang Gitea; ID token và userinfo chỉ chứa định danh và email sso nội bộ.
+  - Token `/mcp` của agent và cờ `isAdmin` không bao giờ được dùng để đăng nhập Gitea.
+- **Đường khôi phục SSO (Recovery Route)**:
+  - Chạy `sudo gen-hub gitea-enable` trên host để đồng bộ/tái cấp nguồn xác thực SSO `genhub-owner` trong Gitea nếu khóa bị hỏng, đổi domain hoặc database bị khôi phục từ bản lưu cũ.
+  - Lệnh CLI nội bộ `node server/admin.mjs gitea-oidc [--rotate]` cho phép xem hoặc xoay vòng khóa ký OIDC khi cần.

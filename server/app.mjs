@@ -18,6 +18,7 @@ import { HubError, assertSchema, jsonRequest, request } from './net.mjs';
 import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
 import { GITHUB_MCP_URL, githubEndpoint, githubPublished } from './github-mcp.mjs';
+import { ownerOidcService, OWNER_OIDC_CLIENT } from './owner-oidc.mjs';
 import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
@@ -85,6 +86,7 @@ export function createHub({
     limits = new Map();
   const kanban = kanbanService(store, up);
   const chatService = createChatService(store, origin);
+  const ownerOidc = ownerOidcService(store, auth, origin);
 
   const currentRevision = revision !== undefined ? revision : detectRevision();
   const currentUpdatedAt = updatedAt !== undefined ? updatedAt : detectUpdatedAt();
@@ -928,6 +930,34 @@ export function createHub({
           scopes_supported: ['mcp'],
           bearer_methods_supported: ['header']
         });
+      if (p.startsWith('/oidc/owner/')) {
+        rate('owner-oidc:' + req.socket.remoteAddress, 120);
+        const route = p.slice('/oidc/owner/'.length);
+        if (req.method === 'GET' && route === '.well-known/openid-configuration') return send(res, 200, ownerOidc.metadata());
+        if (req.method === 'GET' && route === 'jwks') return send(res, 200, ownerOidc.jwks());
+        if (req.method === 'GET' && route === 'authorize') {
+          if ([...u.searchParams.keys()].some(k => u.searchParams.getAll(k).length !== 1)) throw new HubError('invalid_request');
+          return send(res, 302, undefined, { Location: ownerOidc.authorize(Object.fromEntries(u.searchParams), req) });
+        }
+        if (req.method === 'GET' && route === 'resume') return send(res, 302, undefined, { Location: ownerOidc.resume(u.searchParams.get('flow') || '', req) });
+        if (req.method === 'POST' && route === 'token') return send(res, 200, ownerOidc.exchange(await body(req), req));
+        if (req.method === 'GET' && route === 'userinfo') return send(res, 200, ownerOidc.userinfo(req));
+        if (route === 'logout') {
+          if (req.method === 'GET') {
+            if (u.searchParams.get('client_id') !== OWNER_OIDC_CLIENT ||
+                u.searchParams.get('post_logout_redirect_uri') !== origin + '/gitea/') throw new HubError('invalid_request');
+            const s = auth.session(req);
+            if (!s) return send(res, 302, undefined, { Location: '/gitea/' });
+            return send(res, 200, '<!doctype html><html lang="vi"><meta charset="utf-8"><title>Đăng xuất Hub</title><h1>Đã đăng xuất Gitea</h1><p>Đăng xuất cả phiên Hub trong trình duyệt này?</p><form method="post" action="/oidc/owner/logout"><input type="hidden" name="csrf" value="' + s.csrf + '"><button>Đăng xuất Hub</button></form><a href="/">Giữ phiên Hub</a></html>', { 'Content-Type': 'text/html; charset=utf-8' });
+          }
+          if (req.method === 'POST') {
+            const b = await body(req), s = auth.owner(req);
+            if (req.headers.origin !== origin || b.csrf !== s.csrf) throw new HubError('Phiên yêu cầu không hợp lệ', 403);
+            return send(res, 303, undefined, { Location: '/gitea/', 'Set-Cookie': auth.logout(req) });
+          }
+        }
+        throw new HubError('Not found', 404);
+      }
       if (p === '/.well-known/oauth-authorization-server') return send(res, 200, auth.metadata);
       if (p === '/oauth/register' && req.method === 'POST') {
         rate('register:' + req.socket.remoteAddress, 30, 3600000);
