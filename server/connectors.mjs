@@ -551,7 +551,9 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
       if (m.provider === 'gitea-mcp') {
         const c = await credential(m);
         const token = c.access_token || c.token;
-        return await giteaCall(t, a, { url: m.url, token, allowPrivate: m.allowPrivate, request: doRequest });
+        // Gitea tools interpret upstream statuses (e.g. 404 means create a new
+        // file). Pass the raw transport, not the legacy service error mapper.
+        return await giteaCall(t, a, { url: m.url, token, allowPrivate: m.allowPrivate, request: serviceRequest });
       }
       return {
         content: [{ type: 'text', text: JSON.stringify(await call(m, t, a)) }],
