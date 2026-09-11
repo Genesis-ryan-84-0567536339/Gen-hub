@@ -16,15 +16,11 @@ test('Gen-hub Playwright UI automated flow (Issue #9)', async t => {
   const dataDir = mkdtempSync(join(tmpdir(), 'genhub-ui-data-'));
   const screenshotDir = mkdtempSync(join(tmpdir(), 'genhub-ui-shots-'));
 
-  const adminResult = spawnSync(
-    process.execPath,
-    ['server/admin.mjs', 'create-owner'],
-    {
-      input: JSON.stringify({ username: 'ryan', password: 'password-owner-1234' }),
-      env: { ...process.env, DATA_DIR: dataDir },
-      encoding: 'utf8'
-    }
-  );
+  const adminResult = spawnSync(process.execPath, ['server/admin.mjs', 'create-owner'], {
+    input: JSON.stringify({ username: 'ryan', password: 'password-owner-1234' }),
+    env: { ...process.env, DATA_DIR: dataDir },
+    encoding: 'utf8'
+  });
   assert.equal(adminResult.status, 0, `create-owner failed: ${adminResult.stderr}`);
   assert.match(adminResult.stdout, /Owner đã được lưu/);
 
@@ -38,9 +34,7 @@ test('Gen-hub Playwright UI automated flow (Issue #9)', async t => {
   await new Promise(resolve => hub.server.listen(port, '127.0.0.1', resolve));
 
   const chromiumPath =
-    process.env.PLAYWRIGHT_CHROMIUM_PATH ||
-    process.env.CHROMIUM_PATH ||
-    chromium.executablePath();
+    process.env.PLAYWRIGHT_CHROMIUM_PATH || process.env.CHROMIUM_PATH || chromium.executablePath();
 
   assert(existsSync(chromiumPath), `Chromium executable not found at ${chromiumPath}`);
 
@@ -79,10 +73,14 @@ test('Gen-hub Playwright UI automated flow (Issue #9)', async t => {
   // Đóng dialog onboarding nếu xuất hiện lần đầu
   await page.waitForSelector('.sidebar');
   try {
-    const onboardingBtn = await page.waitForSelector('button[data-action="onboard-done"]', { timeout: 2000 });
+    const onboardingBtn = await page.waitForSelector('button[data-action="onboard-done"]', {
+      timeout: 2000
+    });
     if (onboardingBtn) {
       await onboardingBtn.click();
-      await page.waitForSelector('dialog#modal[open]', { state: 'hidden', timeout: 5000 }).catch(() => {});
+      await page
+        .waitForSelector('dialog#modal[open]', { state: 'hidden', timeout: 5000 })
+        .catch(() => {});
     }
   } catch {}
 
