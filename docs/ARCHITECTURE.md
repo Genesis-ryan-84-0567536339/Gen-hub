@@ -33,7 +33,7 @@
 - `scripts/docker_setup.py`: Cài đặt Docker Engine chính thức từ repository package manager của OS nếu thiếu.
 - `Dockerfile` / `deploy/images.json`: Dockerfile tối thiểu và bảng digest chuẩn cho các container runtime (Hub, Caddy, cloudflared, Gitea).
 - `scripts/lifecycle.py`: Tự động cập nhật theo CI SHA trên `main`, systemd timer `gen-hub-update.timer`, doctor repair và quy trình gỡ bỏ cài đặt an toàn.
-- `scripts/manage.py`: CLI quản trị (`gen-hub status`, `logs`, `doctor`, `backup`, `rollback`, `gitea-enable`, `migrate-ids`).
+- `scripts/manage.py`: CLI quản trị (`gen-hub status`, `logs`, `doctor`, `backup`, `rollback`, `gitea-enable`, `gitea-disable`, `migrate-ids`).
 
 ## Giao thức và ranh giới bảo mật
 

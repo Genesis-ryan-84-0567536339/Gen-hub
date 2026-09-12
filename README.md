@@ -27,7 +27,7 @@ Cloudflare token cần **Account / Cloudflare Tunnel / Edit**, **Zone / DNS / Ed
 
 Bộ cài không ghi đè DNS đang trỏ nơi khác, không chiếm dịch vụ đang dùng cổng cần thiết. Trạng thái được lưu để chạy lại khi mất mạng hoặc ngắt cài. Máy cá nhân cần bật máy và kết nối Internet để agent từ xa truy cập được.
 
-Gitea là thành phần bắt buộc ở `https://<hostname>/gitea/`, có container rootless và named volume riêng, không nhận `master.key` hay `update.env`. Admin nội bộ `genhub-admin` có mật khẩu ngẫu nhiên hiện đúng một lần trên terminal và yêu cầu đổi khi đăng nhập lần đầu; không dùng mật khẩu owner. Đăng nhập SSO bằng tài khoản owner qua OpenID Connect đã được tích hợp sẵn (PR #61). [Vận hành và phục hồi Gitea](docs/GITEA_OPERATIONS.md).
+Gitea là thành phần bắt buộc lúc cài, ở `https://<hostname>/gitea/`, có container rootless và named volume riêng, không nhận `master.key` hay `update.env`. Admin nội bộ `genhub-admin` có mật khẩu ngẫu nhiên hiện đúng một lần trên terminal và yêu cầu đổi khi đăng nhập lần đầu; không dùng mật khẩu owner. Đăng nhập SSO bằng tài khoản owner qua OpenID Connect đã được tích hợp sẵn (PR #61). Sau khi cài, owner có thể tắt bằng `sudo gen-hub gitea-disable` nếu không dùng. [Vận hành và phục hồi Gitea](docs/GITEA_OPERATIONS.md).
 
 Máy đã cài trước khi có Gitea: cập nhật Gen-hub rồi chạy **`sudo gen-hub gitea-enable`** trong terminal để hoàn tất bootstrap bắt buộc. Auto-update không thể giao mật khẩu qua TUI nên chỉ chuẩn bị service/storage và báo bước còn thiếu; `status` nhắc, `doctor` báo chưa hoàn tất cho đến khi bootstrap thành công. [Vận hành và phục hồi Gitea](docs/GITEA_OPERATIONS.md).
 
