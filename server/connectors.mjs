@@ -235,6 +235,20 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
             throw new HubError('Kết nối đã thay đổi trong lúc làm mới token', 409);
           latest.secret = store.seal(c);
           store.put('mcp', m.id, latest);
+          store.audit(
+            'system',
+            m.id,
+            'auth.connector_token_refresh',
+            'success',
+            {},
+            { mcp: m.id, provider: m.provider },
+            undefined,
+            '',
+            {
+              eventKind: 'auth',
+              actorType: 'system'
+            }
+          );
           return c;
         } catch (e) {
           const latest = store.get('mcp', m.id);
@@ -242,6 +256,21 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
             latest.status = 'expired';
             store.put('mcp', m.id, latest);
           }
+          store.audit(
+            'system',
+            m.id,
+            'auth.connector_token_refresh',
+            'error',
+            {},
+            { error: e.message || 'Phiên dịch vụ hết hạn', mcp: m.id },
+            undefined,
+            '',
+            {
+              eventKind: 'auth',
+              actorType: 'system',
+              errorCategory: 'authentication'
+            }
+          );
           throw new HubError('Phiên dịch vụ hết hạn; hãy kết nối lại', 401);
         }
       });

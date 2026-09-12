@@ -38,6 +38,14 @@ export async function assertOutboundPolicy(url, { provider = 'openai', allowPriv
   }
 }
 
+// res.headers may be a Headers instance (test-mocked fetch/Response) or a plain
+// lowercase-keyed object (Node's http.IncomingMessage.headers, from net.mjs's request()).
+function getResponseHeader(headers, name) {
+  if (!headers) return null;
+  if (typeof headers.get === 'function') return headers.get(name) ?? null;
+  return headers[name.toLowerCase()] ?? headers[name] ?? null;
+}
+
 export async function defaultLlmTransport(
   url,
   { method = 'POST', headers = {}, body, signal, timeoutMs = 25000, maxBytes = 4 * 1024 * 1024 } = {},
@@ -168,6 +176,33 @@ export const CHAT_TOOLS_GEMINI = CHAT_TOOLS_OPENAI.map(t => ({
   parameters: t.function.parameters
 }));
 
+export const MODEL_PRICING = {
+  // Rates per 1M tokens in USD: { input, output, cache }
+  'openai:gpt-4o': { input: 2.50, output: 10.00, cache: 1.25 },
+  'openai:gpt-4o-mini': { input: 0.15, output: 0.60, cache: 0.075 },
+  'anthropic:claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00, cache: 0.30 },
+  'anthropic:claude-3-5-haiku-20241022': { input: 0.80, output: 4.00, cache: 0.08 },
+  'gemini:gemini-1.5-flash': { input: 0.075, output: 0.30, cache: 0.01875 },
+  'gemini:gemini-1.5-pro': { input: 1.25, output: 5.00, cache: 0.3125 }
+};
+
+export function calculateCost(provider, model, usage) {
+  if (!usage || !model) return 'không có';
+  const key = `${provider}:${model}`;
+  const pricing = MODEL_PRICING[key] || MODEL_PRICING[model];
+  if (!pricing) return 'không có';
+  const input = usage.promptTokens ?? usage.inputTokens ?? 0;
+  const output = usage.completionTokens ?? usage.outputTokens ?? 0;
+  const cache = usage.cachedTokens ?? usage.cacheTokens ?? 0;
+  const uncachedInput = Math.max(0, input - cache);
+  const totalCost =
+    (uncachedInput * pricing.input +
+      cache * (pricing.cache ?? pricing.input) +
+      output * pricing.output) /
+    1_000_000;
+  return Number.isFinite(totalCost) ? `$${totalCost.toFixed(6)}` : 'không có';
+}
+
 function buildSystemPrompt(store, currentRoute) {
   const mcps =
     store
@@ -297,11 +332,20 @@ export function createChatService(store, origin, options = {}) {
       updatedAt: new Date().toISOString()
     };
 
+    const safeInput = {
+      provider: b.provider,
+      model: b.model.trim(),
+      baseUrl: baseUrl || undefined,
+      hasKey: !!sealedKey
+    };
     store.put(kind, 'config', record);
-    store.audit('owner', 'hub', 'llm.save_config', 'success', redact(b), {
+    store.audit('owner', 'hub', 'llm.save_config', 'success', safeInput, {
       configured: true,
       provider: record.provider,
       model: record.model
+    }, undefined, '', {
+      eventKind: 'admin_action',
+      actorType: 'owner'
     });
 
     return getConfig();
@@ -326,6 +370,7 @@ export function createChatService(store, origin, options = {}) {
     }
 
     const testMessages = [{ role: 'user', content: 'Xin chào' }];
+    const started = performance.now();
     try {
       const result = await dispatchLlmCall({
         provider,
@@ -337,8 +382,56 @@ export function createChatService(store, origin, options = {}) {
         tools: [],
         timeoutMs: 15000
       });
-      return { ok: true, message: result.content ? 'Kết nối thành công!' : 'Đã nhận phản hồi' };
+      const cost = calculateCost(provider, model, result.usage);
+      store.audit(
+        'owner',
+        'hub',
+        'llm.test_connection',
+        'success',
+        { provider, model, baseUrl: baseUrl || undefined },
+        {
+          ok: true,
+          provider,
+          model,
+          requestId: result.requestId || undefined,
+          usage: result.usage || undefined,
+          cost
+        },
+        performance.now() - started,
+        '',
+        {
+          eventKind: 'llm_call',
+          actorType: 'owner',
+          policyDecision: 'allow'
+        }
+      );
+      return {
+        ok: true,
+        message: result.content ? 'Kết nối thành công!' : 'Đã nhận phản hồi',
+        telemetry: {
+          provider,
+          model,
+          requestId: result.requestId || undefined,
+          usage: result.usage || undefined,
+          cost
+        }
+      };
     } catch (err) {
+      store.audit(
+        'owner',
+        'hub',
+        'llm.test_connection',
+        'error',
+        { provider, model, baseUrl: baseUrl || undefined },
+        { error: err.message, provider, model },
+        performance.now() - started,
+        '',
+        {
+          eventKind: 'llm_call',
+          actorType: 'owner',
+          errorCategory: 'upstream_transport'
+        }
+      );
       return { ok: false, error: err.message || 'Không thể kết nối với LLM' };
     }
   }
@@ -395,7 +488,7 @@ export function createChatService(store, origin, options = {}) {
 
       const started = performance.now();
       try {
-        const { content, tool_calls } = await dispatchLlmCall({
+        const { content, tool_calls, usage, requestId } = await dispatchLlmCall({
           provider: config.provider,
           model: config.model,
           baseUrl: config.baseUrl,
@@ -409,6 +502,7 @@ export function createChatService(store, origin, options = {}) {
         });
 
         const validTools = filterValidToolCalls(tool_calls);
+        const cost = calculateCost(config.provider, config.model, usage);
 
         store.audit(
           actor,
@@ -416,8 +510,22 @@ export function createChatService(store, origin, options = {}) {
           'chat.message',
           'success',
           redact({ messageCount: cleanMessages.length, currentRoute }),
-          redact({ toolCalls: validTools.map(t => t.name), contentPreview: content.slice(0, 100) }),
-          performance.now() - started
+          redact({
+            provider: config.provider,
+            model: config.model,
+            requestId: requestId || undefined,
+            usage: usage || undefined,
+            cost,
+            toolCalls: validTools.map(t => t.name),
+            contentPreview: content.slice(0, 100)
+          }),
+          performance.now() - started,
+          '',
+          {
+            eventKind: 'llm_call',
+            actorType: actor === 'owner' ? 'owner' : 'admin',
+            policyDecision: 'allow'
+          }
         );
 
         return {
@@ -425,6 +533,13 @@ export function createChatService(store, origin, options = {}) {
             role: 'assistant',
             content,
             tool_calls: validTools
+          },
+          telemetry: {
+            provider: config.provider,
+            model: config.model,
+            requestId: requestId || undefined,
+            usage: usage || undefined,
+            cost
           }
         };
       } catch (err) {
@@ -434,8 +549,18 @@ export function createChatService(store, origin, options = {}) {
           'chat.message',
           'error',
           redact({ messageCount: cleanMessages.length, currentRoute }),
-          { error: err.message },
-          performance.now() - started
+          {
+            error: err.message,
+            provider: config.provider,
+            model: config.model
+          },
+          performance.now() - started,
+          '',
+          {
+            eventKind: 'llm_call',
+            actorType: actor === 'owner' ? 'owner' : 'admin',
+            errorCategory: 'upstream_transport'
+          }
         );
         throw new HubError(err.message || 'Lỗi khi gọi mô hình ngôn ngữ', err.status || 502);
       }
@@ -509,12 +634,15 @@ export async function dispatchLlmCall({
       provider
     );
 
+    const requestId = getResponseHeader(res.headers, 'x-request-id') || getResponseHeader(res.headers, 'request-id') || null;
+
     if (!res.ok) {
       const errText = res.text || '';
       throw new HubError(`LLM ${provider} lỗi [${res.status}]: ${errText.slice(0, 200)}`, res.status === 429 ? 429 : 502);
     }
 
     const data = res.json || {};
+    const finalRequestId = requestId || data.id || null;
     const choice = data.choices?.[0];
     const content = choice?.message?.content || '';
     const rawTools = (choice?.message?.tool_calls || []).map(tc => {
@@ -531,7 +659,41 @@ export async function dispatchLlmCall({
       };
     });
 
-    return { content, tool_calls: rawTools };
+    let usage = undefined;
+    if (data.usage && typeof data.usage === 'object') {
+      const promptTokens = data.usage.prompt_tokens ?? data.usage.input_tokens;
+      const completionTokens = data.usage.completion_tokens ?? data.usage.output_tokens;
+      const cachedTokens = data.usage.prompt_tokens_details?.cached_tokens ?? data.usage.cache_tokens;
+      const totalTokens =
+        data.usage.total_tokens ??
+        (typeof promptTokens === 'number' && typeof completionTokens === 'number'
+          ? promptTokens + completionTokens
+          : undefined);
+      usage = {
+        promptTokens,
+        completionTokens,
+        cachedTokens,
+        totalTokens,
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+        cacheTokens: cachedTokens
+      };
+    } else if (data.prompt_eval_count !== undefined || data.eval_count !== undefined) {
+      const promptTokens = data.prompt_eval_count;
+      const completionTokens = data.eval_count;
+      const totalTokens = (promptTokens || 0) + (completionTokens || 0);
+      usage = {
+        promptTokens,
+        completionTokens,
+        cachedTokens: undefined,
+        totalTokens,
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+        cacheTokens: undefined
+      };
+    }
+
+    return { content, tool_calls: rawTools, usage, requestId: finalRequestId };
   }
 
   if (provider === 'anthropic') {
@@ -569,12 +731,15 @@ export async function dispatchLlmCall({
       provider
     );
 
+    const requestId = getResponseHeader(res.headers, 'request-id') || getResponseHeader(res.headers, 'x-request-id') || null;
+
     if (!res.ok) {
       const errText = res.text || '';
       throw new HubError(`Anthropic API lỗi [${res.status}]: ${errText.slice(0, 200)}`, res.status === 429 ? 429 : 502);
     }
 
     const data = res.json || {};
+    const finalRequestId = requestId || data.id || null;
     const textBlocks = (data.content || []).filter(c => c.type === 'text');
     const content = textBlocks.map(c => c.text).join('\n');
     const rawTools = (data.content || [])
@@ -584,7 +749,27 @@ export async function dispatchLlmCall({
         arguments: tc.input || {}
       }));
 
-    return { content, tool_calls: rawTools };
+    let usage = undefined;
+    if (data.usage && typeof data.usage === 'object') {
+      const promptTokens = data.usage.input_tokens;
+      const completionTokens = data.usage.output_tokens;
+      const cachedTokens = data.usage.cache_read_input_tokens ?? undefined;
+      const totalTokens =
+        typeof promptTokens === 'number' && typeof completionTokens === 'number'
+          ? promptTokens + completionTokens
+          : undefined;
+      usage = {
+        promptTokens,
+        completionTokens,
+        cachedTokens,
+        totalTokens,
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+        cacheTokens: cachedTokens
+      };
+    }
+
+    return { content, tool_calls: rawTools, usage, requestId: finalRequestId };
   }
 
   if (provider === 'gemini') {
@@ -622,6 +807,8 @@ export async function dispatchLlmCall({
       provider
     );
 
+    const requestId = getResponseHeader(res.headers, 'x-request-id') || getResponseHeader(res.headers, 'x-goog-request-params') || null;
+
     if (!res.ok) {
       const errText = res.text || '';
       throw new HubError(`Gemini API lỗi [${res.status}]: ${errText.slice(0, 200)}`, res.status === 429 ? 429 : 502);
@@ -639,7 +826,24 @@ export async function dispatchLlmCall({
         arguments: p.functionCall.args || {}
       }));
 
-    return { content, tool_calls: rawTools };
+    let usage = undefined;
+    if (data.usageMetadata && typeof data.usageMetadata === 'object') {
+      const promptTokens = data.usageMetadata.promptTokenCount;
+      const completionTokens = data.usageMetadata.candidatesTokenCount;
+      const cachedTokens = data.usageMetadata.cachedContentTokenCount ?? undefined;
+      const totalTokens = data.usageMetadata.totalTokenCount;
+      usage = {
+        promptTokens,
+        completionTokens,
+        cachedTokens,
+        totalTokens,
+        inputTokens: promptTokens,
+        outputTokens: completionTokens,
+        cacheTokens: cachedTokens
+      };
+    }
+
+    return { content, tool_calls: rawTools, usage, requestId };
   }
 
   throw new HubError(`Nhà cung cấp LLM không được hỗ trợ: ${provider}`, 400);

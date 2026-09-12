@@ -451,9 +451,9 @@ export function createHub({
     try {
       a = auth.bearer(req);
     } catch (e) {
-      store.audit('anonymous', 'hub', 'auth.mcp', 'error', {}, {}, undefined, '', {
+      store.audit('unauthenticated', 'hub', 'auth.mcp', 'error', {}, {}, undefined, '', {
         eventKind: 'auth',
-        actorType: 'anonymous',
+        actorType: 'unauthenticated',
         errorCategory: 'authentication'
       });
       return send(
@@ -674,13 +674,27 @@ export function createHub({
       return respond(200, { ok: true }, { 'Set-Cookie': auth.logout(req) });
     if (resource === 'state' && !write) {
       store.clean();
-      const mcps = store.list('mcp').map(cleanMcp),
-        agents = store.list('agent').map(a => ({
-          ...a,
-          effective:
-            mcps.reduce((n, m) => n + m.tools.filter(t => allowed(a, m, t)).length, 0) +
-            vault.tools(a).length
-        }));
+      const mcps = store.list('mcp').map(m => {
+        const cleaned = cleanMcp(m);
+        if (m.secret) {
+          try {
+            const c = store.unseal(m.secret);
+            if (c.expires_at) cleaned.tokenExpires = new Date(c.expires_at).toISOString();
+          } catch {}
+        }
+        return cleaned;
+      }),
+        agents = store.list('agent').map(a => {
+          const tokens = store.list('token').filter(t => t.agent === a.id && t.expires);
+          const maxExpires = tokens.length ? Math.max(...tokens.map(t => t.expires)) : null;
+          return {
+            ...a,
+            ...(maxExpires ? { tokenExpires: new Date(maxExpires).toISOString() } : {}),
+            effective:
+              mcps.reduce((n, m) => n + m.tools.filter(t => allowed(a, m, t)).length, 0) +
+              vault.tools(a).length
+          };
+        });
       return respond(200, {
         mcps,
         vault: vault.list(),
@@ -837,8 +851,12 @@ export function createHub({
       }
       if (action === 'oauth' && method === 'POST') return respond(200, await startOAuth(m, b, s));
       if (action === 'sync' && method === 'POST') {
+        const started = performance.now();
         const result = await syncMcp(m);
-        audit('mcp.sync', {}, { toolCount: result.tools.length }, mid);
+        store.audit(actor, mid, 'mcp.sync', 'success', {}, { toolCount: result.tools.length }, performance.now() - started, '', {
+          eventKind: 'system',
+          actorType: actor === 'owner' ? 'owner' : 'admin'
+        });
         return respond(200, result);
       }
       if (action === 'disconnect' && method === 'POST') {
@@ -886,8 +904,13 @@ export function createHub({
         if (!['active', 'revoked'].includes(b.status))
           throw new HubError('Trạng thái không hợp lệ');
         a.status = b.status;
-        if (b.status === 'revoked')
+        if (b.status === 'revoked') {
           for (const t of store.list('token')) if (t.agent === mid) store.del('token', t.id);
+          store.audit(actor, 'hub', 'auth.agent_revoke', 'success', { agent: mid }, { revoked: true }, undefined, '', {
+            eventKind: 'auth',
+            actorType: actor === 'owner' ? 'owner' : 'admin'
+          });
+        }
       }
       store.put('agent', mid, a);
       audit('agent.update', { id: mid, ...b });
@@ -953,15 +976,15 @@ export function createHub({
 
       const filters = {};
       for (const [key, allowed] of Object.entries({
-        eventKind: ['tool_call', 'admin_action', 'auth', 'system', 'unclassified'],
-        actorType: ['agent', 'owner', 'admin', 'system', 'anonymous', 'unclassified'],
+        eventKind: ['tool_call', 'admin_action', 'auth', 'system', 'llm_call', 'unclassified'],
+        actorType: ['agent', 'owner', 'admin', 'system', 'unauthenticated', 'anonymous', 'unclassified'],
         policyDecision: ['allow', 'deny'],
         outcome: ['success', 'error'],
         errorCategory: errorCategories
       })) {
         if (b[key] !== undefined) {
           if (!allowed.includes(b[key])) throw new HubError('Phân loại nhật ký không hợp lệ');
-          filters[key] = b[key];
+          filters[key] = key === 'actorType' && b[key] === 'anonymous' ? 'unauthenticated' : b[key];
         }
       }
       for (const key of ['secret', 'tool']) {
@@ -1309,7 +1332,18 @@ export function createHub({
       }
       if (p === '/oauth/token' && req.method === 'POST') {
         rate('token:' + req.socket.remoteAddress, 120);
-        return send(res, 200, auth.exchange(await body(req)));
+        const b = await body(req);
+        try {
+          return send(res, 200, auth.exchange(b));
+        } catch (e) {
+          const tool = b?.grant_type === 'refresh_token' ? 'auth.token_refresh' : 'auth.oauth_token';
+          store.audit('unauthenticated', 'hub', tool, 'error', redact(b), { error: e.message }, undefined, '', {
+            eventKind: 'auth',
+            actorType: 'unauthenticated',
+            errorCategory: 'authentication'
+          });
+          throw e;
+        }
       }
       if (p === '/oauth/callback') {
         const key = digest(u.searchParams.get('state') || ''),
@@ -1359,11 +1393,40 @@ export function createHub({
       }
       if (p === '/mcp') return await rpc(req, res, req.method === 'POST' ? await body(req) : {});
       if (p === '/api/login' && req.method === 'POST') {
-        if (req.headers.origin !== origin) throw new HubError('Origin không hợp lệ', 403);
-        rate('login:' + req.socket.remoteAddress, 10, 15 * 60000);
-        const b = await body(req),
+        if (req.headers.origin !== origin) {
+          store.audit('unauthenticated', 'hub', 'auth.login', 'error', {}, { error: 'Origin không hợp lệ' }, undefined, '', {
+            eventKind: 'auth',
+            actorType: 'unauthenticated',
+            errorCategory: 'authentication'
+          });
+          throw new HubError('Origin không hợp lệ', 403);
+        }
+        try {
+          rate('login:' + req.socket.remoteAddress, 10, 15 * 60000);
+        } catch (e) {
+          store.audit('unauthenticated', 'hub', 'auth.login_rate_limit', 'error', {}, { error: e.message }, undefined, '', {
+            eventKind: 'auth',
+            actorType: 'unauthenticated',
+            errorCategory: 'rate_limit'
+          });
+          throw e;
+        }
+        const b = await body(req);
+        let r;
+        try {
           r = auth.login(b.username, b.password);
-        audit('owner.login', {});
+        } catch (e) {
+          store.audit('unauthenticated', 'hub', 'auth.login', 'error', { username: b.username }, { error: e.message }, undefined, '', {
+            eventKind: 'auth',
+            actorType: 'unauthenticated',
+            errorCategory: 'authentication'
+          });
+          throw e;
+        }
+        store.audit('owner', 'hub', 'owner.login', 'success', {}, {}, undefined, '', {
+          eventKind: 'auth',
+          actorType: 'owner'
+        });
         return send(res, 200, { csrf: r.csrf }, { 'Set-Cookie': r.cookie });
       }
       if (p === '/mcp/admin') {
@@ -1371,9 +1434,9 @@ export function createHub({
         try {
           actor = assistant.authenticate(req);
         } catch (e) {
-          store.audit('anonymous', 'hub', 'auth.admin', 'error', {}, {}, undefined, '', {
+          store.audit('unauthenticated', 'hub', 'auth.admin', 'error', {}, {}, undefined, '', {
             eventKind: 'auth',
-            actorType: 'anonymous',
+            actorType: 'unauthenticated',
             errorCategory: 'authentication'
           });
           return send(
