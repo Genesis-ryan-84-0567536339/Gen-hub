@@ -122,6 +122,25 @@ class GiteaTest(unittest.TestCase):
             backup.assert_not_called()
             self.assertFalse(any('stop' in c.args for c in compose.call_args_list))
 
+    def test_verify_local_skips_gitea_verify_when_disabled_real_function(self):
+        # Regression: runtime.verify_local() itself (not activate()/repair(), which
+        # mock it away in their own tests) unconditionally called gitea.verify(),
+        # which raises PENDING whenever 'gitea' isn't in compose.json — breaking
+        # every subsequent update/restart/doctor after gitea-disable, since none
+        # of the other tests ever exercised this real function with gitea off.
+        state = {**self.state(), 'gitea_enabled': False}
+        with patch.object(runtime, 'compose', return_value=result()), \
+             patch.object(gitea, 'verify') as verify_call:
+            runtime.verify_local('/compose', state)
+        verify_call.assert_not_called()
+
+    def test_verify_local_still_verifies_gitea_when_enabled_real_function(self):
+        state = self.state()  # gitea_enabled defaults to True (unset)
+        with patch.object(runtime, 'compose', return_value=result()), \
+             patch.object(gitea, 'verify') as verify_call:
+            runtime.verify_local('/compose', state)
+        verify_call.assert_called_once_with('/compose')
+
     def test_activate_skips_gitea_bootstrap_when_disabled_and_never_reads_missing_image(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp); conf = root / 'conf'; conf.mkdir()

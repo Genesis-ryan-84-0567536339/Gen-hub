@@ -137,8 +137,9 @@ def verify_local(path, state):
                 if attempt == 11:
                     raise RuntimeError('Tunnel chưa kết nối Cloudflare. Kiểm tra token và outbound TCP/UDP 7844.') from None
                 time.sleep(5)
-    from gitea import verify
-    verify(path)
+    if state.get('gitea_enabled', True):
+        from gitea import verify
+        verify(path)
     print('✓ Container và lưu trữ đã sẵn sàng.')
 
 
