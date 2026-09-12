@@ -1,0 +1,12 @@
+name: "PR Governance Check"
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+
+jobs:
+  governance:
+    uses: Genesis-ryan-84-0567536339/Brain/.github/workflows/pr-governance-check.yml@main
+    with:
+      runs-on: ubuntu-latest
+    secrets: inherit
