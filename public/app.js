@@ -1072,7 +1072,8 @@ function auditPage() {
     head(
       'Nhật ký',
       'Input, output và quyết định cấp quyền của từng lượt gọi.',
-      btn('Xuất JSONL', 'export', '', 'download')
+      btn('Xuất JSONL', 'export-jsonl', '', 'download') +
+      btn('Xuất CSV', 'export-csv', '', 'download')
     ) +
     `${Object.keys(auditExact).length ? `<p class="footnote">Bộ lọc từ Tổng quan: ${esc(new URLSearchParams(auditExact).toString())} · <a href="#audit">Xóa bộ lọc</a></p>` : ''}<div class="toolbar">${searchInput('Tìm tool, actor hoặc ID…')}<div class="actions"><select id="statusfilter" class="filter" aria-label="Kết quả">${options(
       [
@@ -1090,9 +1091,10 @@ function auditPage() {
         ['168', '7 ngày qua']
       ],
       timeFilter
-    )}</select></div></div><div class="card" id="results">${initialHtml}</div><p class="footnote">Phân trang con trỏ (cursor) truy vấn trực tiếp từ máy chủ. Xuất JSONL áp dụng cùng bộ lọc trên tối đa 5.000 bản ghi. Trường credential luôn được ẩn.</p>`
+    )}</select></div></div><div class="card" id="results">${initialHtml}</div><p class="footnote">Phân trang con trỏ (cursor) truy vấn trực tiếp từ máy chủ. Xuất JSONL/CSV dùng đúng bộ lọc đang chọn, lấy toàn bộ kết quả (tối đa 50.000 bản ghi). Trường credential luôn được ẩn.</p>`
   );
 }
+
 function logTable(rows) {
   return rows.length
     ? `<div class="tablewrap"><table><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Công cụ / Thao tác</th><th>Kết quả</th><th>Xử lý</th><th></th></tr></thead><tbody>${rows.map(l => `<tr><td>${date(l.created)}</td><td>${esc(l.actor === 'owner' ? state.owner : state.agents.find(a => a.id === l.actor)?.name || l.actor)}</td><td><div class="mono">${esc(l.tool)}</div><div class="sub">${esc(state.mcps.find(m => m.id === l.mcp)?.name || 'Hub')} · #${l.id}</div></td><td>${badge(l.status)}<small class="sub operations-id">${esc(l.errorCategory || l.eventKind || 'Chưa phân loại')}${l.classification === 'legacy' ? ' · lịch sử' : ''}</small></td><td class="mono">${l.latencyMeasured ? l.latency + ' ms' : 'N/A'}</td><td>${btn('Chi tiết', 'log:' + l.id, 'small')}</td></tr>`).join('')}</tbody></table></div>`
@@ -1816,13 +1818,43 @@ async function act(action, args, el = null) {
   if (action === 'log') return log(id);
   if (action === 'logtab') return log(modalContext.id, id);
   if (action === 'load-more-logs') return fetchAuditLogs(auditCursor, true);
-  if (action === 'export') {
-    const params = buildAuditQueryParams({ limit: 5000, includePayload: true, paginate: false });
-    const rows = await api('logs?' + params);
-    const exportRows = Array.isArray(rows) ? rows : rows.rows || [];
-    download('gen-hub-audit.jsonl', exportRows.map(r => JSON.stringify(r)).join('\n'));
-    return toast('Đã xuất ' + exportRows.length + ' bản ghi');
+  if (action === 'export-jsonl' || action === 'export-csv') {
+    const format = action === 'export-csv' ? 'csv' : 'jsonl';
+    const params = buildAuditQueryParams({ format });
+    const url = '/api/logs/export?' + params;
+    let resp;
+    try {
+      resp = await fetch(url, {
+        headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) }
+      });
+    } catch (e) {
+      return toast('Lỗi kết nối khi xuất nhật ký');
+    }
+    if (!resp.ok) {
+      let msg = 'Xuất thất bại';
+      try { const d = await resp.json(); msg = d.error || msg; } catch {}
+      return toast(msg);
+    }
+    const body = await resp.text();
+    const truncated = resp.headers.get('X-Export-Truncated') === 'true';
+    const totalRows = Number(resp.headers.get('X-Export-Total-Rows') || 0);
+    const ts = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+    const filename = `gen-hub-audit-${ts}.${format}`;
+    const mimeType = format === 'csv' ? 'text/csv' : 'application/x-ndjson';
+    const u = URL.createObjectURL(new Blob([body], { type: mimeType }));
+    const a = document.createElement('a');
+    a.href = u;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(u), 1000);
+    if (truncated) {
+      toast(`Đã xuất ${totalRows.toLocaleString()} bản ghi (bị cắt tại giới hạn 50.000 — hãy thu hẹp bộ lọc để lấy đầy đủ)`);
+    } else {
+      toast(`Đã xuất ${totalRows.toLocaleString()} bản ghi`);
+    }
+    return;
   }
+
   if (action === 'deny') {
     const r = await api('flows/' + id, 'POST', { approve: false });
     location.href = r.redirect;
