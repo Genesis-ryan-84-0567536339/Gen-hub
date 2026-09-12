@@ -69,3 +69,7 @@ Theo yêu cầu mới “chỉ khi đạt mốc”: mặc định không push-on
 Mỗi phần có PR và kiểm tra riêng. Kanban GitHub #52 và Gitea #65 đã được chuẩn hóa dùng chung UI và cấu trúc cột/thẻ.
 
 Không dùng thiết kế này như quyền đã cấp để cài/chạy runner hoặc chuyển repo Brain trên host.
+
+Bootstrap CI cách ly, vòng đời, action registry và giới hạn nghiệm thu:
+[CI_ISOLATION.md](CI_ISOLATION.md). Chỉ owner triển khai sau review; kiểm thử mock
+không thay thế job nghiệm thu trên VM/container thử.

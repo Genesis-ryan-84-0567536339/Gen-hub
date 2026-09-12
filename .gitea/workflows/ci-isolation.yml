@@ -1,0 +1,33 @@
+name: CI isolation acceptance
+on:
+  workflow_dispatch:
+jobs:
+  build-test:
+    runs-on: genhub-ci
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify job boundary (no host credentials or runtime socket)
+        shell: bash
+        run: |
+          set -euo pipefail
+          id
+          if command -v sudo >/dev/null && sudo -n -l >/dev/null 2>&1; then
+            echo 'FAIL: job has sudo permission'; exit 1
+          fi
+          for p in /var/lib/gen-hub/master.key /etc/gen-hub/update.env /etc/gen-hub/tunnel.token /etc/cloudflared/config.yml; do
+            if cat "$p" >/dev/null 2>&1; then
+              echo 'FAIL: job can read a host secret path'; exit 1
+            fi
+          done
+          if ls /var/run/docker.sock >/dev/null 2>&1; then
+            echo 'FAIL: Docker socket present in job'; exit 1
+          fi
+          test ! -S /run/docker.sock
+          test -z "${GENHUB_GITHUB_TOKEN:-}"
+      - name: Build syntax and test application
+        run: |
+          node --check server/main.mjs
+          node --check public/app.js
+          npm test
+          npm run check

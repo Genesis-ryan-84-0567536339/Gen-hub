@@ -225,6 +225,8 @@ def purge(state, remove_cloudflare=False):
     check_ports({**state, 'mode': 'personal'}, [])  # Ownership only, no port probes.
     from gitea import check_volumes
     owned_gitea = check_volumes(state)
+    from ci_runner import uninstall as ci_uninstall
+    ci_uninstall(state, purge=True)
     stop_updates()
     compose(CONF / 'compose.json', 'down', '--remove-orphans')
     if remove_cloudflare and state.get('tunnel_id'):
