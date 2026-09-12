@@ -85,9 +85,10 @@ def public_test(state):
         try:
             result=json.loads(fetch('https://'+state['domain']+'/healthz'))
             if result.get('ok') and result.get('installationId')==state['installation_id']:
-                gitea = json.loads(fetch('https://' + state['domain'] + '/gitea/api/healthz'))
-                if gitea.get('status') != 'pass':
-                    raise RuntimeError('Gitea chưa sẵn sàng qua HTTPS.')
+                if state.get('gitea_enabled', True):
+                    gitea = json.loads(fetch('https://' + state['domain'] + '/gitea/api/healthz'))
+                    if gitea.get('status') != 'pass':
+                        raise RuntimeError('Gitea chưa sẵn sàng qua HTTPS.')
                 print('✓ HTTPS hợp lệ, domain đã tới đúng Gen-hub và storage đã cấu hình.');return
         except (OSError,ValueError,RuntimeError):pass
         if i%3==0:print('Đang chờ DNS/HTTPS/tunnel…')
