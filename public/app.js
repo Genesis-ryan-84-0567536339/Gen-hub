@@ -1,5 +1,5 @@
 import { kanbanPage, kanbanCards } from './kanban.js';
-import { auditStats, isToolCall, pieArc } from './audit-stats.js';
+import { auditStats, isToolCall, pieArc, CHART_PALETTE, chartColor, chartCssBackground, chartSvgPatternDefs, chartFill } from './audit-stats.js';
 import { connectionGuide } from './connection-guides.js';
 import { getNotifications, timeAgo } from './notifications.js';
 import { normalizeSettings } from './settings.js';
@@ -602,19 +602,13 @@ function render() {
   positionDetailContent();
 }
 function smallPie(title, entries, unit) {
-  const colors = [
-    '#28754f',
-    '#467fba',
-    '#b87324',
-    '#9164b0',
-    '#bd5266',
-    '#27878b',
-    '#6d7333',
-    '#77614c'
-  ];
   const total = entries.reduce((s, [, v]) => s + v, 0);
   if (!total)
     return `<div class="pie-mini"><h4>${esc(title)}</h4><p class="footnote">Chưa có dữ liệu.</p></div>`;
+  const pieId =
+    'pie-' +
+    Math.abs(title.split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0)).toString(36);
+  const defs = chartSvgPatternDefs(pieId, entries.length);
   let frac = 0;
   const slices = entries
     .map(([label, value], i) => {
@@ -622,16 +616,16 @@ function smallPie(title, entries, unit) {
         d = pieArc(100, 100, 80, 48, frac, frac + f),
         pct = (f * 100).toFixed(1);
       frac += f;
-      return `<path class="pie-slice" d="${d}" fill="${colors[i % colors.length]}" stroke="#fff" stroke-width="2"><title>${esc(label + ': ' + value.toLocaleString('vi-VN') + ' ' + unit + ' (' + pct + '%)')}</title></path>`;
+      return `<path class="pie-slice" d="${d}" fill="${chartFill(pieId, i)}" stroke="#fff" stroke-width="2"><title>${esc(label + ': ' + value.toLocaleString('vi-VN') + ' ' + unit + ' (' + pct + '%)')}</title></path>`;
     })
     .join('');
   const legend = entries
     .map(([label, value], i) => {
       const pct = ((value / total) * 100).toFixed(1);
-      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${colors[i % colors.length]}"></i>${esc(label)}</span><span class="pie-legend-value"><strong>${value.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
+      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${chartCssBackground(i)}"></i>${esc(label)}</span><span class="pie-legend-value"><strong>${value.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
     })
     .join('');
-  return `<div class="pie-mini"><h4>${esc(title)}</h4><svg class="pie-chart" viewBox="0 0 200 200" role="img" aria-label="${esc(title)}"><g>${slices}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${total.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">${esc(unit)}</text></svg><div class="pie-legend">${legend}</div></div>`;
+  return `<div class="pie-mini"><h4>${esc(title)}</h4><svg class="pie-chart" viewBox="0 0 200 200" role="img" aria-label="${esc(title)}">${defs}<g>${slices}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${total.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">${esc(unit)}</text></svg><div class="pie-legend">${legend}</div></div>`;
 }
 function overview() {
   const logs = state.logs,
@@ -869,17 +863,9 @@ function statsCharts(logs, now) {
   const { buckets, tools, step } = auditStats(logs, activityHours, now);
   if (!tools.length)
     return '<div class="empty"><h3>Chưa có lượt gọi tool</h3><p>Biểu đồ sẽ xuất hiện khi agent gọi tool trong khoảng thời gian này.</p></div>';
-  const colors = [
-    '#28754f',
-    '#467fba',
-    '#b87324',
-    '#9164b0',
-    '#bd5266',
-    '#27878b',
-    '#6d7333',
-    '#77614c'
-  ];
-  const color = key => colors[tools.indexOf(key) % colors.length];
+  const pieId = 'agent-tools';
+  const defs = chartSvgPatternDefs(pieId, tools.length);
+  const toolIdx = key => tools.indexOf(key);
   const label = value =>
     new Date(value).toLocaleString('vi-VN', {
       timeZone: 'Asia/Ho_Chi_Minh',
@@ -891,7 +877,7 @@ function statsCharts(logs, now) {
     const [id, ...rest] = key.split(' / ');
     return (state.mcps.find(m => m.id === id)?.name || id) + ' / ' + rest.join(' / ');
   };
-  const legend = `<div class="stats-legend">${tools.map(key => `<span><i style="background:${color(key)}"></i>${esc(toolLabel(key))}</span>`).join('')}</div>`;
+  const legend = `<div class="stats-legend">${tools.map(key => `<span><i style="background:${chartCssBackground(toolIdx(key))}"></i>${esc(toolLabel(key))}</span>`).join('')}</div>`;
   const toolCounts = new Map(tools.map(key => [key, 0]));
   let totalCalls = 0;
   for (const bucket of buckets) {
@@ -911,16 +897,16 @@ function statsCharts(logs, now) {
     const pathD = pieArc(100, 100, 80, 48, currentFrac, currentFrac + frac);
     const pct = (frac * 100).toFixed(1);
     slices.push(
-      `<path class="pie-slice" d="${pathD}" fill="${color(key)}" stroke="#fff" stroke-width="2"><title>${esc(toolLabel(key) + ': ' + count + ' lượt (' + pct + '%)')}</title></path>`
+      `<path class="pie-slice" d="${pathD}" fill="${chartFill(pieId, toolIdx(key))}" stroke="#fff" stroke-width="2"><title>${esc(toolLabel(key) + ': ' + count + ' lượt (' + pct + '%)')}</title></path>`
     );
     currentFrac += frac;
   }
-  const pieChart = `<svg class="pie-chart" viewBox="0 0 200 200" width="180" height="180" role="img" aria-label="Biểu đồ tròn tỷ lệ loại tool"><g class="pie-slices">${slices.join('')}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${totalCalls.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">lượt gọi</text></svg>`;
+  const pieChart = `<svg class="pie-chart" viewBox="0 0 200 200" width="180" height="180" role="img" aria-label="Biểu đồ tròn tỷ lệ loại tool">${defs}<g class="pie-slices">${slices.join('')}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${totalCalls.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">lượt gọi</text></svg>`;
   const pieLegend = `<div class="pie-legend">${tools
     .map(key => {
       const count = toolCounts.get(key) || 0;
       const pct = totalCalls ? ((count / totalCalls) * 100).toFixed(1) : '0.0';
-      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${color(key)}"></i>${esc(toolLabel(key))}</span><span class="pie-legend-value"><strong>${count.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
+      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${chartCssBackground(toolIdx(key))}"></i>${esc(toolLabel(key))}</span><span class="pie-legend-value"><strong>${count.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
     })
     .join('')}</div>`;
   const ratio = `<div class="pie-wrap">${pieChart}${pieLegend}</div>`;
@@ -937,7 +923,7 @@ function statsCharts(logs, now) {
             return ['input', 'output']
               .map(
                 field =>
-                  `<div class="payload-bar payload-${field}" style="height:${(row[field] / max) * 100}%;background:${color(key)}" title="${esc(label(bucket.start) + ' · ' + toolLabel(key) + ' · ' + field + ': ' + row[field] + ' byte')}"></div>`
+                  `<div class="payload-bar payload-${field}" style="height:${(row[field] / max) * 100}%;background:${chartCssBackground(toolIdx(key))}" title="${esc(label(bucket.start) + ' · ' + toolLabel(key) + ' · ' + field + ': ' + row[field] + ' byte')}"></div>`
               )
               .join('');
           })
