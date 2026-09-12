@@ -1448,7 +1448,6 @@ export function createHub({
         '/connection-guides.js': 'connection-guides.js',
         '/kanban.js': 'kanban.js',
         '/audit-stats.js': 'audit-stats.js',
-        '/operations.js': 'operations.js',
         '/notifications.js': 'notifications.js',
         '/settings.js': 'settings.js',
         '/styles.css': 'styles.css'
