@@ -43,7 +43,10 @@ def caddy_config(state):
     header_up Host {state['domain']}
     flush_interval -1
   }}'''
-    routes = f"""redir /gitea /gitea/ 308
+    if not state.get('gitea_enabled', True):
+        routes = upstream
+    else:
+        routes = f"""redir /gitea /gitea/ 308
   handle_path /gitea/* {{
     reverse_proxy gitea:3000 {{
       header_up Host {state['domain']}
@@ -92,7 +95,9 @@ def manifest(state, release, conf=CONF, data=DATA):
         'depends_on': {'hub': {'condition': 'service_healthy'}},
     }
     from gitea import service, volumes
-    services = {'hub': hub, 'caddy': caddy, 'gitea': service(state, images, common)}
+    services = {'hub': hub, 'caddy': caddy}
+    if state.get('gitea_enabled', True):
+        services['gitea'] = service(state, images, common)
     if state['mode'] == 'vps':
         caddy['ports'] = ['80:80', '443:443']
     else:
@@ -103,7 +108,8 @@ def manifest(state, release, conf=CONF, data=DATA):
                         'run', '--token-file', '/run/secrets/tunnel_token'],
             'secrets': ['tunnel_token'], 'depends_on': {'caddy': {'condition': 'service_started'}},
         }
-    result = {'services': services, 'networks': {'hub': {}}, 'volumes': volumes(state),
+    result = {'services': services, 'networks': {'hub': {}},
+              'volumes': volumes(state) if state.get('gitea_enabled', True) else {},
               'x-gen-hub': {'installation_id': state['installation_id'], 'schema': 1}}
     if state['mode'] == 'personal':
         result['secrets'] = {'tunnel_token': {'file': str(conf / 'tunnel.token')}}

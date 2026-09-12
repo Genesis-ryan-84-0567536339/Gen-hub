@@ -54,6 +54,116 @@ class GiteaTest(unittest.TestCase):
             self.assertIn('reverse_proxy hub:3080', caddy)
             self.assertIn('redir /gitea /gitea/ 308', caddy)
 
+    def test_manifest_and_caddy_omit_gitea_when_explicitly_disabled(self):
+        for mode in ['vps', 'personal']:
+            state = {**self.state(), 'mode': mode, 'gitea_enabled': False}
+            config = runtime.manifest(state, SOURCE)
+            self.assertNotIn('gitea', config['services'])
+            self.assertEqual(config['volumes'], {})
+            caddy = runtime.caddy_config(state)
+            self.assertNotIn('/gitea', caddy)
+            self.assertNotIn('handle_path', caddy)
+            self.assertIn('reverse_proxy hub:3080', caddy)
+
+    def test_disable_stops_removes_and_reroutes_without_deleting_volumes_by_default(self):
+        state = {**self.state(), 'gitea_bootstrapped': True}
+        config = runtime.manifest(state, SOURCE)
+        compose_calls = []
+        def fake_compose(path, *args, **kwargs):
+            compose_calls.append(args)
+            return result()
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp); conf = root / 'conf'; conf.mkdir()
+            (conf / 'compose.json').write_text(json.dumps(config))
+            with patch.object(gitea, 'compose', side_effect=fake_compose), \
+                 patch.object(runtime, 'ROOT', root), patch.object(runtime, 'CONF', conf), \
+                 patch.object(runtime, 'backup') as backup:
+                gitea.disable(state)
+            installed = json.loads((conf / 'compose.json').read_text())
+            self.assertNotIn('gitea', installed['services'])
+            self.assertIn('gitea-data', installed['volumes'])
+            self.assertFalse(state.get('gitea_enabled', True))
+            backup.assert_called_once()
+            self.assertTrue(any('stop' in c and 'gitea' in c for c in compose_calls))
+            self.assertTrue(any('rm' in c and 'gitea' in c for c in compose_calls))
+            caddy = (conf / 'Caddyfile').read_text()
+            self.assertNotIn('/gitea', caddy)
+
+    def test_disable_purge_removes_owned_volumes_and_reports_data_deleted(self):
+        state = {**self.state(), 'gitea_bootstrapped': True}
+        config = runtime.manifest(state, SOURCE)
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp); conf = root / 'conf'; conf.mkdir()
+            (conf / 'compose.json').write_text(json.dumps(config))
+            names = ['gen-hub-owned-gitea-data', 'gen-hub-owned-gitea-config']
+            with patch.object(gitea, 'compose', return_value=result()), \
+                 patch.object(runtime, 'ROOT', root), patch.object(runtime, 'CONF', conf), \
+                 patch.object(runtime, 'backup'), \
+                 patch.object(gitea, 'check_volumes', return_value=names), \
+                 patch.object(gitea, 'run', return_value=result()) as run_call, \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                gitea.disable(state, purge=True)
+            installed = json.loads((conf / 'compose.json').read_text())
+            self.assertEqual(installed.get('volumes'), {})
+            removed = [c.args[0][-1] for c in run_call.call_args_list if 'volume' in c.args[0]]
+            self.assertEqual(removed, names)
+            self.assertIn('xóa dữ liệu', output.getvalue())
+
+    def test_disable_is_idempotent_when_already_disabled(self):
+        state = {**self.state(), 'gitea_enabled': False}
+        config = runtime.manifest(state, SOURCE)
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp); conf = root / 'conf'; conf.mkdir()
+            (conf / 'compose.json').write_text(json.dumps(config))
+            with patch.object(gitea, 'compose', return_value=result()) as compose, \
+                 patch.object(runtime, 'ROOT', root), patch.object(runtime, 'CONF', conf), \
+                 patch.object(runtime, 'backup') as backup:
+                gitea.disable(state)
+            backup.assert_not_called()
+            self.assertFalse(any('stop' in c.args for c in compose.call_args_list))
+
+    def test_activate_skips_gitea_bootstrap_when_disabled_and_never_reads_missing_image(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp); conf = root / 'conf'; conf.mkdir()
+            state = {**self.state(), 'gitea_enabled': False}
+            candidate = root / 'compose.json'
+            candidate.write_text(json.dumps(runtime.manifest(state, SOURCE, conf, root / 'data')))
+            original = runtime.atomic
+            def atomic(path, value, mode=0o600):
+                if not str(path).startswith('/usr/local/'):
+                    original(path, value, mode)
+            with patch.object(install, 'ROOT', root), patch.object(install, 'CONF', conf), \
+                 patch.object(install, 'DATA', root / 'data'), patch.object(install, 'atomic', side_effect=atomic), \
+                 patch.object(install, 'compose'), patch.object(install, 'verify_local'), \
+                 patch.object(install, 'public_test'), \
+                 patch.object(install, 'fetch', return_value=b'{"initialized":true,"installationId":"owned"}'), \
+                 patch.object(install, 'ensure_owner'), patch.object(gitea, 'check_volumes'), \
+                 patch.object(gitea, 'bootstrap') as bootstrap_call:
+                install.activate(state, {}, root / ('b' * 40), candidate, lambda: None, [])
+            bootstrap_call.assert_not_called()
+            self.assertTrue(state['completed'])
+            self.assertNotIn('gitea_image', state)
+
+    def test_cli_gitea_disable_dispatches_and_requires_typed_confirmation_for_purge(self):
+        with tempfile.TemporaryDirectory() as temp:
+            conf = pathlib.Path(temp)
+            (conf / 'install.json').write_text(json.dumps({**self.state(), 'gitea_bootstrapped': True}))
+            with patch.object(manage, 'CONF', conf), patch.object(manage.os, 'geteuid', return_value=0), \
+                 patch.object(sys, 'argv', ['gen-hub', 'gitea-disable']), \
+                 patch.object(gitea, 'disable') as disable_call:
+                manage.main()
+            disable_call.assert_called_once()
+            self.assertFalse(disable_call.call_args.kwargs['purge'])
+        with tempfile.TemporaryDirectory() as temp:
+            conf = pathlib.Path(temp)
+            (conf / 'install.json').write_text(json.dumps({**self.state(), 'gitea_bootstrapped': True}))
+            with patch.object(manage, 'CONF', conf), patch.object(manage.os, 'geteuid', return_value=0), \
+                 patch.object(sys, 'argv', ['gen-hub', 'gitea-disable', '--purge']), \
+                 patch('builtins.input', return_value='nope'), \
+                 patch.object(gitea, 'disable') as disable_call:
+                manage.main()
+            disable_call.assert_not_called()
+
     def test_bootstrap_uses_store_secret_stdin_and_only_controlling_tty(self):
         state = self.state()
         credential = 'synthetic_test_' + 'x' * 24
