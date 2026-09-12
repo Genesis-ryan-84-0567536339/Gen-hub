@@ -59,7 +59,8 @@ test('owner names OAuth agents, renames them and deletes only revoked agents whi
     { jsonrpc: '2.0', id: 1, method: 'initialize' },
     { Authorization: 'Bearer ' + token.access_token }
   );
-  assert.equal(initialized.data.result.instructions, 'Hướng dẫn chỉ dành cho laptop');
+  assert.ok(initialized.data.result.instructions.endsWith('Hướng dẫn chỉ dành cho laptop'));
+  assert.ok(initialized.data.result.instructions.includes('Kết nối nguồn chuẩn'));
 
   assert.equal((await x.call('/api/agents/' + a.id, 'DELETE')).status, 409);
   for (const name of ['', ' '.repeat(4), 'x'.repeat(81), 12])

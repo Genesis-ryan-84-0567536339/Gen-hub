@@ -216,6 +216,23 @@ const routes = [
     ['id', 'pin']
   ),
   tool(
+    'bootstrap_get',
+    'Xem nội dung Bootstrap (nhóm/bước) hiện tại được gộp gửi cho agent lúc kết nối.',
+    'GET',
+    () => 'bootstrap',
+    {},
+    [],
+    true
+  ),
+  tool(
+    'bootstrap_update',
+    'Thay toàn bộ nhóm/bước Bootstrap (mảng groups, mỗi group có title + steps[{title, content}]).',
+    'PATCH',
+    () => 'bootstrap',
+    { groups: { type: 'array' } },
+    ['groups']
+  ),
+  tool(
     'owner_password_change',
     'Đổi mật khẩu như web UI: phải cung cấp mật khẩu hiện tại. Thu hồi mọi session web.',
     'POST',

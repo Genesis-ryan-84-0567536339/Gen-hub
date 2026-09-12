@@ -19,10 +19,11 @@ test('Issue #27: agent metadata persists, validates atomically and initializes o
     .data;
   const b = (await create({})).data;
   const initialize = token => rpc(x, token, 'initialize');
-  assert.equal((await initialize(a.token)).data.result.instructions, 'Hướng dẫn riêng\nDòng hai');
-  assert.equal(
-    (await initialize(b.token)).data.result.instructions,
-    'Chỉ sử dụng các công cụ được owner cấp quyền.'
+  assert.ok((await initialize(a.token)).data.result.instructions.endsWith('Hướng dẫn riêng\nDòng hai'));
+  assert.ok(
+    (await initialize(b.token)).data.result.instructions.endsWith(
+      'Chỉ sử dụng các công cụ được owner cấp quyền.'
+    )
   );
   for (const [key, max] of [
     ['description', 2000],
@@ -64,14 +65,16 @@ test('Issue #27: agent metadata persists, validates atomically and initializes o
   delete legacy.instructions;
   legacy.client = 'oauth-client';
   x.hub.store.put('agent', b.id, legacy);
-  assert.equal(
-    (await initialize(b.token)).data.result.instructions,
-    'Chỉ sử dụng các công cụ được owner cấp quyền.'
+  assert.ok(
+    (await initialize(b.token)).data.result.instructions.endsWith(
+      'Chỉ sử dụng các công cụ được owner cấp quyền.'
+    )
   );
   await x.call('/api/agents/' + a.id, 'PATCH', { instructions: ' \n ', description: '' });
-  assert.equal(
-    (await initialize(a.token)).data.result.instructions,
-    'Chỉ sử dụng các công cụ được owner cấp quyền.'
+  assert.ok(
+    (await initialize(a.token)).data.result.instructions.endsWith(
+      'Chỉ sử dụng các công cụ được owner cấp quyền.'
+    )
   );
   assert.equal((await initialize('invalid')).status, 401);
 });
@@ -138,7 +141,7 @@ test('Issue #27: API and admin audit filters run before limits; secret reads rem
     true
   );
   const agent = JSON.parse(update.data.result.content[0].text);
-  assert.equal((await rpc(x, agent.token, 'initialize')).data.result.instructions, 'Riêng');
+  assert.ok((await rpc(x, agent.token, 'initialize')).data.result.instructions.endsWith('Riêng'));
 });
 
 test('Issue #27: statistics count calls and UTF-8 redacted JSON bytes in full GMT+7 time buckets', () => {
