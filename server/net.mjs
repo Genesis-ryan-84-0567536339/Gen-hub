@@ -41,7 +41,8 @@ export async function request(
     allowPrivate = false,
     maxBytes = 4 * 1024 * 1024,
     timeout = 30000,
-    responseId
+    responseId,
+    signal
   } = {}
 ) {
   const u = new URL(url);
@@ -120,6 +121,15 @@ export async function request(
       timeout
     );
     req.on('close', () => clearTimeout(timer));
+    if (signal) {
+      if (signal.aborted) {
+        req.destroy(new HubError('Yêu cầu đã bị hủy', 499));
+        return reject(new HubError('Yêu cầu đã bị hủy', 499));
+      }
+      const onAbort = () => req.destroy(new HubError('Yêu cầu đã bị hủy', 499));
+      signal.addEventListener('abort', onAbort, { once: true });
+      req.on('close', () => signal.removeEventListener('abort', onAbort));
+    }
     req.on('error', reject);
     req.end(data);
   });

@@ -1,6 +1,94 @@
-import { HubError } from './net.mjs';
+import { HubError, request, privateIP } from './net.mjs';
 import { redact } from './store.mjs';
 import { filterValidToolCalls } from './chat-validator.mjs';
+import dns from 'node:dns/promises';
+import { isIP } from 'node:net';
+
+export const MAX_CONCURRENT_CHAT = 5;
+const nativeFetch = globalThis.fetch;
+
+export async function assertOutboundPolicy(url, { provider = 'openai', allowPrivate = false } = {}) {
+  const u = new URL(url);
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) {
+    throw new HubError('Địa chỉ HTTP/HTTPS không hợp lệ');
+  }
+
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  const addresses = isIP(host)
+    ? [{ address: host, family: isIP(host) }]
+    : await dns.lookup(host, { all: true }).catch(() => []);
+
+  if (!addresses.length) {
+    throw new HubError('Không thể phân giải địa chỉ máy chủ');
+  }
+
+  // Chặn tuyệt đối endpoint metadata cloud (169.254.169.254 / 169.254.170.2) cho mọi provider
+  if (addresses.some(a => a.address === '169.254.169.254' || a.address === '169.254.170.2')) {
+    throw new HubError('Địa chỉ metadata bị chặn', 403);
+  }
+
+  // Chặn mạng riêng trừ ngoại lệ local Ollama
+  if (!allowPrivate && addresses.some(a => privateIP(a.address))) {
+    throw new HubError('Địa chỉ mạng riêng chưa được owner cho phép', 403);
+  }
+
+  // Chặn HTTP không mã hóa cho provider bên ngoài có credential
+  if (provider !== 'ollama' && u.protocol !== 'https:') {
+    throw new HubError('API key chỉ được gửi qua kết nối HTTPS bảo mật', 400);
+  }
+}
+
+export async function defaultLlmTransport(
+  url,
+  { method = 'POST', headers = {}, body, signal, timeoutMs = 25000, maxBytes = 4 * 1024 * 1024 } = {},
+  provider = 'openai'
+) {
+  const allowPrivate = provider === 'ollama';
+  await assertOutboundPolicy(url, { provider, allowPrivate });
+
+  // Nếu môi trường test đã mock globalThis.fetch
+  if (globalThis.fetch !== nativeFetch) {
+    const res = await globalThis.fetch(url, {
+      method,
+      headers,
+      body,
+      signal
+    });
+    const text = await res.text().catch(() => '');
+    if (Buffer.byteLength(text) > maxBytes) {
+      throw new HubError('Phản hồi vượt giới hạn 4 MiB', 502);
+    }
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {}
+    return {
+      status: res.status,
+      ok: res.ok,
+      headers: res.headers,
+      text,
+      json
+    };
+  }
+
+  // Production: dùng shared transport request() từ net.mjs
+  const res = await request(url, {
+    method,
+    headers,
+    body,
+    allowPrivate,
+    maxBytes,
+    timeout: timeoutMs,
+    signal
+  });
+  return {
+    status: res.status,
+    ok: res.status >= 200 && res.status < 300,
+    headers: res.headers,
+    text: res.text,
+    json: res.json
+  };
+}
 
 export const CHAT_TOOLS_OPENAI = [
   {
@@ -124,7 +212,7 @@ Nguyên tắc an toàn:
 - Tuyệt đối không giả mạo hành động xác nhận của người dùng.`;
 }
 
-export function createChatService(store, origin) {
+export function createChatService(store, origin, options = {}) {
   const kind = 'llm';
 
   function getConfig() {
@@ -170,8 +258,22 @@ export function createChatService(store, origin) {
     }
 
     let baseUrl = typeof b.baseUrl === 'string' ? b.baseUrl.trim() : '';
-    if (baseUrl && !/^https?:\/\/.+/i.test(baseUrl)) {
-      throw new HubError('Base URL phải là địa chỉ HTTP hoặc HTTPS hợp lệ');
+    if (baseUrl) {
+      if (!/^https?:\/\/.+/i.test(baseUrl)) {
+        throw new HubError('Base URL phải là địa chỉ HTTP hoặc HTTPS hợp lệ');
+      }
+      try {
+        const u = new URL(baseUrl);
+        if (b.provider !== 'ollama' && u.protocol !== 'https:') {
+          throw new HubError('API key chỉ được cấu hình qua kết nối HTTPS bảo mật');
+        }
+        if (u.hostname.includes('169.254.169.254') || u.hostname.includes('169.254.170.2')) {
+          throw new HubError('Địa chỉ metadata bị chặn', 403);
+        }
+      } catch (err) {
+        if (err instanceof HubError) throw err;
+        throw new HubError('Base URL không hợp lệ');
+      }
     }
 
     const existing = store.get(kind, 'config');
@@ -241,6 +343,8 @@ export function createChatService(store, origin) {
     }
   }
 
+  let inFlightChat = 0;
+
   async function chat(b, actor = 'owner', req) {
     const config = getInternalConfig();
     if (!config) {
@@ -250,71 +354,93 @@ export function createChatService(store, origin) {
       );
     }
 
-    if (!Array.isArray(b.messages) || b.messages.length === 0) {
-      throw new HubError('Danh sách tin nhắn (messages) không hợp lệ');
+    if (inFlightChat >= MAX_CONCURRENT_CHAT) {
+      throw new HubError('Hệ thống đang xử lý nhiều yêu cầu LLM cùng lúc, vui lòng thử lại sau', 429);
     }
+    inFlightChat++;
 
-    if (b.messages.length > 30) {
-      throw new HubError('Lịch sử tin nhắn vượt quá giới hạn');
-    }
-
-    const cleanMessages = [];
-    for (const m of b.messages) {
-      if (!m || typeof m !== 'object' || !['user', 'assistant'].includes(m.role)) {
-        throw new HubError('Tin nhắn không đúng định dạng role (user hoặc assistant)');
+    const abortCtrl = new AbortController();
+    if (req) {
+      if (req.signal) {
+        if (req.signal.aborted) abortCtrl.abort();
+        else req.signal.addEventListener('abort', () => abortCtrl.abort(), { once: true });
       }
-      if (typeof m.content !== 'string' || m.content.length > 4000) {
-        throw new HubError('Nội dung tin nhắn không hợp lệ hoặc vượt quá 4000 ký tự');
-      }
-      cleanMessages.push({ role: m.role, content: m.content });
-    }
-
-    const currentRoute = typeof b.currentRoute === 'string' ? b.currentRoute : 'overview';
-    const systemPrompt = buildSystemPrompt(store, currentRoute);
-
-    const started = performance.now();
-    try {
-      const { content, tool_calls } = await dispatchLlmCall({
-        provider: config.provider,
-        model: config.model,
-        baseUrl: config.baseUrl,
-        apiKey: config.apiKey,
-        systemPrompt,
-        messages: cleanMessages,
-        tools: CHAT_TOOLS_OPENAI,
-        timeoutMs: 25000
+      req.on?.('close', () => {
+        if (!req.complete) abortCtrl.abort();
       });
+    }
 
-      const validTools = filterValidToolCalls(tool_calls);
+    try {
+      if (!Array.isArray(b.messages) || b.messages.length === 0) {
+        throw new HubError('Danh sách tin nhắn (messages) không hợp lệ');
+      }
 
-      store.audit(
-        actor,
-        'hub',
-        'chat.message',
-        'success',
-        redact({ messageCount: cleanMessages.length, currentRoute }),
-        redact({ toolCalls: validTools.map(t => t.name), contentPreview: content.slice(0, 100) }),
-        performance.now() - started
-      );
+      if (b.messages.length > 30) {
+        throw new HubError('Lịch sử tin nhắn vượt quá giới hạn');
+      }
 
-      return {
-        message: {
-          role: 'assistant',
-          content,
-          tool_calls: validTools
+      const cleanMessages = [];
+      for (const m of b.messages) {
+        if (!m || typeof m !== 'object' || !['user', 'assistant'].includes(m.role)) {
+          throw new HubError('Tin nhắn không đúng định dạng role (user hoặc assistant)');
         }
-      };
-    } catch (err) {
-      store.audit(
-        actor,
-        'hub',
-        'chat.message',
-        'error',
-        redact({ messageCount: cleanMessages.length, currentRoute }),
-        { error: err.message },
-        performance.now() - started
-      );
-      throw new HubError(err.message || 'Lỗi khi gọi mô hình ngôn ngữ', 502);
+        if (typeof m.content !== 'string' || m.content.length > 4000) {
+          throw new HubError('Nội dung tin nhắn không hợp lệ hoặc vượt quá 4000 ký tự');
+        }
+        cleanMessages.push({ role: m.role, content: m.content });
+      }
+
+      const currentRoute = typeof b.currentRoute === 'string' ? b.currentRoute : 'overview';
+      const systemPrompt = buildSystemPrompt(store, currentRoute);
+
+      const started = performance.now();
+      try {
+        const { content, tool_calls } = await dispatchLlmCall({
+          provider: config.provider,
+          model: config.model,
+          baseUrl: config.baseUrl,
+          apiKey: config.apiKey,
+          systemPrompt,
+          messages: cleanMessages,
+          tools: CHAT_TOOLS_OPENAI,
+          timeoutMs: 25000,
+          signal: abortCtrl.signal,
+          transport: options?.transport
+        });
+
+        const validTools = filterValidToolCalls(tool_calls);
+
+        store.audit(
+          actor,
+          'hub',
+          'chat.message',
+          'success',
+          redact({ messageCount: cleanMessages.length, currentRoute }),
+          redact({ toolCalls: validTools.map(t => t.name), contentPreview: content.slice(0, 100) }),
+          performance.now() - started
+        );
+
+        return {
+          message: {
+            role: 'assistant',
+            content,
+            tool_calls: validTools
+          }
+        };
+      } catch (err) {
+        store.audit(
+          actor,
+          'hub',
+          'chat.message',
+          'error',
+          redact({ messageCount: cleanMessages.length, currentRoute }),
+          { error: err.message },
+          performance.now() - started
+        );
+        throw new HubError(err.message || 'Lỗi khi gọi mô hình ngôn ngữ', err.status || 502);
+      }
+    } finally {
+      inFlightChat--;
     }
   }
 
@@ -322,7 +448,8 @@ export function createChatService(store, origin) {
     getConfig,
     saveConfig,
     testConnection,
-    chat
+    chat,
+    getInFlightChat: () => inFlightChat
   };
 }
 
@@ -337,9 +464,13 @@ export async function dispatchLlmCall({
   systemPrompt,
   messages,
   tools = CHAT_TOOLS_OPENAI,
-  timeoutMs = 25000
+  timeoutMs = 25000,
+  signal,
+  transport = defaultLlmTransport
 }) {
-  const signal = AbortSignal.timeout(timeoutMs);
+  const effectiveSignal = signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+    : AbortSignal.timeout(timeoutMs);
 
   if (provider === 'openai' || provider === 'ollama') {
     let url = baseUrl || (provider === 'ollama' ? 'http://localhost:11434/v1' : 'https://api.openai.com/v1');
@@ -365,19 +496,25 @@ export async function dispatchLlmCall({
       payload.tools = tools;
     }
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal
-    });
+    const res = await transport(
+      endpoint,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: effectiveSignal,
+        timeoutMs,
+        maxBytes: 4 * 1024 * 1024
+      },
+      provider
+    );
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`LLM ${provider} lỗi [${res.status}]: ${errText.slice(0, 200)}`);
+      const errText = res.text || '';
+      throw new HubError(`LLM ${provider} lỗi [${res.status}]: ${errText.slice(0, 200)}`, res.status === 429 ? 429 : 502);
     }
 
-    const data = await res.json();
+    const data = res.json || {};
     const choice = data.choices?.[0];
     const content = choice?.message?.content || '';
     const rawTools = (choice?.message?.tool_calls || []).map(tc => {
@@ -419,19 +556,25 @@ export async function dispatchLlmCall({
       payload.tools = anthropicTools;
     }
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal
-    });
+    const res = await transport(
+      endpoint,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: effectiveSignal,
+        timeoutMs,
+        maxBytes: 4 * 1024 * 1024
+      },
+      provider
+    );
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Anthropic API lỗi [${res.status}]: ${errText.slice(0, 200)}`);
+      const errText = res.text || '';
+      throw new HubError(`Anthropic API lỗi [${res.status}]: ${errText.slice(0, 200)}`, res.status === 429 ? 429 : 502);
     }
 
-    const data = await res.json();
+    const data = res.json || {};
     const textBlocks = (data.content || []).filter(c => c.type === 'text');
     const content = textBlocks.map(c => c.text).join('\n');
     const rawTools = (data.content || [])
@@ -466,19 +609,25 @@ export async function dispatchLlmCall({
       payload.tools = [{ function_declarations: CHAT_TOOLS_GEMINI }];
     }
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal
-    });
+    const res = await transport(
+      endpoint,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: effectiveSignal,
+        timeoutMs,
+        maxBytes: 4 * 1024 * 1024
+      },
+      provider
+    );
 
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Gemini API lỗi [${res.status}]: ${errText.slice(0, 200)}`);
+      const errText = res.text || '';
+      throw new HubError(`Gemini API lỗi [${res.status}]: ${errText.slice(0, 200)}`, res.status === 429 ? 429 : 502);
     }
 
-    const data = await res.json();
+    const data = res.json || {};
     const candidate = data.candidates?.[0];
     const parts = candidate?.content?.parts || [];
     const textParts = parts.filter(p => typeof p.text === 'string');
@@ -493,5 +642,5 @@ export async function dispatchLlmCall({
     return { content, tool_calls: rawTools };
   }
 
-  throw new Error(`Nhà cung cấp LLM không được hỗ trợ: ${provider}`);
+  throw new HubError(`Nhà cung cấp LLM không được hỗ trợ: ${provider}`, 400);
 }
