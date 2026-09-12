@@ -53,44 +53,50 @@ test('O11 Sanitizer: comprehensive canary secret, header, URL query, and nested 
   assert.match(sanitizedKv, /api_key=\[REDACTED\]/);
 });
 
-test('O11 Correlation ID: client header propagation, error response, and audit log correlation', async t => {
+test('O11 Correlation ID: always server-generated (never trusts client header), error response, and audit log correlation', async t => {
   const x = await fixture(t);
-  const CLIENT_REQUEST_ID = 'corr-req-' + Date.now();
+  const SPOOFED_REQUEST_ID = 'attacker-supplied-id-' + Date.now();
 
-  // Make request with X-Request-ID header to an endpoint that fails authentication
+  // Make request with an attacker-supplied X-Request-ID to an endpoint that fails authentication.
   const mcpRes = await x.call(
     '/mcp',
     'POST',
     { jsonrpc: '2.0', id: 42, method: 'tools/list' },
     {
-      'X-Request-ID': CLIENT_REQUEST_ID,
+      'X-Request-ID': SPOOFED_REQUEST_ID,
       Authorization: 'Bearer invalid_agent_token'
     }
   );
-
-  // 1. Response must return X-Request-ID header matching client request ID
-  assert.equal(mcpRes.headers.get('x-request-id'), CLIENT_REQUEST_ID);
   assert.equal(mcpRes.status, 401);
 
-  // 2. Audit log must record the exact same operationId
+  // 1. The server must NEVER honor a client-supplied correlation ID for the audit
+  // trail — it must generate its own, ignoring whatever the client sent, since
+  // this ID is used to correlate/dedupe security-relevant audit rows on a public
+  // endpoint any anonymous caller can reach.
+  const serverOpId = mcpRes.headers.get('x-request-id');
+  assert.ok(serverOpId, 'Response must include a server-assigned X-Request-ID');
+  assert.notEqual(serverOpId, SPOOFED_REQUEST_ID, 'Server must not echo back a client-supplied correlation ID');
+
+  // 2. Audit log must record the server-generated operationId, not the spoofed one.
   const authLog = x.hub.store.logs(5).find(l => l.tool === 'auth.mcp');
   assert.ok(authLog, 'auth.mcp audit log must exist');
-  assert.equal(authLog.operationId, CLIENT_REQUEST_ID, 'Audit operationId must match client X-Request-ID');
+  assert.equal(authLog.operationId, serverOpId, 'Audit operationId must match the server-generated ID');
+  assert.notEqual(authLog.operationId, SPOOFED_REQUEST_ID);
 
-  // 3. Querying /api/logs with operationId filter must find this exact log
-  const queryRes = await x.call(`/api/logs?operationId=${CLIENT_REQUEST_ID}`);
+  // 3. Querying /api/logs with operationId filter must find this exact log by the real ID.
+  const queryRes = await x.call(`/api/logs?operationId=${serverOpId}`);
   assert.equal(queryRes.status, 200);
   assert.ok(Array.isArray(queryRes.data) ? queryRes.data.length >= 1 : queryRes.data.rows.length >= 1);
   const foundRow = (Array.isArray(queryRes.data) ? queryRes.data : queryRes.data.rows).find(
-    r => r.operationId === CLIENT_REQUEST_ID
+    r => r.operationId === serverOpId
   );
   assert.ok(foundRow, 'Log query by operationId must retrieve matching row');
 
-  // 4. Searching via free-text q filter finds by operationId
-  const searchRes = await x.call(`/api/logs?q=${CLIENT_REQUEST_ID}`);
+  // 4. Searching via free-text q filter finds by operationId.
+  const searchRes = await x.call(`/api/logs?q=${serverOpId}`);
   assert.equal(searchRes.status, 200);
   const searchRow = (Array.isArray(searchRes.data) ? searchRes.data : searchRes.data.rows).find(
-    r => r.operationId === CLIENT_REQUEST_ID
+    r => r.operationId === serverOpId
   );
   assert.ok(searchRow, 'Log search by q must match operationId');
 });
@@ -132,7 +138,6 @@ test('O11 Diagnostics: full chain request -> policy -> upstream tracking and saf
   const agentId = agentRes.data.id;
 
   // 1. Success tool call: records upstreamStatus 200, phase 'upstream', credentialVersion
-  const SUCCESS_REQ_ID = 'corr-success-999';
   const successCallRes = await x.call(
     '/mcp',
     'POST',
@@ -143,12 +148,14 @@ test('O11 Diagnostics: full chain request -> policy -> upstream tracking and saf
       params: { name: `${mcpId}__test_tool`, arguments: { query: 'test' } }
     },
     {
-      'X-Request-ID': SUCCESS_REQ_ID,
+      'X-Request-ID': 'attacker-supplied-should-be-ignored',
       Authorization: `Bearer ${agentToken}`
     }
   );
   assert.equal(successCallRes.status, 200);
-  assert.equal(successCallRes.headers.get('x-request-id'), SUCCESS_REQ_ID);
+  const SUCCESS_REQ_ID = successCallRes.headers.get('x-request-id');
+  assert.ok(SUCCESS_REQ_ID);
+  assert.notEqual(SUCCESS_REQ_ID, 'attacker-supplied-should-be-ignored', 'server must not honor client-supplied correlation id');
 
   const successLogs = x.hub.store.logs(5);
   const successAudit = successLogs.find(l => l.operationId === SUCCESS_REQ_ID && l.tool === 'test_tool');
@@ -165,7 +172,6 @@ test('O11 Diagnostics: full chain request -> policy -> upstream tracking and saf
   assert.ok(!JSON.stringify(successDetail).includes(agentToken), 'Secret token must never be in diagnostic metadata');
 
   // 2. Upstream failure: records upstreamStatus 502, phase 'upstream', errorCategory
-  const FAIL_REQ_ID = 'corr-fail-502';
   const upstreamErr = new HubError('Upstream internal timeout at https://service.internal/?token=canary-err-token', 502);
   upstreamErr.upstreamStatus = 502;
   simulatedError = upstreamErr;
@@ -180,12 +186,12 @@ test('O11 Diagnostics: full chain request -> policy -> upstream tracking and saf
       params: { name: `${mcpId}__test_tool`, arguments: { query: 'fail' } }
     },
     {
-      'X-Request-ID': FAIL_REQ_ID,
       Authorization: `Bearer ${agentToken}`
     }
   );
   assert.equal(failCallRes.status, 200); // JSON-RPC returns 200 with isError or error
-  assert.equal(failCallRes.headers.get('x-request-id'), FAIL_REQ_ID);
+  const FAIL_REQ_ID = failCallRes.headers.get('x-request-id');
+  assert.ok(FAIL_REQ_ID);
 
   const failLogs = x.hub.store.logs(5);
   const failAudit = failLogs.find(l => l.operationId === FAIL_REQ_ID && l.tool === 'test_tool');
@@ -201,7 +207,6 @@ test('O11 Diagnostics: full chain request -> policy -> upstream tracking and saf
   assert.match(failDetail.output.error, /token=\[REDACTED\]/);
 
   // 3. Policy denial: records policyDecision 'deny', phase 'policy'
-  const DENY_REQ_ID = 'corr-deny-403';
   const denyCallRes = await x.call(
     '/mcp',
     'POST',
@@ -212,12 +217,13 @@ test('O11 Diagnostics: full chain request -> policy -> upstream tracking and saf
       params: { name: `${mcpId}__unpermitted_tool`, arguments: {} }
     },
     {
-      'X-Request-ID': DENY_REQ_ID,
       Authorization: `Bearer ${agentToken}`
     }
   );
   assert.equal(denyCallRes.status, 200);
   assert.ok(denyCallRes.data.error, 'Should return JSON-RPC error on denied tool');
+  const DENY_REQ_ID = denyCallRes.headers.get('x-request-id');
+  assert.ok(DENY_REQ_ID);
   assert.equal(denyCallRes.data.error.data?.operationId, DENY_REQ_ID, 'RPC error data must contain operationId');
 
   const denyLogs = x.hub.store.logs(5);

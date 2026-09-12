@@ -1275,8 +1275,11 @@ export function createHub({
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
     );
-    const incomingRequestId = req.headers['x-request-id'] || req.headers['x-correlation-id'];
-    const opId = incomingRequestId ? String(incomingRequestId).trim().slice(0, 100) : randomUUID();
+    // Always server-generated: this ID threads audit-log correlation, so it must
+    // never be attacker-influenced. A client-supplied X-Request-ID could otherwise
+    // spoof/collide with an unrelated operation's correlation chain on this public
+    // endpoint.
+    const opId = randomUUID();
     res.setHeader('X-Request-ID', opId);
     return store.operation(opId, async () => {
       try {
