@@ -1,20 +1,28 @@
 # Phương án Gitea và runner — Issue #23
 
-Trạng thái: quyết định đã chốt theo comment mới nhất #23 ngày 2026-09-10. PR đầu triển khai storage + lifecycle Gitea bắt buộc; SSO, Kanban Gitea, runner/deploy và chuyển Brain chưa triển khai. Gen-hub vẫn lấy chính repo GitHub Gen-hub làm SSOT sản phẩm.
+> [!NOTE]
+> **Tài liệu thiết kế lịch sử (Historical Design Document)**: Tài liệu này ghi lại đề xuất kiến trúc ban đầu tại thời điểm thảo luận Issue #23 (2026-09-10).
+> **Trạng thái triển khai thực tế**: Các hạng mục cốt lõi đã được hoàn thành và merge vào `main`:
+> - Storage & Lifecycle Gitea: **Đã triển khai** (PR #56 / #57).
+> - Gitea MCP Connector (59 tool): **Đã triển khai** (PR #59, #60).
+> - Owner OIDC / SSO Identity Provider: **Đã triển khai** (PR #61, `server/owner-oidc.mjs`).
+> - Kanban Gitea Multi-repo Adapter: **Đã triển khai** (PR #65).
+> - Kanban Archive (Thủ công & Tự động 24h): **Đã triển khai** (PR #66).
+> - Xem hướng dẫn vận hành chi tiết và giới hạn bảo mật tại [GITEA_OPERATIONS.md](GITEA_OPERATIONS.md) và ma trận năng lực tại [STATUS.md](STATUS.md).
 
 ## Quyết định đã chốt
 
 Gitea là thành phần bắt buộc của mọi bản cài Gen-hub. TUI luôn bootstrap Gitea cùng owner, không hỏi bật/tắt, không có cấu hình on/off. Route cố định `/gitea/` qua Caddy dùng hostname Gen-hub hiện tại; git/database và cấu hình/keys nằm trong hai named volume riêng của Gitea. Máy đã có owner nhận bước bootstrap bắt buộc một lần qua `sudo gen-hub gitea-enable`. Đây là luồng chuyển tiếp cho bản cài cũ, không phải lựa chọn sản phẩm ở bước cài. Sau khi đã bootstrap, owner vẫn có thể chủ động tắt qua `sudo gen-hub gitea-disable` nếu quyết định không dùng (xem `docs/GITEA_OPERATIONS.md`) — khác với việc TUI không hỏi lựa chọn lúc cài.
 
-PR storage/lifecycle dùng admin Gitea nội bộ với mật khẩu sinh bằng `secret()` của `server/store.mjs`, hiện một lần ở TUI. SSO owner được triển khai trong PR kế tiếp, không tái sử dụng mật khẩu owner, token MCP hoặc isAdmin. Chi tiết hiện thực, backup/restore và giới hạn phiên bản tại [GITEA_OPERATIONS.md](GITEA_OPERATIONS.md).
+PR storage/lifecycle dùng admin Gitea nội bộ với mật khẩu sinh bằng `secret()` của `server/store.mjs`, hiện một lần ở TUI. SSO owner đã được triển khai (PR #61) qua OpenID Connect riêng biệt, không tái sử dụng mật khẩu owner, token MCP hoặc isAdmin. Chi tiết hiện thực, backup/restore và giới hạn phiên bản tại [GITEA_OPERATIONS.md](GITEA_OPERATIONS.md).
 
 Deploy đã chốt theo action đăng ký sẵn + owner duyệt đúng SHA. Không triển khai shell tự do trên host. Runner/CI vẫn nằm ngoài PR storage/lifecycle.
 
 ## Tách SSO owner khỏi OAuth agent
 
-Gitea hỗ trợ nguồn đăng nhập OAuth2/OpenID Connect. Gen-hub hiện có OAuth cho MCP, chưa phải OIDC Identity Provider đầy đủ: cần bổ sung issuer/metadata, ID token ký, JWKS, userinfo, audience và client đăng ký cố định cho Gitea. Không dùng token `/mcp` hay cờ isAdmin làm đăng nhập Gitea. [Tài liệu xác thực Gitea](https://docs.gitea.com/administration/authentication/).
+Gitea hỗ trợ nguồn đăng nhập OAuth2/OpenID Connect. Để đáp ứng yêu cầu này, Gen-hub đã bổ sung OpenID Connect (OIDC) Identity Provider đầy đủ (`server/owner-oidc.mjs`, PR #61): bao gồm issuer/metadata discovery, ID token ký RS256, JWKS public keys, userinfo, audience `genhub-gitea` và client đăng ký cố định cho Gitea. Tuyệt đối không dùng token `/mcp` hay cờ isAdmin làm đăng nhập Gitea. [Tài liệu xác thực Gitea](https://docs.gitea.com/administration/authentication/).
 
-Luồng đề xuất: owner đã đăng nhập Hub → Gitea chuyển tới issuer owner → code một lần ràng buộc callback/client → Gitea tạo/liên kết đúng owner. Tắt đăng ký công khai; không đưa mật khẩu owner sang Gitea. Cần có đường khôi phục SSO qua TUI, kiểm thử logout/revoke, tránh khóa owner ngoài hệ thống khi issuer lỗi. Agent dùng credential Gitea riêng, scope theo repo và tool; không dùng session owner.
+Luồng đã triển khai: owner đã đăng nhập Hub → Gitea chuyển tới issuer owner (`/oidc/owner/authorize`) → code một lần ràng buộc callback/client → Gitea tạo/liên kết đúng owner. Tắt đăng ký công khai; không đưa mật khẩu owner sang Gitea. Đường khôi phục SSO có sẵn qua `sudo gen-hub gitea-enable`, kiểm thử logout/revoke đã hoàn thành. Agent truy cập Gitea qua connector `gitea-mcp` (PR #59) bằng credential PAT riêng, scope theo repo và tool; không dùng session owner.
 
 ## Ranh giới runner và deploy
 
@@ -35,7 +43,7 @@ Gitea hỗ trợ push mirror cho branches/tags/commits; cơ chế này không ph
 
 Theo yêu cầu mới “chỉ khi đạt mốc”: mặc định không push-on-commit và không mirror định kỳ. Owner chọn repo đích và mốc release/SHA rồi kích publish. Mirror có thể mang theo lịch sử git; nếu không muốn công khai lịch sử nội bộ, cần repo xuất bản riêng với snapshot đã duyệt. Đây là lựa chọn phải hiện rõ trước lần publish đầu. Không tự tạo repo public, không tự migrate Brain hoặc đẩy toàn bộ repo nội bộ ra ngoài.
 
-## Vòng đời mục tiêu cho toàn Epic (SSO/runner ở các PR sau)
+## Vòng đời mục tiêu cho toàn Epic
 
 | Lệnh/luồng      | Phần Gitea/runner phải xử lý                                                                               |
 | --------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -47,8 +55,17 @@ Theo yêu cầu mới “chỉ khi đạt mốc”: mặc định không push-on
 | Uninstall       | Dừng/deregister runner; giữ dữ liệu nếu không purge                                                        |
 | Purge           | Xác nhận domain, xóa đúng container/user/storage/route thuộc installation, báo riêng repo/backup sẽ bị xóa |
 
-## Thứ tự thực hiện đã chốt
+## Thứ tự thực hiện và tiến độ
 
-Gitea storage + lifecycle → owner OIDC/SSO → adapter Kanban toàn repo → CI cách ly → deploy có duyệt SHA → publish theo mốc. Mỗi phần có PR và kiểm tra riêng. Kanban GitHub #52 được triển khai độc lập ngay; UI nhận dữ liệu chuẩn hóa, adapter Gitea sau này không cần đổi cấu trúc cột/thẻ.
+- [x] **Gitea storage + lifecycle**: Đã hoàn thành (PR #56 / #57).
+- [x] **Gitea MCP Connector (59 tool)**: Đã hoàn thành (PR #59, #60).
+- [x] **Owner OIDC / SSO**: Đã hoàn thành (PR #61, `server/owner-oidc.mjs`).
+- [x] **Adapter Kanban toàn repo Gitea**: Đã hoàn thành (PR #65).
+- [x] **Kanban Archive (Manual & Auto 24h)**: Đã hoàn thành (PR #66).
+- [ ] **CI cách ly**: Triển khai trong Epic/PR tiếp theo.
+- [ ] **Deploy có duyệt SHA**: Triển khai sau CI.
+- [ ] **Publish theo mốc**: Triển khai theo nhu cầu.
+
+Mỗi phần có PR và kiểm tra riêng. Kanban GitHub #52 và Gitea #65 đã được chuẩn hóa dùng chung UI và cấu trúc cột/thẻ.
 
 Không dùng thiết kế này như quyền đã cấp để cài/chạy runner hoặc chuyển repo Brain trên host.

@@ -27,7 +27,7 @@ Cloudflare token cần **Account / Cloudflare Tunnel / Edit**, **Zone / DNS / Ed
 
 Bộ cài không ghi đè DNS đang trỏ nơi khác, không chiếm dịch vụ đang dùng cổng cần thiết. Trạng thái được lưu để chạy lại khi mất mạng hoặc ngắt cài. Máy cá nhân cần bật máy và kết nối Internet để agent từ xa truy cập được.
 
-Gitea là thành phần bắt buộc ở `https://<hostname>/gitea/`, có container rootless và named volume riêng, không nhận `master.key` hay `update.env`. Admin nội bộ `genhub-admin` có mật khẩu ngẫu nhiên hiện đúng một lần trên terminal và yêu cầu đổi khi đăng nhập lần đầu; không dùng mật khẩu owner. SSO sẽ có ở PR sau.
+Gitea là thành phần bắt buộc ở `https://<hostname>/gitea/`, có container rootless và named volume riêng, không nhận `master.key` hay `update.env`. Admin nội bộ `genhub-admin` có mật khẩu ngẫu nhiên hiện đúng một lần trên terminal và yêu cầu đổi khi đăng nhập lần đầu; không dùng mật khẩu owner. Đăng nhập SSO bằng tài khoản owner qua OpenID Connect đã được tích hợp sẵn (PR #61). [Vận hành và phục hồi Gitea](docs/GITEA_OPERATIONS.md).
 
 Máy đã cài trước khi có Gitea: cập nhật Gen-hub rồi chạy **`sudo gen-hub gitea-enable`** trong terminal để hoàn tất bootstrap bắt buộc. Auto-update không thể giao mật khẩu qua TUI nên chỉ chuẩn bị service/storage và báo bước còn thiếu; `status` nhắc, `doctor` báo chưa hoàn tất cho đến khi bootstrap thành công. [Vận hành và phục hồi Gitea](docs/GITEA_OPERATIONS.md).
 
@@ -126,13 +126,13 @@ Nếu GitHub báo giới hạn API theo IP, chạy `sudo gen-hub github-token` r
 
 Khi bị rate limit, UI/CLI hiển thị thời điểm thử lại theo header GitHub. Nút kiểm tra ngay cũng chờ hết thời gian này; CLI lưu thời gian chờ qua các lần chạy. Sau thời điểm đó, app tự thử ở chu kỳ kiểm tra 30 phút tiếp theo hoặc khi owner bấm kiểm tra ngay; auto-update host thử ở chu kỳ timer mỗi giờ tiếp theo. HTTP 403 do quyền truy cập được báo riêng. Cache CI của app không được dùng làm giấy phép để updater root cài mã: updater vẫn tự kiểm tra đúng commit/main/push/CI, tránh tin dữ liệu mà tiến trình web có thể ghi.
 
-## Kanban issue GitHub
+## Bảng Kanban (GitHub & Gitea multi-repo)
 
-Mở **Kanban → Cấu hình nguồn issue**, chọn connector GitHub REST hoặc GitHub MCP đã kết nối, nhập repo dạng `owner/repository` (gợi ý mặc định repo Gen-hub). Owner dùng quyền đọc issue của connector; không yêu cầu cấp tool đó cho một agent riêng và không tự thay quyền agent.
+Mở **Kanban → Cấu hình nguồn issue**, chọn connector GitHub REST, GitHub MCP hoặc Gitea MCP đã kết nối. Với GitHub, nhập repo dạng `owner/repository`; với Gitea, bảng tự động quét toàn bộ repository mà tài khoản PAT có quyền truy cập và cho phép lọc theo từng repo. Owner dùng quyền đọc issue của connector; không yêu cầu cấp tool đó cho agent riêng.
 
-Bảng chỉ đọc, tự đồng bộ mỗi 2 phút khi trang đang mở; nút Đồng bộ dùng chung cache 2 phút. Các nhãn `Status: Backlog`, `Status: Ready`, `Status: In Progress`, `Status: Review`, `Status: Done` xác định cột; không phân biệt hoa/thường. Khi trùng nhiều nhãn, lấy cột tiến xa nhất; issue đã đóng luôn vào Done. Issue mở không có nhãn trạng thái vào Backlog, `agent:*` chỉ hiển thị người xử lý. Bấm thẻ để mở issue GitHub; không kéo thả/ghi ngược GitHub Projects.
+Bảng tự đồng bộ mỗi 2 phút khi trang đang mở; nút Đồng bộ dùng chung cache 2 phút. Các nhãn `Status: Backlog`, `Status: Ready`, `Status: In Progress`, `Status: Review`, `Status: Done` xác định cột; không phân biệt hoa/thường. Khi trùng nhiều nhãn, lấy cột tiến xa nhất; issue đã đóng luôn vào Done. Issue mở không có nhãn trạng thái vào Backlog, `agent:*` hiển thị người xử lý.
 
-Đọc tối đa 20 trang mỗi lần (100 bản ghi/trang), lọc pull request khỏi kết quả REST, báo rõ khi chạm giới hạn. Lỗi đồng bộ giữ bản dữ liệu đầy đủ gần nhất trong bộ nhớ và ghi rõ thời điểm/lỗi, không hiển thị dữ liệu một phần như đã đồng bộ xong. Cấu hình lưu qua restart; dữ liệu thẻ được tải lại. API `GET /api/kanban` và `PATCH /api/kanban` chỉ dành cho phiên owner; không thêm quyền quản trị cho agent thường. Adapter Kanban hiện tại dành cho GitHub. Gitea storage/lifecycle đã có trong bộ cài; SSO, adapter Kanban Gitea và runner/deploy theo [thứ tự #23](docs/GITEA_DESIGN.md) ở các PR sau.
+Đọc tối đa 20 trang mỗi lần (100 bản ghi/trang), lọc bỏ pull requests, báo rõ khi chạm giới hạn. Lỗi đồng bộ giữ bản dữ liệu đầy đủ gần nhất trong bộ nhớ và ghi rõ thời điểm/lỗi. Hỗ trợ nút **Chuyển lưu trữ toàn bộ cột Done** và cơ chế **tự động lưu trữ** các issue nằm ở cột Done liên tục quá 24 giờ. Cấu hình lưu qua restart. API `GET /api/kanban` và `PATCH /api/kanban` chỉ dành cho phiên owner. Chi tiết thiết kế tại [STATUS.md](docs/STATUS.md).
 
 ## Doctor: kiểm tra và tự sửa
 

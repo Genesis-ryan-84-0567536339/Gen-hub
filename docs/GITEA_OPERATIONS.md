@@ -32,7 +32,7 @@ Khác với việc chỉ dừng container bằng tay: `gitea-disable` ghi `gitea
 - Caddy dành riêng `/gitea/*`, bỏ prefix trước khi proxy và giữ HTTPS trong header. `/gitea` redirect 308 tới `/gitea/`; các route Hub tiếp tục đến Hub. VPS và tunnel dùng cùng hostname, không thêm DNS/tunnel hay cổng host cho Gitea.
 - SSH, Actions và package registry chưa mở; dùng Git HTTPS. Registry cần route `/v2` riêng nên nằm ngoài scope. Tắt đăng ký công khai; yêu cầu đăng nhập để xem nội dung.
 
-Cấu hình theo tài liệu chính thức [Docker rootless](https://docs.gitea.com/installation/install-with-docker-rootless/) và [Caddy/subpath](https://docs.gitea.com/administration/reverse-proxies/). SSO/OIDC, Kanban adapter, CI runner/deploy và di chuyển Brain ở các PR sau.
+Cấu hình theo tài liệu chính thức [Docker rootless](https://docs.gitea.com/installation/install-with-docker-rootless/) và [Caddy/subpath](https://docs.gitea.com/administration/reverse-proxies/). SSO/OIDC (PR #61), Kanban adapter (PR #65) và Kanban archive (PR #66) đã hoàn thành và tích hợp sẵn. CI runner/deploy và di chuyển Brain ở các bước tiếp theo.
 
 ## Các lệnh vòng đời
 
@@ -52,7 +52,7 @@ Không có lệnh nâng phiên bản/schema Gitea trong PR này. Image Gitea tha
 
 ## Backup và restore
 
-Backup `.tar.gz` quyền 0600 chứa `data/hub.db`, `data/master.key`, `config/` và `gitea/volumes.tar`. Archive lồng chứa `var/lib/gitea/` và `etc/gitea/`, gồm SQLite/WAL nếu còn, git, LFS, attachments, config/keys. Phải giữ cả bundle; đây là dữ liệu nhạy cảm. Gitea ngừng ghi trong suốt snapshot. Không có giao dịch phân tán Hub/Gitea ở PR storage này và chưa có dữ liệu SSO liên kết.
+Backup `.tar.gz` quyền 0600 chứa `data/hub.db`, `data/master.key`, `config/` và `gitea/volumes.tar`. Archive lồng chứa `var/lib/gitea/` và `etc/gitea/`, gồm SQLite/WAL nếu còn, git, LFS, attachments, config/keys. Phải giữ cả bundle; đây là dữ liệu nhạy cảm. Gitea ngừng ghi trong suốt snapshot. Khóa ký OIDC và cấu hình nguồn xác thực SSO `genhub-owner` nằm trong `data/hub.db`; sau khi khôi phục dữ liệu, chạy `sudo gen-hub gitea-enable` để tái đồng bộ nếu cần.
 
 Restore thủ công trên máy phục hồi riêng, từ backup đáng tin cậy:
 

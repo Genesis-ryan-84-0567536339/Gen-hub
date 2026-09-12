@@ -68,7 +68,7 @@ Khôi phục trên cùng revision: dừng container Hub bằng `sudo docker comp
 sudo gen-hub migrate-ids
 ```
 
-Lệnh chạy một lần để chuyển đổi các ID cũ tạo trước bản chuẩn hóa #40 (không có tiền tố) sang định dạng chuẩn (`agent_...`, `vault_...`, `mcp_...`, `client_...`, `flow_...`, `admin_...`). Thực thi nguyên tử trong một transaction `store.tx()`, đồng thời cập nhật mọi liên kết chéo (`agent.permissions`, `token.agent`, `code.agent`, v.v.) mà không làm thay đổi giá trị token bí mật của client. Giữ nguyên toàn bộ lịch sử audit cũ và bổ sung một bản ghi `system.id_migration` lưu lại bảng ánh xạ.
+Lệnh chạy một lần để chuyển đổi các ID cũ tạo trước bản chuẩn hóa #40 (không có tiền tố) sang định dạng chuẩn 5 chữ số có dấu gạch ngang (`agent-NNNNN`, `vault-NNNNN`, `mcp-NNNNN`, `client-NNNNN`, `flow-NNNNN`, `admin-NNNNN`). Thực thi nguyên tử trong một transaction `store.tx()`, đồng thời cập nhật mọi liên kết chéo (`agent.permissions`, `token.agent`, `code.agent`, v.v.) mà không làm thay đổi giá trị token bí mật của client. Giữ nguyên toàn bộ lịch sử audit cũ và bổ sung một bản ghi `system.id_migration` lưu lại bảng ánh xạ.
 
 ## Gỡ
 
