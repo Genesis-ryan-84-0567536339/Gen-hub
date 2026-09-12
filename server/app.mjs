@@ -751,6 +751,53 @@ export function createHub({
         update: getUpdateStatus()
       });
     }
+    if (resource === 'tool-inventory' && !write) {
+      // Collect all published tools from all connected MCPs.
+      const mcps = store.list('mcp').map(cleanMcp);
+      const inventory = [];
+      for (const m of mcps) {
+        if (!m.on || m.status !== 'connected') continue;
+        for (const t of m.tools) {
+          if (!t.published) continue;
+          inventory.push({ mcpId: m.id, mcpName: m.name, toolName: t.name, callCount: 0, lastCall: null });
+        }
+      }
+      if (inventory.length > 0) {
+        // Scan audit log for all-time stats: count calls and find most recent per mcp+tool.
+        // Only mcp/tool/actor/created are used below — skip decrypting every row's
+        // sealed input/output payload, which store.logs() otherwise does by default.
+        const allLogs = store.logs(500000, { paginate: false, includePayload: false });
+        const rows = Array.isArray(allLogs) ? allLogs : allLogs.rows || allLogs;
+        const statsMap = new Map(); // key: "mcpId\0toolName"
+        for (const log of rows) {
+          if (!log.mcp || !log.tool) continue;
+          const actor = typeof log.actor === 'string' ? log.actor.trim() : '';
+          if (!actor || actor === 'owner' || actor === 'system' || actor.startsWith('admin-assistant:')) continue;
+          if (log.mcp === 'hub') continue;
+          const key = log.mcp + '\0' + log.tool;
+          const existing = statsMap.get(key);
+          const ts = log.created || '';
+          if (!existing) {
+            statsMap.set(key, { callCount: 1, lastCall: ts });
+          } else {
+            existing.callCount++;
+            if (ts > existing.lastCall) existing.lastCall = ts;
+          }
+        }
+        for (const item of inventory) {
+          const s = statsMap.get(item.mcpId + '\0' + item.toolName);
+          if (s) { item.callCount = s.callCount; item.lastCall = s.lastCall; }
+        }
+      }
+      // Sort ascending by callCount (unused tools first), then by mcpName+toolName.
+      inventory.sort((a, b) => {
+        if (a.callCount !== b.callCount) return a.callCount - b.callCount;
+        const ma = a.mcpName.toLowerCase(), mb = b.mcpName.toLowerCase();
+        if (ma !== mb) return ma < mb ? -1 : 1;
+        return a.toolName.toLowerCase() < b.toolName.toLowerCase() ? -1 : 1;
+      });
+      return respond(200, { inventory });
+    }
     if (resource === 'vault') {
       if (!mid && method === 'GET') return respond(200, vault.list());
       if (!mid && method === 'POST') return respond(201, vault.create(b, actor));
