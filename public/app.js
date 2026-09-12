@@ -1,6 +1,5 @@
-import { operationsPanel } from './operations.js';
 import { kanbanPage, kanbanCards } from './kanban.js';
-import { auditStats, pieArc } from './audit-stats.js';
+import { auditStats, isToolCall, pieArc } from './audit-stats.js';
 import { connectionGuide } from './connection-guides.js';
 import { getNotifications, timeAgo } from './notifications.js';
 import { normalizeSettings } from './settings.js';
@@ -73,29 +72,7 @@ let auditLogs = [],
   auditError = null,
   auditFetchGen = 0,
   auditDebounceTimer = null;
-let overviewSummary = null,
-  overviewHours = 24,
-  overviewLoading = false,
-  overviewError = null,
-  overviewFetchGen = 0;
 let auditExact = {};
-async function loadOverview() {
-  const gen = ++overviewFetchGen;
-  overviewLoading = true;
-  const until = new Date().toISOString();
-  const since = new Date(Date.parse(until) - overviewHours * 3600000).toISOString();
-  try {
-    const summary = await api('logs/summary?' + new URLSearchParams({ since, until }));
-    if (gen !== overviewFetchGen) return;
-    overviewSummary = summary;
-    overviewError = null;
-  } catch (e) {
-    if (gen !== overviewFetchGen) return;
-    overviewError = e.message;
-  }
-  overviewLoading = false;
-  if (route === 'overview') render();
-}
 const logDetailCache = new Map();
 let notifOpen = false,
   notifSnapshotTime = 0;
@@ -306,7 +283,6 @@ setInterval(() => {
 async function refresh() {
   state = await api('state');
   if (state?.settings) state.settings = normalizeSettings(state.settings);
-  if (route === 'overview') await loadOverview();
   if (route === 'kanban') await loadKanban();
   if (route === 'audit') {
     parseAuditHash();
@@ -625,14 +601,72 @@ function render() {
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
 }
+function smallPie(title, entries, unit) {
+  const colors = [
+    '#28754f',
+    '#467fba',
+    '#b87324',
+    '#9164b0',
+    '#bd5266',
+    '#27878b',
+    '#6d7333',
+    '#77614c'
+  ];
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  if (!total)
+    return `<div class="pie-mini"><h4>${esc(title)}</h4><p class="footnote">Chưa có dữ liệu.</p></div>`;
+  let frac = 0;
+  const slices = entries
+    .map(([label, value], i) => {
+      const f = value / total,
+        d = pieArc(100, 100, 80, 48, frac, frac + f),
+        pct = (f * 100).toFixed(1);
+      frac += f;
+      return `<path class="pie-slice" d="${d}" fill="${colors[i % colors.length]}" stroke="#fff" stroke-width="2"><title>${esc(label + ': ' + value.toLocaleString('vi-VN') + ' ' + unit + ' (' + pct + '%)')}</title></path>`;
+    })
+    .join('');
+  const legend = entries
+    .map(([label, value], i) => {
+      const pct = ((value / total) * 100).toFixed(1);
+      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${colors[i % colors.length]}"></i>${esc(label)}</span><span class="pie-legend-value"><strong>${value.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
+    })
+    .join('');
+  return `<div class="pie-mini"><h4>${esc(title)}</h4><svg class="pie-chart" viewBox="0 0 200 200" role="img" aria-label="${esc(title)}"><g>${slices}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${total.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">${esc(unit)}</text></svg><div class="pie-legend">${legend}</div></div>`;
+}
 function overview() {
   const logs = state.logs,
+    day = v =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(v)),
+    today = day(Date.now()),
+    calls = logs.filter(l => isToolCall(l) && day(l.created) === today),
     connected = state.mcps.filter(m => m.status === 'connected').length,
     tools = state.mcps.reduce(
-      (sum, m) =>
-        sum + (m.on && m.status === 'connected' ? m.tools.filter(t => t.published).length : 0),
+      (s, m) =>
+        s + (m.on && m.status === 'connected' ? m.tools.filter(t => t.published).length : 0),
       0
     );
+  const stats12h = auditStats(logs, 12, Date.now());
+  const byKey = new Map();
+  for (const b of stats12h.buckets)
+    for (const [key, row] of b.tools) {
+      const r = byKey.get(key) || { count: 0, bytes: 0 };
+      r.count += row.count;
+      r.bytes += row.input + row.output;
+      byKey.set(key, r);
+    }
+  const mcpName = id => (id === 'vault' ? 'Vault' : state.mcps.find(m => m.id === id)?.name || id);
+  const byMcpCalls = new Map(),
+    byMcpBytes = new Map(),
+    byToolCalls = new Map();
+  for (const [key, row] of byKey) {
+    const [mid, ...rest] = key.split(' / '),
+      mName = mcpName(mid),
+      tName = mName + ' / ' + rest.join(' / ');
+    byMcpCalls.set(mName, (byMcpCalls.get(mName) || 0) + row.count);
+    byMcpBytes.set(mName, (byMcpBytes.get(mName) || 0) + row.bytes);
+    byToolCalls.set(tName, (byToolCalls.get(tName) || 0) + row.count);
+  }
+  const sortDesc = m => [...m.entries()].sort((a, b) => b[1] - a[1]);
   return (
     head(
       'Tổng quan',
@@ -642,10 +676,11 @@ function overview() {
         btn('Thêm MCP', 'add', 'primary', 'plus')
     ) +
     renderUpdateBanner() +
-    `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><span class="endpointbar-sub">Chỉ tool bạn cấp mới được agent thấy và dùng.</span>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section>${operationsPanel(overviewSummary, { hours: overviewHours, loading: overviewLoading, error: overviewError, mcps: state.mcps, agents: state.agents })}<section class="stats">${[
+    `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><span class="endpointbar-sub">Chỉ tool bạn cấp mới được agent thấy và dùng.</span>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section><section class="stats">${[
       ['MCP đã kết nối', connected, '/ ' + state.mcps.length, 'plug'],
       ['Agent đã duyệt', state.agents.filter(a => a.status === 'active').length, 'agent', 'bot'],
-      ['Tool đang cung cấp', tools, 'tool', 'shield']
+      ['Tool đang cung cấp', tools, 'tool', 'shield'],
+      ['Lượt gọi hôm nay', calls.length, 'trong 200 log gần nhất', 'activity']
     ]
       .map(
         s =>
@@ -653,7 +688,7 @@ function overview() {
       )
       .join(
         ''
-      )}</section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
+      )}</section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Hoạt động công cụ</h2><span class="badge gray">12 giờ gần đây</span></div><div class="cardpad"><div class="pie-row">${smallPie('MCP theo lượt gọi', sortDesc(byMcpCalls), 'lượt')}${smallPie('Tool theo lượt gọi', sortDesc(byToolCalls), 'lượt')}${smallPie('MCP theo dung lượng', sortDesc(byMcpBytes), 'byte')}</div>${!byKey.size ? '<p class="footnote">Chưa có lượt gọi công cụ trong 12 giờ qua.</p>' : '<p class="footnote">Dung lượng tính theo byte JSON input/output đã redact (không phải token LLM).</p>'}</div></section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
       state.mcps
         .filter(m => m.status !== 'connected')
         .map(
@@ -2222,14 +2257,6 @@ document.addEventListener('keydown', e => {
   tabs[next].click();
 });
 document.addEventListener('change', e => {
-  if (e.target.id === 'overview-hours') {
-    overviewHours = Number(e.target.value);
-    overviewSummary = null;
-    overviewError = null;
-    loadOverview();
-    render();
-    return;
-  }
   if (e.target.id === 'kanban-connector-select') {
     const opt = e.target.selectedOptions[0];
     const prov = opt?.dataset?.provider;
@@ -2293,7 +2320,6 @@ window.addEventListener('hashchange', async () => {
   }
   close();
   if (state) {
-    if (route === 'overview') loadOverview();
     render();
     if (route === 'audit') {
       fetchAuditLogs();

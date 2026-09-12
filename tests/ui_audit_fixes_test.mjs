@@ -43,10 +43,8 @@ test('Audit Fixes UI: Settings defaults normalization, KPI agent-only calls, and
   // 2. Test KPI "Tool calls" on Overview (Audit Fix 2 - 5.2)
   // At this point, owner just logged in, so an owner.login event exists in audit.
   // Real agent tool calls = 0. KPI must display 0.
-  await page.waitForSelector('.operations-kpis .stat');
-  const kpiValue = await page
-    .locator('.operations-kpis .stat:first-child .statvalue')
-    .innerText();
+  await page.waitForSelector('.stats .stat');
+  const kpiValue = await page.locator('.stat:has-text("Lượt gọi hôm nay") .statvalue').innerText();
   assert(kpiValue.startsWith('0'), `KPI should be 0 calls initially, got: "${kpiValue}"`);
 
   // Insert a genuine agent tool-call
@@ -56,9 +54,7 @@ test('Audit Fixes UI: Settings defaults normalization, KPI agent-only calls, and
   await page.locator('[data-action="refresh"]').first().click();
   await page.waitForTimeout(500);
 
-  const updatedKpiValue = await page
-    .locator('.operations-kpis .stat:first-child .statvalue')
-    .innerText();
+  const updatedKpiValue = await page.locator('.stat:has-text("Lượt gọi hôm nay") .statvalue').innerText();
   assert(updatedKpiValue.startsWith('1'), `KPI should update to 1 call, got: "${updatedKpiValue}"`);
 
   // 3. Test Settings form defaults (Audit Fix 1 - C3)
