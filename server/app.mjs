@@ -1,3 +1,5 @@
+import { canCallTool } from './tool-access.mjs';
+import { createMonitor } from './monitor.mjs';
 import { classifyError, errorCategories } from './audit-metrics.mjs';
 import { withAuditTiming, measurePhase } from './audit-timing.mjs';
 import { createServer } from 'node:http';
@@ -106,7 +108,8 @@ export function createHub({
     up = connector || connectorService(store),
     logger = createLogger(store),
     limits = new Map();
-  const chatService = createChatService(store, origin);
+  const monitor = createMonitor(store);
+  const chatService = createChatService(store, origin, { monitor });
   const kanban = kanbanService(store, up);
   const ownerOidc = ownerOidcService(store, auth, origin);
 
@@ -313,12 +316,7 @@ export function createHub({
     if (++r.count > max) throw new HubError('Quá nhiều yêu cầu, hãy thử lại sau', 429);
     if (limits.size > 10000) for (const [k, v] of limits) if (v.until < now) limits.delete(k);
   };
-  const allowed = (a, m, t) =>
-    a?.status === 'active' &&
-    m?.on &&
-    m?.status === 'connected' &&
-    t?.published &&
-    a.permissions.includes(m.id + ':' + t.name);
+  const allowed = canCallTool;
   function requirePin(pin, actor, operation, target) {
     try {
       const hash = store.get('security', 'pin')?.hash;
@@ -538,168 +536,205 @@ export function createHub({
     const start = performance.now(),
       name = b.params?.name,
       args = b.params?.arguments ?? {};
-    if (typeof name !== 'string') {
-      store.audit(a.id, 'hub', 'unknown_tool', 'error', {}, {}, performance.now() - start, '', {
-        eventKind: 'tool_call',
-        actorType: 'agent',
-        errorCategory: 'validation'
-      });
-      return rpcError(-32602, 'Missing tool name');
-    }
-    if (name.startsWith('vault__')) {
-      const sid = name.slice(7);
-      if (!vault.canRead(a, sid)) {
-        store.audit(
+    const split = typeof name === 'string' ? name.indexOf('__') : -1;
+    const observation = monitor.begin({
+      actor: a.id,
+      mcp:
+        typeof name === 'string' && name.startsWith('vault__')
+          ? 'vault'
+          : split >= 0
+            ? name.slice(0, split)
+            : 'hub',
+      tool:
+        typeof name === 'string' && name.startsWith('vault__')
+          ? 'vault.read'
+          : split >= 0
+            ? name.slice(split + 2)
+            : 'unknown_tool'
+    });
+    try {
+      observation.phase('policy');
+      if (typeof name !== 'string') {
+        observation.audit(
           a.id,
-          'vault',
-          'vault.read',
-          'denied',
-          { id: sid },
+          'hub',
+          'unknown_tool',
+          'error',
+          {},
           {},
           performance.now() - start,
-          'Secret không được cấp quyền',
-          { policyDecision: 'deny', phase: 'policy' }
+          '',
+          {
+            eventKind: 'tool_call',
+            actorType: 'agent',
+            errorCategory: 'validation'
+          }
+        );
+        return rpcError(-32602, 'Missing tool name');
+      }
+      if (name.startsWith('vault__')) {
+        const sid = name.slice(7);
+        if (!vault.canRead(a, sid)) {
+          observation.audit(
+            a.id,
+            'vault',
+            'vault.read',
+            'denied',
+            { id: sid },
+            {},
+            performance.now() - start,
+            'Secret không được cấp quyền',
+            { policyDecision: 'deny', phase: 'policy' }
+          );
+          return rpcError(-32602, 'Tool không khả dụng hoặc chưa được cấp quyền');
+        }
+        let phase = 'validation';
+        try {
+          assertSchema({ properties: {}, additionalProperties: false }, args);
+          phase = 'internal';
+          observation.phase('dispatch');
+          const output = vault.read(sid, a.id, false);
+          observation.phase('response');
+          store.put('agent', a.id, { ...a, last: new Date().toISOString() });
+          observation.audit(
+            a.id,
+            'vault',
+            'vault.read',
+            'success',
+            { id: sid },
+            {},
+            performance.now() - start,
+            '',
+            { policyDecision: 'allow', phase: 'internal' }
+          );
+          return result({
+            content: [{ type: 'text', text: JSON.stringify(output) }],
+            isError: false
+          });
+        } catch (e) {
+          observation.audit(
+            a.id,
+            'vault',
+            'vault.read',
+            'error',
+            { id: sid },
+            {},
+            performance.now() - start,
+            sanitizeText(e.message),
+            { policyDecision: 'allow', errorCategory: classifyError(e, phase), phase }
+          );
+          return result({
+            content: [{ type: 'text', text: 'Không thể đọc secret; kiểm tra tham số và nhật ký.' }],
+            isError: true
+          });
+        }
+      }
+      const idx = name.indexOf('__'),
+        mid = name.slice(0, idx),
+        tn = name.slice(idx + 2),
+        m = store.get('mcp', mid),
+        t = m?.tools.find(t => t.name === tn);
+      if (!allowed(a, m, t)) {
+        observation.audit(
+          a.id,
+          mid,
+          tn,
+          'denied',
+          args,
+          {},
+          performance.now() - start,
+          'Tool không được cấp, không công bố hoặc kết nối chưa sẵn sàng',
+          {
+            policyDecision: 'deny',
+            phase: 'policy',
+            credentialVersion: m?.credentialVersion || 0,
+            credentialId: m?.id
+          }
         );
         return rpcError(-32602, 'Tool không khả dụng hoặc chưa được cấp quyền');
       }
       let phase = 'validation';
+      const phases = {};
       try {
-        assertSchema({ properties: {}, additionalProperties: false }, args);
+        assertSchema(t.inputSchema, args);
         phase = 'internal';
-        const output = vault.read(sid, a.id, false);
-        store.put('agent', a.id, { ...a, last: new Date().toISOString() });
-        store.audit(
-          a.id,
-          'vault',
-          'vault.read',
-          'success',
-          { id: sid },
-          {},
-          performance.now() - start,
-          '',
-          { policyDecision: 'allow', phase: 'internal' }
-        );
-        return result({
-          content: [{ type: 'text', text: JSON.stringify(output) }],
-          isError: false
-        });
-      } catch (e) {
-        store.audit(
-          a.id,
-          'vault',
-          'vault.read',
-          'error',
-          { id: sid },
-          {},
-          performance.now() - start,
-          sanitizeText(e.message),
-          { policyDecision: 'allow', errorCategory: classifyError(e, phase), phase }
-        );
-        return result({
-          content: [{ type: 'text', text: 'Không thể đọc secret; kiểm tra tham số và nhật ký.' }],
-          isError: true
-        });
-      }
-    }
-    const idx = name.indexOf('__'),
-      mid = name.slice(0, idx),
-      tn = name.slice(idx + 2),
-      m = store.get('mcp', mid),
-      t = m?.tools.find(t => t.name === tn);
-    if (!allowed(a, m, t)) {
-      store.audit(
-        a.id,
-        mid,
-        tn,
-        'denied',
-        args,
-        {},
-        performance.now() - start,
-        'Tool không được cấp, không công bố hoặc kết nối chưa sẵn sàng',
-        {
-          policyDecision: 'deny',
-          phase: 'policy',
-          credentialVersion: m?.credentialVersion || 0,
-          credentialId: m?.id
+        if (inFlight >= 32) throw new HubError('Hub đang bận, hãy thử lại', 429);
+        // Admission is fail-fast; this Hub has no slot queue.
+        phases.slotWait = 0;
+        inFlight++;
+        let out;
+        try {
+          phase = 'upstream';
+          observation.phase('dispatch');
+          out = await withAuditTiming(phases, () =>
+            measurePhase('connectorTotal', () => up.call(m, tn, args))
+          );
+          observation.phase('response');
+          phase = 'internal';
+        } finally {
+          inFlight--;
         }
-      );
-      return rpcError(-32602, 'Tool không khả dụng hoặc chưa được cấp quyền');
-    }
-    let phase = 'validation';
-    const phases = {};
-    try {
-      assertSchema(t.inputSchema, args);
-      phase = 'internal';
-      if (inFlight >= 32) throw new HubError('Hub đang bận, hãy thử lại', 429);
-      // Admission is fail-fast; this Hub has no slot queue.
-      phases.slotWait = 0;
-      inFlight++;
-      let out;
-      try {
-        phase = 'upstream';
-        out = await withAuditTiming(phases, () =>
-          measurePhase('connectorTotal', () => up.call(m, tn, args))
-        );
-        phase = 'internal';
-      } finally {
-        inFlight--;
-      }
-      const latest = store.get('agent', a.id);
-      if (latest) {
-        latest.last = new Date().toISOString();
-        store.put('agent', a.id, latest);
-      }
-      store.audit(
-        a.id,
-        mid,
-        tn,
-        out.isError ? 'error' : 'success',
-        args,
-        out,
-        performance.now() - start,
-        'Agent được cấp quyền và tool đang được công bố',
-        {
-          policyDecision: 'allow',
-          errorCategory: out.isError ? 'upstream_tool_conflict' : null,
-          phases,
-          phase: 'upstream',
-          upstreamStatus: out.upstreamStatus ?? out.status ?? (out.isError ? 500 : 200),
-          credentialVersion: m.credentialVersion || 0,
-          credentialId: m.id,
-          retryCount: 0
-        }
-      );
-      return result(out);
-    } catch (e) {
-      if (e.status === 401) {
-        const latest = store.get('mcp', mid);
+        const latest = store.get('agent', a.id);
         if (latest) {
-          latest.status = 'expired';
-          store.put('mcp', mid, latest);
+          latest.last = new Date().toISOString();
+          store.put('agent', a.id, latest);
         }
+        observation.audit(
+          a.id,
+          mid,
+          tn,
+          out.isError ? 'error' : 'success',
+          args,
+          out,
+          performance.now() - start,
+          'Agent được cấp quyền và tool đang được công bố',
+          {
+            policyDecision: 'allow',
+            errorCategory: out.isError ? 'upstream_tool_conflict' : null,
+            phases,
+            phase: 'upstream',
+            upstreamStatus: out.upstreamStatus ?? out.status ?? (out.isError ? 500 : 200),
+            credentialVersion: m.credentialVersion || 0,
+            credentialId: m.id,
+            retryCount: 0
+          }
+        );
+        return result(out);
+      } catch (e) {
+        if (e.status === 401) {
+          const latest = store.get('mcp', mid);
+          if (latest) {
+            latest.status = 'expired';
+            store.put('mcp', mid, latest);
+          }
+        }
+        const message = sanitizeText(
+          e instanceof HubError ? e.message : 'Không thể hoàn tất yêu cầu đến dịch vụ'
+        );
+        observation.audit(
+          a.id,
+          mid,
+          tn,
+          'error',
+          args,
+          { error: message },
+          performance.now() - start,
+          message,
+          {
+            policyDecision: 'allow',
+            errorCategory: classifyError(e, phase),
+            phases,
+            phase,
+            upstreamStatus: e.upstreamStatus ?? e.status ?? 502,
+            credentialVersion: m?.credentialVersion || 0,
+            credentialId: m?.id,
+            retryCount: e.retryCount || 0
+          }
+        );
+        return result({ content: [{ type: 'text', text: message }], isError: true });
       }
-      const message = sanitizeText(e instanceof HubError ? e.message : 'Không thể hoàn tất yêu cầu đến dịch vụ');
-      store.audit(
-        a.id,
-        mid,
-        tn,
-        'error',
-        args,
-        { error: message },
-        performance.now() - start,
-        message,
-        {
-          policyDecision: 'allow',
-          errorCategory: classifyError(e, phase),
-          phases,
-          phase,
-          upstreamStatus: e.upstreamStatus ?? e.status ?? 502,
-          credentialVersion: m?.credentialVersion || 0,
-          credentialId: m?.id,
-          retryCount: e.retryCount || 0
-        }
-      );
-      return result({ content: [{ type: 'text', text: message }], isError: true });
+    } finally {
+      observation.close();
     }
   }
   const optionalAgentText = (value, max) => {
@@ -758,6 +793,11 @@ export function createHub({
         owner: store.get('owner', 'main').username,
         update: getUpdateStatus()
       });
+    }
+    if (resource === 'monitor' && method === 'GET') {
+      if (mid === 'active') return respond(200, { fetchedAt: new Date().toISOString(), active: monitor.active() });
+      if (mid) throw new HubError('Không tìm thấy trang Monitor', 404);
+      return respond(200, monitor.snapshot(b));
     }
     if (resource === 'tool-inventory' && !write) {
       // Collect all published tools from all connected MCPs.
@@ -1087,7 +1127,7 @@ export function createHub({
           filters[key] = key === 'actorType' && b[key] === 'anonymous' ? 'unauthenticated' : b[key];
         }
       }
-      for (const key of ['secret', 'tool']) {
+      for (const key of ['secret', 'tool', 'operationId']) {
         if (b[key] === undefined) continue;
         if (typeof b[key] !== 'string' || !b[key].length || b[key].length > 256)
           throw new HubError('Bộ lọc nhật ký không hợp lệ');
@@ -1615,6 +1655,8 @@ export function createHub({
       const files = {
         '/': 'index.html',
         '/app.js': 'app.js',
+        '/monitor.js': 'monitor.js',
+        '/monitor.css': 'monitor.css',
         '/connection-guides.js': 'connection-guides.js',
         '/kanban.js': 'kanban.js',
         '/audit-stats.js': 'audit-stats.js',
@@ -1667,6 +1709,7 @@ export function createHub({
     allowed,
     checkRemoteUpdate,
     chatService,
+    monitor,
     close: () => {
       clearInterval(timer);
       clearInterval(updateTimer);

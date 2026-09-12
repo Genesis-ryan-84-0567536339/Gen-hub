@@ -96,7 +96,9 @@ export function openStore(dir) {
     outcome: 'TEXT',
     errorCategory: 'TEXT',
     latencyMeasured: 'INTEGER',
-    operationId: 'TEXT'
+    operationId: 'TEXT',
+    inputBytes: 'INTEGER',
+    outputBytes: 'INTEGER'
   }))
     if (!columns.has(name)) db.exec(`ALTER TABLE audit ADD COLUMN ${name} ${type}`);
   const operationContext = new AsyncLocalStorage();
@@ -197,6 +199,7 @@ export function openStore(dir) {
       output: safeOutput,
       reason: safeReason,
       ...(enrichedMeta.phases ? { phases: enrichedMeta.phases } : {}),
+      ...(enrichedMeta.timeline ? { timeline: enrichedMeta.timeline } : {}),
       ...(enrichedMeta.phase ? { phase: enrichedMeta.phase } : {}),
       ...(enrichedMeta.upstreamStatus !== undefined ? { upstreamStatus: enrichedMeta.upstreamStatus } : {}),
       ...(enrichedMeta.retryCount !== undefined ? { retryCount: enrichedMeta.retryCount } : {}),
@@ -206,7 +209,7 @@ export function openStore(dir) {
 
     return db
       .prepare(
-        `INSERT INTO audit(created,actor,mcp,tool,status,latency,payload,eventKind,actorType,policyDecision,outcome,errorCategory,latencyMeasured,operationId) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        `INSERT INTO audit(created,actor,mcp,tool,status,latency,payload,eventKind,actorType,policyDecision,outcome,errorCategory,latencyMeasured,operationId,inputBytes,outputBytes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
       )
       .run(
         new Date().toISOString(),
@@ -222,7 +225,9 @@ export function openStore(dir) {
         c.outcome,
         c.errorCategory,
         c.latencyMeasured,
-        opId
+        opId,
+        metadataOnly ? null : Buffer.byteLength(JSON.stringify(safeInput) ?? '', 'utf8'),
+        metadataOnly ? null : Buffer.byteLength(JSON.stringify(safeOutput) ?? '', 'utf8')
       );
   };
   const log = id => {
