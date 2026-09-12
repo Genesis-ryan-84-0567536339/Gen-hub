@@ -47,6 +47,7 @@ const names = {
   mcps: 'MCP & kết nối',
   agents: 'Agent & quyền',
   vault: 'Kho bí mật',
+  bootstrap: 'Bootstrap',
   audit: 'Nhật ký',
   kanban: 'Kanban',
   settings: 'Cài đặt'
@@ -296,9 +297,102 @@ async function loadToolInventory() {
     render();
   }
 }
+let bootstrapState = null;
+function getBootstrapGroups() {
+  if (!bootstrapState) {
+    if (state?.bootstrap) {
+      bootstrapState = JSON.parse(JSON.stringify(state.bootstrap));
+    } else {
+      bootstrapState = { groups: [] };
+    }
+  }
+  return bootstrapState.groups || [];
+}
+function renderBootstrapText(groups) {
+  if (!groups || !groups.length) return '';
+  return groups
+    .map(
+      (g, gi) =>
+        `${gi + 1}. ${g.title || ''}\n` +
+        (g.steps || [])
+          .map((s, si) => `   ${gi + 1}.${si + 1}. ${s.title || ''}: ${s.content || ''}`)
+          .join('\n')
+    )
+    .join('\n\n');
+}
+function updateBootstrapField(el, updatePreview = true) {
+  const field = el.dataset.bootstrapField;
+  const gi = parseInt(el.dataset.groupIndex, 10);
+  const groups = getBootstrapGroups();
+  if (!groups[gi]) return;
+  if (field === 'group-title') {
+    groups[gi].title = el.value;
+  } else if (field === 'step-title') {
+    const si = parseInt(el.dataset.stepIndex, 10);
+    if (groups[gi].steps && groups[gi].steps[si]) {
+      groups[gi].steps[si].title = el.value;
+    }
+  } else if (field === 'step-content') {
+    const si = parseInt(el.dataset.stepIndex, 10);
+    if (groups[gi].steps && groups[gi].steps[si]) {
+      groups[gi].steps[si].content = el.value;
+    }
+  }
+  if (updatePreview) {
+    updateBootstrapPreview();
+  }
+}
+function updateBootstrapPreview() {
+  const previewEl = document.getElementById('bootstrap-preview');
+  if (previewEl) {
+    const text = renderBootstrapText(getBootstrapGroups());
+    previewEl.textContent = text || '(Chưa có nội dung hướng dẫn)';
+  }
+}
+function syncBootstrapFromDom() {
+  const container = document.querySelector('.bootstrap-editor');
+  if (!container) return;
+  container.querySelectorAll('[data-bootstrap-field]').forEach(el => {
+    updateBootstrapField(el, false);
+  });
+}
+async function saveBootstrap() {
+  syncBootstrapFromDom();
+  const groups = getBootstrapGroups();
+  for (let gi = 0; gi < groups.length; gi++) {
+    const g = groups[gi];
+    if (!g.title || !g.title.trim()) {
+      return toast(`Nhóm ${gi + 1} chưa có tiêu đề`);
+    }
+    for (let si = 0; si < (g.steps || []).length; si++) {
+      const s = g.steps[si];
+      if (!s.title || !s.title.trim()) {
+        return toast(`Nhóm ${gi + 1}, Bước ${si + 1} chưa có tiêu đề`);
+      }
+      if (!s.content || !s.content.trim()) {
+        return toast(`Nhóm ${gi + 1}, Bước ${si + 1} chưa có nội dung`);
+      }
+    }
+  }
+  const cleanGroups = groups.map(g => ({
+    ...(g.id ? { id: g.id } : {}),
+    title: g.title.trim(),
+    steps: (g.steps || []).map(s => ({
+      ...(s.id ? { id: s.id } : {}),
+      title: s.title.trim(),
+      content: s.content.trim()
+    }))
+  }));
+  const res = await api('bootstrap', 'PATCH', { groups: cleanGroups });
+  bootstrapState = JSON.parse(JSON.stringify(res));
+  if (state) state.bootstrap = res;
+  toast('Đã lưu thay đổi hướng dẫn Bootstrap');
+  render();
+}
 async function refresh() {
   state = await api('state');
   if (state?.settings) state.settings = normalizeSettings(state.settings);
+  if (state?.bootstrap) bootstrapState = JSON.parse(JSON.stringify(state.bootstrap));
   if (route === 'kanban') await loadKanban();
   if (route === 'overview') {
     toolInventoryData = null; // reset so card shows "loading" while fetching
@@ -367,7 +461,7 @@ function executeClientTool(name, args = {}) {
   if (name === 'navigate') {
     const routeTarget = String(args.route || '').trim();
     if (
-      !/^(overview|mcps|agents|vault|audit|kanban|settings)(:([a-zA-Z0-9_-]{1,64}))?$/.test(
+      !/^(overview|mcps|agents|vault|bootstrap|audit|kanban|settings)(:([a-zA-Z0-9_-]{1,64}))?$/.test(
         routeTarget
       )
     ) {
@@ -607,17 +701,27 @@ function render() {
   if (!state) return;
   const r = names[route] ? route : 'overview';
   const { unreadCount } = getNotifications(state.logs, state, getNotifLastRead());
+  const navIcons = {
+    overview: 'grid',
+    mcps: 'plug',
+    agents: 'bot',
+    vault: 'lock',
+    bootstrap: 'file',
+    audit: 'activity',
+    kanban: 'grid',
+    settings: 'settings'
+  };
   $('#app').innerHTML =
     `<div class="mobileoverlay" data-action="menu"></div><aside class="sidebar"><a class="brand" href="#overview"><span class="brandmark">g</span>gen-hub</a><div class="workspace"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div><b>${esc(state.settings.name)}</b><small>Không gian cá nhân</small></div></div><div class="navlabel">Không gian quản lý</div><nav class="nav">${Object.keys(
       names
     )
       .map(
-        (k, i) =>
-          `<a href="#${k}" class="${r === k ? 'active' : ''}" ${r === k ? 'aria-current="page"' : ''}>${I(['grid', 'plug', 'bot', 'lock', 'activity', 'grid', 'settings'][i])}${names[k]}</a>`
+        k =>
+          `<a href="#${k}" class="${r === k ? 'active' : ''}" ${r === k ? 'aria-current="page"' : ''}>${I(navIcons[k] || 'file')}${names[k]}</a>`
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
 }
@@ -1318,6 +1422,100 @@ function settings() {
     `<div class="entity-layout"><aside class="card entity-list" aria-label="Nhóm cài đặt">${groups.map(([key, label]) => `<button class="entity-row ${group === key ? 'selected' : ''}" data-action="select:settings:${key}" ${group === key ? 'aria-current="true"' : ''}><strong>${label}</strong></button>`).join('')}</aside><section class="card entity-detail cardpad">${tabBar(tabs, tab)}<div role="tabpanel" id="detail-panel" aria-labelledby="detail-tab-${tab}">${content}</div></section></div>`
   );
 }
+function bootstrapPage() {
+  const groups = getBootstrapGroups();
+  const lastUpdated =
+    bootstrapState?.updated || state?.bootstrap?.updated
+      ? date(bootstrapState?.updated || state?.bootstrap?.updated)
+      : '';
+  const previewText = renderBootstrapText(groups);
+
+  const groupCards = groups.length
+    ? groups
+        .map(
+          (g, gi) => `
+      <section class="card cardpad" style="margin-bottom:20px" data-group-index="${gi}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:240px">
+            <span class="badge" style="font-weight:600;font-size:13px;padding:6px 10px">Nhóm ${gi + 1}</span>
+            <input class="input" data-bootstrap-field="group-title" data-group-index="${gi}" value="${esc(g.title)}" placeholder="Tiêu đề nhóm..." required maxlength="200" style="flex:1">
+          </div>
+          <div class="actions">
+            <button type="button" class="btn small" data-action="bootstrap-group-up:${gi}" aria-label="Đổi chỗ nhóm lên" title="Đổi chỗ nhóm lên" ${gi === 0 ? 'disabled' : ''}>▲</button>
+            <button type="button" class="btn small" data-action="bootstrap-group-down:${gi}" aria-label="Đổi chỗ nhóm xuống" title="Đổi chỗ nhóm xuống" ${gi === groups.length - 1 ? 'disabled' : ''}>▼</button>
+            <button type="button" class="btn danger small" data-action="bootstrap-group-delete:${gi}">Xoá nhóm</button>
+          </div>
+        </div>
+        <div class="divider" style="margin:14px 0"></div>
+        <div class="bootstrap-steps" style="display:flex;flex-direction:column;gap:14px">
+          ${(g.steps || [])
+            .map(
+              (s, si) => `
+            <div class="card cardpad" style="background:#fafcfb;border:1px solid var(--line);padding:16px" data-step-index="${si}">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:200px">
+                  <span class="mono" style="font-weight:600;color:var(--muted)">Bước ${gi + 1}.${si + 1}</span>
+                  <input class="input" data-bootstrap-field="step-title" data-group-index="${gi}" data-step-index="${si}" value="${esc(s.title)}" placeholder="Tiêu đề bước..." required maxlength="200" style="min-height:36px;padding:6px 10px">
+                </div>
+                <div class="actions">
+                  <button type="button" class="btn small" data-action="bootstrap-step-up:${gi}:${si}" aria-label="Đổi chỗ bước lên" title="Đổi chỗ bước lên" ${si === 0 ? 'disabled' : ''}>▲</button>
+                  <button type="button" class="btn small" data-action="bootstrap-step-down:${gi}:${si}" aria-label="Đổi chỗ bước xuống" title="Đổi chỗ bước xuống" ${si === g.steps.length - 1 ? 'disabled' : ''}>▼</button>
+                  <button type="button" class="btn danger small" data-action="bootstrap-step-delete:${gi}:${si}">Xoá bước</button>
+                </div>
+              </div>
+              <div>
+                <textarea class="input" rows="3" data-bootstrap-field="step-content" data-group-index="${gi}" data-step-index="${si}" placeholder="Nội dung chi tiết của bước..." required maxlength="4000">${esc(s.content)}</textarea>
+              </div>
+            </div>
+          `
+            )
+            .join('')}
+          ${!g.steps || !g.steps.length ? '<p class="footnote" style="margin:0 0 8px 0">Chưa có bước nào trong nhóm này.</p>' : ''}
+        </div>
+        <div style="margin-top:14px">
+          <button type="button" class="btn small" data-action="bootstrap-step-add:${gi}">${I('plus')} Thêm bước</button>
+        </div>
+      </section>
+    `
+        )
+        .join('')
+    : `
+      <div class="empty card cardpad" style="margin-bottom:20px">
+        <h3>Chưa có nhóm hướng dẫn nào</h3>
+        <p>Bấm nút bên dưới để thêm nhóm quy tắc đầu tiên.</p>
+        <div style="margin-top:14px">
+          <button type="button" class="btn primary" data-action="bootstrap-group-add">${I('plus')} Thêm nhóm</button>
+        </div>
+      </div>
+    `;
+
+  return (
+    head(
+      'Hướng dẫn khởi động (Bootstrap)',
+      'Quy tắc và chỉ dẫn chung được tự động tiêm vào câu chào khởi tạo của mọi Agent.',
+      btn('Lưu thay đổi', 'bootstrap-save', 'primary', 'check')
+    ) +
+    `
+    <div class="twocol">
+      <div class="bootstrap-editor">
+        ${groupCards}
+        <div class="actions" style="margin-top:20px;display:flex;gap:12px;align-items:center">
+          <button type="button" class="btn" data-action="bootstrap-group-add">${I('plus')} Thêm nhóm</button>
+          <button type="button" class="btn primary" data-action="bootstrap-save">${I('check')} Lưu thay đổi</button>
+        </div>
+      </div>
+      <div>
+        <section class="card cardpad" style="position:sticky;top:20px">
+          <h2>Khung xem trước</h2>
+          <p class="footnote" style="margin-top:4px;margin-bottom:16px">Nội dung hướng dẫn hoàn chỉnh sẽ được gửi tới Agent trong phản hồi initialize qua hàm render().</p>
+          <pre id="bootstrap-preview" class="json" style="white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;background:#17251e;color:#d9e6d9;padding:16px;border-radius:8px;max-height:calc(100vh - 200px);overflow:auto">${esc(previewText) || '(Chưa có nội dung hướng dẫn)'}</pre>
+          ${lastUpdated ? `<p class="footnote" style="margin-top:12px">Cập nhật lần gần nhất: ${esc(lastUpdated)}</p>` : ''}
+        </section>
+      </div>
+    </div>
+    `
+  );
+}
 function adminAssistantSettings() {
   const a = state.adminAssistant || {};
   const adminAgents = (state.agents || []).filter(ag => ag.isAdmin && ag.status === 'active');
@@ -1776,6 +1974,103 @@ async function act(action, args, el = null) {
     kanbanData = null;
     await loadKanban();
     return toast(`Đã chuyển lưu trữ ${res?.archivedCount ?? 0} issue cột Done`);
+  }
+  if (action === 'bootstrap-group-up') {
+    syncBootstrapFromDom();
+    const gi = parseInt(args[0], 10);
+    const groups = getBootstrapGroups();
+    if (gi > 0 && gi < groups.length) {
+      const tmp = groups[gi];
+      groups[gi] = groups[gi - 1];
+      groups[gi - 1] = tmp;
+      render();
+    }
+    return;
+  }
+  if (action === 'bootstrap-group-down') {
+    syncBootstrapFromDom();
+    const gi = parseInt(args[0], 10);
+    const groups = getBootstrapGroups();
+    if (gi >= 0 && gi < groups.length - 1) {
+      const tmp = groups[gi];
+      groups[gi] = groups[gi + 1];
+      groups[gi + 1] = tmp;
+      render();
+    }
+    return;
+  }
+  if (action === 'bootstrap-group-delete') {
+    syncBootstrapFromDom();
+    const gi = parseInt(args[0], 10);
+    const groups = getBootstrapGroups();
+    if (gi >= 0 && gi < groups.length) {
+      groups.splice(gi, 1);
+      render();
+    }
+    return;
+  }
+  if (action === 'bootstrap-group-add') {
+    syncBootstrapFromDom();
+    const groups = getBootstrapGroups();
+    groups.push({
+      id: '',
+      title: '',
+      steps: [{ id: '', title: '', content: '' }]
+    });
+    render();
+    return;
+  }
+  if (action === 'bootstrap-step-up') {
+    syncBootstrapFromDom();
+    const gi = parseInt(args[0], 10);
+    const si = parseInt(args[1], 10);
+    const groups = getBootstrapGroups();
+    if (groups[gi] && groups[gi].steps && si > 0 && si < groups[gi].steps.length) {
+      const tmp = groups[gi].steps[si];
+      groups[gi].steps[si] = groups[gi].steps[si - 1];
+      groups[gi].steps[si - 1] = tmp;
+      render();
+    }
+    return;
+  }
+  if (action === 'bootstrap-step-down') {
+    syncBootstrapFromDom();
+    const gi = parseInt(args[0], 10);
+    const si = parseInt(args[1], 10);
+    const groups = getBootstrapGroups();
+    if (groups[gi] && groups[gi].steps && si >= 0 && si < groups[gi].steps.length - 1) {
+      const tmp = groups[gi].steps[si];
+      groups[gi].steps[si] = groups[gi].steps[si + 1];
+      groups[gi].steps[si + 1] = tmp;
+      render();
+    }
+    return;
+  }
+  if (action === 'bootstrap-step-delete') {
+    syncBootstrapFromDom();
+    const gi = parseInt(args[0], 10);
+    const si = parseInt(args[1], 10);
+    const groups = getBootstrapGroups();
+    if (groups[gi] && groups[gi].steps && si >= 0 && si < groups[gi].steps.length) {
+      groups[gi].steps.splice(si, 1);
+      render();
+    }
+    return;
+  }
+  if (action === 'bootstrap-step-add') {
+    syncBootstrapFromDom();
+    const gi = parseInt(args[0], 10);
+    const groups = getBootstrapGroups();
+    if (groups[gi]) {
+      if (!groups[gi].steps) groups[gi].steps = [];
+      groups[gi].steps.push({ id: '', title: '', content: '' });
+      render();
+    }
+    return;
+  }
+  if (action === 'bootstrap-save') {
+    syncBootstrapFromDom();
+    return saveBootstrap();
   }
   if (action === 'close') return close();
   if (action === 'menu') {
@@ -2267,6 +2562,9 @@ function updateResults() {
   }
 }
 document.addEventListener('input', e => {
+  if (e.target.matches('[data-bootstrap-field]')) {
+    updateBootstrapField(e.target);
+  }
   if (e.target.name === 'url' && e.target.form?.id === 'remote')
     $('#remote-guide').innerHTML = connectionGuideHtml('remote', e.target.value);
   if (e.target.id === 'search') {
