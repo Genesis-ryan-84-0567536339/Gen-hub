@@ -764,7 +764,9 @@ export function createHub({
       }
       if (inventory.length > 0) {
         // Scan audit log for all-time stats: count calls and find most recent per mcp+tool.
-        const allLogs = store.logs(500000, { paginate: false });
+        // Only mcp/tool/actor/created are used below — skip decrypting every row's
+        // sealed input/output payload, which store.logs() otherwise does by default.
+        const allLogs = store.logs(500000, { paginate: false, includePayload: false });
         const rows = Array.isArray(allLogs) ? allLogs : allLogs.rows || allLogs;
         const statsMap = new Map(); // key: "mcpId\0toolName"
         for (const log of rows) {
