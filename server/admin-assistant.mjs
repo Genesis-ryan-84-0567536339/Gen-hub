@@ -1,3 +1,4 @@
+import { classifyError } from './audit-metrics.mjs';
 import { timingSafeEqual } from 'node:crypto';
 import { id, secret, digest, passwordCheck, redact } from './store.mjs';
 import { HubError, assertSchema } from './net.mjs';
@@ -310,7 +311,8 @@ export function adminAssistant(store, origin, execute) {
     throw new HubError('Token trợ lý quản trị không hợp lệ hoặc đã thu hồi', 401);
   }
   let running = 0;
-  async function rpc(req, b, actor) {
+  const rpc = (req, b, actor) => store.operation(() => rpcOperation(req, b, actor));
+  async function rpcOperation(req, b, actor) {
     const reply = (status, data, headers) => ({ status, data, headers });
     const error = (code, message, status = 200) =>
       reply(status, { jsonrpc: '2.0', id: b?.id ?? null, error: { code, message } });
@@ -371,7 +373,12 @@ export function adminAssistant(store, origin, execute) {
         definition.name === 'audit_list'
           ? { count: auditRows.length, ids: auditRows.map(l => l.id) }
           : definition.name === 'hub_state'
-            ? { ...output, logs: { count: (Array.isArray(output.logs) ? output.logs : output.logs?.rows || []).length } }
+            ? {
+                ...output,
+                logs: {
+                  count: (Array.isArray(output.logs) ? output.logs : output.logs?.rows || []).length
+                }
+              }
             : output;
       store.audit(
         actor,
@@ -382,7 +389,9 @@ export function adminAssistant(store, origin, execute) {
           definition.name === 'owner_password_change' ? { ...args, current: '[REDACTED]' } : args
         ),
         redact(auditOutput),
-        performance.now() - started
+        performance.now() - started,
+        '',
+        { policyDecision: 'allow' }
       );
       return result({ content: [{ type: 'text', text: JSON.stringify(output) }], isError: false });
     } catch (e) {
@@ -396,7 +405,12 @@ export function adminAssistant(store, origin, execute) {
           definition.name === 'owner_password_change' ? { ...args, current: '[REDACTED]' } : args
         ),
         { error: message },
-        performance.now() - started
+        performance.now() - started,
+        '',
+        {
+          policyDecision: e.status === 403 ? 'deny' : 'allow',
+          errorCategory: e.status === 403 ? 'denied' : classifyError(e)
+        }
       );
       return result({ content: [{ type: 'text', text: message }], isError: true });
     } finally {

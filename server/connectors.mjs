@@ -1,3 +1,4 @@
+import { measurePhase } from './audit-timing.mjs';
 import { jsonRequest, request, HubError } from './net.mjs';
 import { provider } from './catalog.mjs';
 import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs';
@@ -185,11 +186,14 @@ export function checkToolPermissions(m, tools = [], { headers = {}, credential =
 }
 export function connectorService(store, { mcpRequest = request, serviceRequest = request } = {}) {
   const locks = new Map();
+  const upstreamFailure = (message, upstreamStatus, status = 502) =>
+    Object.assign(new HubError(message, status), { upstreamStatus });
   async function doRequest(url, options) {
     const r = await serviceRequest(url, options);
     if (r.status < 200 || r.status >= 300)
-      throw new HubError(
+      throw upstreamFailure(
         `Dịch vụ trả HTTP ${r.status}`,
+        r.status,
         r.status === 401 ? 401 : r.status === 403 ? 403 : 502
       );
     if (r.json?.ok === false || r.json?.error) {
@@ -205,8 +209,8 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
   async function credential(m) {
     let c = m.secret ? store.unseal(m.secret) : {};
     if (c.refresh_token && c.expires_at && c.expires_at < Date.now() + 60000) {
-      if (locks.has(m.id)) return locks.get(m.id);
-      const promise = (async () => {
+      if (locks.has(m.id)) return measurePhase('credentialRefresh', () => locks.get(m.id));
+      const promise = measurePhase('credentialRefresh', async () => {
         const config = provider(m.provider)?.oauth || c.oauth;
         if (!config) throw new HubError('Cần kết nối lại dịch vụ', 401);
         const payload = {
@@ -240,7 +244,7 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
           }
           throw new HubError('Phiên dịch vụ hết hạn; hãy kết nối lại', 401);
         }
-      })();
+      });
       locks.set(m.id, promise);
       try {
         return await promise;
@@ -381,7 +385,11 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
     const r = await doRequest(url, { headers, method, body });
     return r.json ?? { text: r.text };
   }
-  async function rpc(m, method, params = {}, session, notify = false) {
+  const rpc = (m, method, params = {}, session, notify = false) =>
+    measurePhase(method === 'tools/call' ? 'upstreamCall' : 'initialize', () =>
+      rpcImpl(m, method, params, session, notify)
+    );
+  async function rpcImpl(m, method, params = {}, session, notify = false) {
     const endpoint = m.provider === 'github-mcp' ? githubEndpoint(m) : m.url;
     const c = await credential(m);
     if (m.provider === 'github-mcp' && !c.token && !c.access_token)
@@ -404,7 +412,7 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
     });
     if (r.status === 401) throw new HubError('MCP yêu cầu xác thực lại', 401);
     if (r.status < 200 || r.status >= 300)
-      throw new HubError('MCP trả HTTP ' + r.status, r.status === 403 ? 403 : 502);
+      throw upstreamFailure('MCP trả HTTP ' + r.status, r.status, r.status === 403 ? 403 : 502);
     if (notify) return {};
     let data = r.json;
     if (!data && r.headers['content-type']?.includes('text/event-stream')) {
@@ -438,21 +446,22 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
     try {
       return await fn(session);
     } finally {
-      if (session) {
-        const c = await credential(m);
-        await mcpRequest(m.provider === 'github-mcp' ? githubEndpoint(m) : m.url, {
-          method: 'DELETE',
-          headers: {
-            'Mcp-Session-Id': session,
-            'MCP-Protocol-Version': '2025-06-18',
-            ...(c.token || c.access_token
-              ? { Authorization: 'Bearer ' + (c.access_token || c.token) }
-              : {})
-          },
-          allowPrivate: m.allowPrivate,
-          timeout: 5000
-        }).catch(() => {});
-      }
+      if (session)
+        await measurePhase('cleanup', async () => {
+          const c = await credential(m);
+          await mcpRequest(m.provider === 'github-mcp' ? githubEndpoint(m) : m.url, {
+            method: 'DELETE',
+            headers: {
+              'Mcp-Session-Id': session,
+              'MCP-Protocol-Version': '2025-06-18',
+              ...(c.token || c.access_token
+                ? { Authorization: 'Bearer ' + (c.access_token || c.token) }
+                : {})
+            },
+            allowPrivate: m.allowPrivate,
+            timeout: 5000
+          }).catch(() => {});
+        });
     }
   }
   async function sync(m) {
@@ -493,7 +502,12 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
           const r = await doRequest(probeUrl, {
             headers: probeHeaders,
             method: 'GET',
-            allowPrivate: m.provider === 'gitea-mcp' ? (isDefaultGiteaUrl(m.url) ? true : !!m.allowPrivate) : m.allowPrivate
+            allowPrivate:
+              m.provider === 'gitea-mcp'
+                ? isDefaultGiteaUrl(m.url)
+                  ? true
+                  : !!m.allowPrivate
+                : m.allowPrivate
           });
           responseHeaders = r.headers || {};
         } catch (err) {
@@ -536,12 +550,11 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
         if (m.provider === 'github-mcp') {
           const c = await credential(m);
           const token = c.access_token || c.token;
-          const res = await githubCall(t, a, { token, request: doRequest });
-          if (res?.content) return res;
-          return withSession(
-            m,
-            async session => (await rpc(m, 'tools/call', res, session)).result
+          const res = await measurePhase('upstreamCall', () =>
+            githubCall(t, a, { token, request: doRequest })
           );
+          if (res?.content) return res;
+          return withSession(m, async session => (await rpc(m, 'tools/call', res, session)).result);
         }
         return withSession(
           m,
@@ -553,10 +566,22 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
         const token = c.access_token || c.token;
         // Gitea tools interpret upstream statuses (e.g. 404 means create a new
         // file). Pass the raw transport, not the legacy service error mapper.
-        return await giteaCall(t, a, { url: m.url, token, allowPrivate: m.allowPrivate, request: serviceRequest });
+        return await measurePhase('upstreamCall', () =>
+          giteaCall(t, a, {
+            url: m.url,
+            token,
+            allowPrivate: m.allowPrivate,
+            request: serviceRequest
+          })
+        );
       }
       return {
-        content: [{ type: 'text', text: JSON.stringify(await call(m, t, a)) }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(await measurePhase('upstreamCall', () => call(m, t, a)))
+          }
+        ],
         isError: false
       };
     }
