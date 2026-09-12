@@ -13,6 +13,13 @@ class InstallerTest(unittest.TestCase):
  def test_https_requires_own_installation(self):
   with patch.object(m,'fetch',side_effect=[b'{"ok":true,"installationId":"wrong"}',b'{"ok":true,"installationId":"correct"}',b'{"status":"pass"}']) as f,patch.object(m.time,'sleep'):
    m.public_test({'domain':'hub.example.com','installation_id':'correct'});self.assertEqual(f.call_count,3)
+ def test_https_skips_gitea_check_when_disabled(self):
+  # Regression: public_test() unconditionally re-checked /gitea/api/healthz over
+  # the public domain, which 404s once gitea-disable removes that Caddy route —
+  # broke every subsequent update/restart/doctor after disabling Gitea.
+  with patch.object(m,'fetch',return_value=b'{"ok":true,"installationId":"correct"}') as f,patch.object(m.time,'sleep'):
+   m.public_test({'domain':'hub.example.com','installation_id':'correct','gitea_enabled':False})
+   self.assertEqual(f.call_count,1)
  def test_atomic_secrets(self):
   with tempfile.TemporaryDirectory() as tmp:
    path=pathlib.Path(tmp)/'secret';m.atomic(path,'value');self.assertEqual(path.stat().st_mode&0o777,0o600);self.assertEqual(path.read_text(),'value')
