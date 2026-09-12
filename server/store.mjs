@@ -100,7 +100,34 @@ export function openStore(dir) {
   }))
     if (!columns.has(name)) db.exec(`ALTER TABLE audit ADD COLUMN ${name} ${type}`);
   const operationContext = new AsyncLocalStorage();
-  const operation = fn => operationContext.run(randomUUID(), fn);
+  const operation = (initial, fn) => {
+    let handler = fn;
+    let initialObj = initial;
+    if (typeof initial === 'function') {
+      handler = initial;
+      initialObj = {};
+    }
+    const opId =
+      typeof initialObj === 'string'
+        ? initialObj
+        : initialObj?.id || initialObj?.operationId || randomUUID();
+    const ctx =
+      typeof initialObj === 'object' && initialObj !== null
+        ? { ...initialObj, id: opId, operationId: opId }
+        : { id: opId, operationId: opId };
+    return operationContext.run(ctx, handler);
+  };
+  const currentOperationId = () => {
+    const s = operationContext.getStore();
+    return s?.operationId || (typeof s === 'string' ? s : null);
+  };
+  const getOperationContext = () => operationContext.getStore();
+  const setOperationContext = (updates = {}) => {
+    const s = operationContext.getStore();
+    if (s && typeof s === 'object') {
+      Object.assign(s, updates);
+    }
+  };
   const seal = v => {
     const iv = randomBytes(12),
       c = createCipheriv('aes-256-gcm', key, iv),
@@ -135,6 +162,48 @@ export function openStore(dir) {
     const role = actorRecord ? { actorType: actorRecord.isAdmin ? 'admin' : 'agent' } : {};
     if (actorRecord?.isAdmin && meta.eventKind === 'tool_call') role.eventKind = 'admin_action';
     const c = newClassification({ actor, mcp, tool, status, latency }, { ...meta, ...role });
+
+    const ctx = operationContext.getStore();
+    const opId =
+      meta.operationId ||
+      ctx?.operationId ||
+      (typeof ctx === 'string' ? ctx : randomUUID());
+
+    const enrichedMeta = {
+      ...meta,
+      ...(ctx?.upstreamStatus !== undefined && meta.upstreamStatus === undefined
+        ? { upstreamStatus: ctx.upstreamStatus }
+        : {}),
+      ...(ctx?.phases && !meta.phases ? { phases: ctx.phases } : {}),
+      ...(ctx?.phase && !meta.phase ? { phase: ctx.phase } : {}),
+      ...(ctx?.retryCount !== undefined && meta.retryCount === undefined
+        ? { retryCount: ctx.retryCount }
+        : {}),
+      ...(ctx?.credentialVersion !== undefined && meta.credentialVersion === undefined
+        ? { credentialVersion: ctx.credentialVersion }
+        : {}),
+      ...(ctx?.credentialId !== undefined && meta.credentialId === undefined
+        ? { credentialId: ctx.credentialId }
+        : {})
+    };
+
+    const metadataOnly = enrichedMeta.metadataOnly === true;
+    const safeInput = protectPayload(input, metadataOnly);
+    const safeOutput = protectPayload(output, metadataOnly);
+    const safeReason = sanitizeText(reason || '');
+
+    const payloadObj = {
+      input: safeInput,
+      output: safeOutput,
+      reason: safeReason,
+      ...(enrichedMeta.phases ? { phases: enrichedMeta.phases } : {}),
+      ...(enrichedMeta.phase ? { phase: enrichedMeta.phase } : {}),
+      ...(enrichedMeta.upstreamStatus !== undefined ? { upstreamStatus: enrichedMeta.upstreamStatus } : {}),
+      ...(enrichedMeta.retryCount !== undefined ? { retryCount: enrichedMeta.retryCount } : {}),
+      ...(enrichedMeta.credentialVersion !== undefined ? { credentialVersion: enrichedMeta.credentialVersion } : {}),
+      ...(enrichedMeta.credentialId !== undefined ? { credentialId: enrichedMeta.credentialId } : {})
+    };
+
     return db
       .prepare(
         `INSERT INTO audit(created,actor,mcp,tool,status,latency,payload,eventKind,actorType,policyDecision,outcome,errorCategory,latencyMeasured,operationId) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
@@ -146,14 +215,14 @@ export function openStore(dir) {
         tool,
         status,
         Math.round(latency ?? 0),
-        seal({ input, output, reason, ...(meta.phases ? { phases: meta.phases } : {}) }),
+        seal(payloadObj),
         c.eventKind,
         c.actorType,
         c.policyDecision,
         c.outcome,
         c.errorCategory,
         c.latencyMeasured,
-        operationContext.getStore() || randomUUID()
+        opId
       );
   };
   const log = id => {
@@ -236,14 +305,18 @@ export function openStore(dir) {
       clauses.push('latency <= ?');
       values.push(filters.maxLatency);
     }
+    if (filters.operationId !== undefined) {
+      clauses.push('operationId = ?');
+      values.push(filters.operationId);
+    }
     if (filters.q) {
       const q = filters.q;
       if (/^\d+$/.test(q)) {
-        clauses.push('(id = ? OR tool LIKE ? OR actor LIKE ?)');
-        values.push(Number(q), `%${q}%`, `%${q}%`);
+        clauses.push('(id = ? OR tool LIKE ? OR actor LIKE ? OR operationId LIKE ?)');
+        values.push(Number(q), `%${q}%`, `%${q}%`, `%${q}%`);
       } else {
-        clauses.push('(tool LIKE ? OR actor LIKE ?)');
-        values.push(`%${q}%`, `%${q}%`);
+        clauses.push('(tool LIKE ? OR actor LIKE ? OR operationId LIKE ?)');
+        values.push(`%${q}%`, `%${q}%`, `%${q}%`);
       }
     }
     if (filters.secret) {
@@ -367,11 +440,46 @@ export function openStore(dir) {
     log,
     summary,
     operation,
+    currentOperationId,
+    getOperationContext,
+    setOperationContext,
     tx,
     clean,
     close: () => db.close()
   };
 }
+
+export const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB
+
+export function sanitizeText(str) {
+  if (typeof str !== 'string') return str;
+  let text = str;
+  // 1. Bearer and Basic authentication headers
+  text = text.replace(/(?:Bearer|bearer)\s+[A-Za-z0-9._~-]+/g, 'Bearer [REDACTED]');
+  text = text.replace(/(?:Basic|basic)\s+[A-Za-z0-9+/=]{6,}/g, 'Basic [REDACTED]');
+
+  // 2. Sensitive query parameters in URLs (token, access_token, api_key, secret, password...)
+  text = text.replace(/([?&](?:access_token|token|api_?key|secret|password|client_secret)=)[^&\s'"#]+/gi, '$1[REDACTED]');
+
+  // 3. Known API key and token prefixes:
+  // OpenAI / Anthropic
+  text = text.replace(/\bsk-[a-zA-Z0-9_-]{16,}\b/g, 'sk-[REDACTED]');
+  // GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_, github_pat_)
+  text = text.replace(/\b(?:gh[pousr]_[a-zA-Z0-9]{20,}|github_pat_[a-zA-Z0-9_]{22,})\b/g, '[REDACTED]');
+  // Slack tokens (xoxb-, xoxp-, xoxa-, xoxr-)
+  text = text.replace(/\bxox[bpar]-[a-zA-Z0-9-]{10,}\b/g, 'xox-[REDACTED]');
+  // Gen-hub agent tokens (token_...)
+  text = text.replace(/\btoken_[a-zA-Z0-9_-]{8,}\b/g, 'token_[REDACTED]');
+
+  // 4. Canary secret markers
+  text = text.replace(/\bcanary[-_]secret[-_a-zA-Z0-9]*\b/gi, '[REDACTED]');
+
+  // 5. Embedded key-value / header secrets in free text or error messages
+  text = text.replace(/(?<=(?:api[_-]?key|password|secret|authorization|token)[=:]\s*["']?)[A-Za-z0-9._~-]{8,}(?=["']?)/gi, '[REDACTED]');
+
+  return text;
+}
+
 export function redact(value) {
   if (Array.isArray(value)) return value.map(redact);
   if (value && typeof value === 'object')
@@ -384,12 +492,39 @@ export function redact(value) {
       ])
     );
   if (typeof value === 'string') {
-    if (/^[\[{]/.test(value.trim())) {
+    const trimmed = value.trim();
+    if (/^[\[{]/.test(trimmed)) {
       try {
-        return JSON.stringify(redact(JSON.parse(value)));
+        return sanitizeText(JSON.stringify(redact(JSON.parse(trimmed))));
       } catch {}
     }
-    return value.replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [REDACTED]');
+    return sanitizeText(value);
   }
   return value;
+}
+
+export function protectPayload(value, metadataOnly = false) {
+  if (metadataOnly) return { metadataOnly: true };
+  if (value === undefined || value === null) return value;
+  const redacted = redact(value);
+  try {
+    const serialized = JSON.stringify(redacted);
+    if (Buffer.byteLength(serialized, 'utf8') <= MAX_PAYLOAD_BYTES) {
+      return redacted;
+    }
+    return {
+      _truncated: true,
+      _originalBytes: Buffer.byteLength(serialized, 'utf8'),
+      preview: typeof redacted === 'object' && redacted !== null
+        ? Object.fromEntries(
+            Object.entries(redacted).slice(0, 5).map(([k, v]) => [
+              k,
+              typeof v === 'string' ? v.slice(0, 200) : v
+            ])
+          )
+        : String(serialized).slice(0, 500)
+    };
+  } catch {
+    return { error: 'Payload cannot be serialized' };
+  }
 }

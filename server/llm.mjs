@@ -539,7 +539,8 @@ export function createChatService(store, origin, options = {}) {
             model: config.model,
             requestId: requestId || undefined,
             usage: usage || undefined,
-            cost
+            cost,
+            operationId: store.currentOperationId?.() || undefined
           }
         };
       } catch (err) {
@@ -550,7 +551,7 @@ export function createChatService(store, origin, options = {}) {
           'error',
           redact({ messageCount: cleanMessages.length, currentRoute }),
           {
-            error: err.message,
+            error: redact(err.message),
             provider: config.provider,
             model: config.model
           },
