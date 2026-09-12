@@ -320,6 +320,35 @@ test('Audit Export: manifest contains correct filter, retention, and schema vers
   assert.equal(manifest.totalRows, 1, 'manifest.totalRows must match actual row count');
 });
 
+test('Audit Export: id filter restricts export to a single matching record', async t => {
+  const { hub, origin } = await fixture(t);
+
+  const a = hub.store.audit('owner', 'hub', 'vault.list', 'success', {}, {});
+  const targetId = a.lastInsertRowid;
+  hub.store.audit('owner', 'hub', 'kanban.configure', 'error', {}, {});
+  hub.store.audit('owner', 'hub', 'agent.create', 'success', {}, {});
+
+  const loginResp = await fetch(`${origin}/api/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    body: JSON.stringify({ username: 'owner', password: 'owner-password-123' })
+  });
+  const cookie = loginResp.headers.get('set-cookie').split(';')[0];
+
+  const resp = await fetch(`${origin}/api/logs/export?format=jsonl&id=${targetId}`, {
+    headers: { Cookie: cookie, 'Content-Type': 'application/json', Origin: origin }
+  });
+  assert.equal(resp.status, 200);
+  const text = await resp.text();
+  const dataRows = text.trim().split('\n').filter(l => l && !l.startsWith('#'));
+  assert.equal(dataRows.length, 1, 'export filtered by id must return exactly the one matching record');
+  assert.equal(JSON.parse(dataRows[0]).id, targetId, 'exported row id must match the requested id filter');
+
+  const manifestLine = text.trim().split('\n').find(l => l.startsWith('#manifest: '));
+  const manifest = JSON.parse(manifestLine.slice('#manifest: '.length));
+  assert.equal(manifest.filters.id, targetId, 'manifest must record the id filter that was applied');
+});
+
 test('Audit Export: Vietnamese Unicode in tool/actor names reads correctly in JSONL export', async t => {
   const { hub, origin } = await fixture(t);
 
