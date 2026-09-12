@@ -76,6 +76,8 @@ let auditExact = {};
 const logDetailCache = new Map();
 let notifOpen = false,
   notifSnapshotTime = 0;
+// Tool inventory state: null = not yet fetched, 'error' = fetch failed, array = loaded data.
+let toolInventoryData = null;
 const notifStorageKey = () => 'genhub_notifs_read_' + (state?.owner || 'owner');
 const getNotifLastRead = () => {
   try {
@@ -280,10 +282,28 @@ setInterval(() => {
   )
     loadKanban();
 }, 120000);
+let toolInventoryGeneration = 0;
+async function loadToolInventory() {
+  const generation = ++toolInventoryGeneration;
+  try {
+    const data = await api('tool-inventory');
+    if (generation !== toolInventoryGeneration || !state || route !== 'overview') return;
+    toolInventoryData = data.inventory;
+    render();
+  } catch (e) {
+    if (generation !== toolInventoryGeneration || !state || route !== 'overview') return;
+    toolInventoryData = 'error';
+    render();
+  }
+}
 async function refresh() {
   state = await api('state');
   if (state?.settings) state.settings = normalizeSettings(state.settings);
   if (route === 'kanban') await loadKanban();
+  if (route === 'overview') {
+    toolInventoryData = null; // reset so card shows "loading" while fetching
+    loadToolInventory();      // fire-and-forget; re-renders when done
+  }
   if (route === 'audit') {
     parseAuditHash();
     await fetchAuditLogs();
@@ -657,7 +677,8 @@ function overview() {
   const mcpName = id => (id === 'vault' ? 'Vault' : state.mcps.find(m => m.id === id)?.name || id);
   const byMcpCalls = new Map(),
     byMcpBytes = new Map(),
-    byToolCalls = new Map();
+    byToolCalls = new Map(),
+    byAgentCalls = new Map();
   for (const [key, row] of byKey) {
     const [mid, ...rest] = key.split(' / '),
       mName = mcpName(mid),
@@ -666,7 +687,38 @@ function overview() {
     byMcpBytes.set(mName, (byMcpBytes.get(mName) || 0) + row.bytes);
     byToolCalls.set(tName, (byToolCalls.get(tName) || 0) + row.count);
   }
+  // Build byAgentCalls: group 12h isToolCall logs by actor ID → display name.
+  // isToolCall() already filters out owner/system/admin-assistant/hub events.
+  // Use agentId as the unique key to prevent two agents with the same display name from merging.
+  const agentNameMap = new Map(state.agents.map(a => [a.id, a.name]));
+  for (const log of logs) {
+    if (!isToolCall(log)) continue;
+    const ts = Date.parse(log.created);
+    if (ts < Date.now() - 12 * 3600000) continue;
+    const agentId = log.actor;
+    const agentLabel = agentNameMap.get(agentId) || agentId;
+    // Compound key: id + display name, so two agents with same name stay separate.
+    const key = agentId + '\x00' + agentLabel;
+    byAgentCalls.set(key, (byAgentCalls.get(key) || 0) + 1);
+  }
+  // Flatten to [label, count] pairs sorted descending (same style as other pies).
+  const agentCallEntries = [...byAgentCalls.entries()]
+    .map(([key, count]) => [key.split('\x00')[1], count])
+    .sort((a, b) => b[1] - a[1]);
+
   const sortDesc = m => [...m.entries()].sort((a, b) => b[1] - a[1]);
+
+  // Tool inventory: rendered from cached data (loaded once on overview mount).
+  const invHtml = toolInventoryData === null
+    ? `<p class="footnote" id="tool-inv-loading">Đang tải tồn kho công cụ\u2026</p>`
+    : toolInventoryData === 'error'
+    ? `<p class="errorline">Không tải được tồn kho công cụ.</p>`
+    : toolInventoryData.length === 0
+    ? `<p class="muted">Chưa có tool nào được công bố từ MCP đang kết nối.</p>`
+    : `<div class="tablewrap"><table><thead><tr><th>MCP</th><th>Tool</th><th>Tổng lượt gọi</th><th>Lần gọi gần nhất</th></tr></thead><tbody>${toolInventoryData.map(item =>
+        `<tr><td>${esc(item.mcpName)}</td><td class="mono">${esc(item.toolName)}</td><td>${item.callCount === 0 ? '<span class="badge gray">Chưa từng gọi</span>' : item.callCount.toLocaleString('vi-VN')}</td><td class="sub">${item.lastCall ? date(item.lastCall) : '\u2014'}</td></tr>`
+      ).join('')}</tbody></table></div>`;
+
   return (
     head(
       'Tổng quan',
@@ -688,7 +740,7 @@ function overview() {
       )
       .join(
         ''
-      )}</section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Hoạt động công cụ</h2><span class="badge gray">12 giờ gần đây</span></div><div class="cardpad"><div class="pie-row">${smallPie('MCP theo lượt gọi', sortDesc(byMcpCalls), 'lượt')}${smallPie('Tool theo lượt gọi', sortDesc(byToolCalls), 'lượt')}${smallPie('MCP theo dung lượng', sortDesc(byMcpBytes), 'byte')}</div>${!byKey.size ? '<p class="footnote">Chưa có lượt gọi công cụ trong 12 giờ qua.</p>' : '<p class="footnote">Dung lượng tính theo byte JSON input/output đã redact (không phải token LLM).</p>'}</div></section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
+      )}</section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Hoạt động công cụ</h2><span class="badge gray">12 giờ gần đây</span></div><div class="cardpad"><div class="pie-row">${smallPie('MCP theo lượt gọi', sortDesc(byMcpCalls), 'lượt')}${smallPie('Tool theo lượt gọi', sortDesc(byToolCalls), 'lượt')}${smallPie('MCP theo dung lượng', sortDesc(byMcpBytes), 'byte')}${smallPie('Lượt gọi theo Agent', agentCallEntries, 'lượt')}</div>${!byKey.size ? '<p class="footnote">Chưa có lượt gọi công cụ trong 12 giờ qua.</p>' : '<p class="footnote">Dung lượng tính theo byte JSON input/output đã redact (không phải token LLM). Agent chưa gọi tool nào trong 12 giờ không xuất hiện trong pie.</p>'}</div></section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Tồn kho công cụ</h2><span class="badge gray">Toàn bộ thời gian</span></div><div class="cardpad">${invHtml}<p class="footnote">Danh sách tool đã công bố trên mọi MCP đang kết nối. Sắp xếp theo lượt gọi tăng dần — tool chưa dùng nổi lên đầu. Xóa/tắt MCP thì tool của nó không còn xuất hiện.</p></div></section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
       state.mcps
         .filter(m => m.status !== 'connected')
         .map(
@@ -699,6 +751,7 @@ function overview() {
     }</div></section><section class="card"><div class="cardhead"><h2>Nhật ký gần đây</h2>${btn('Xem tất cả', 'go:audit', 'small')}</div>${logTable(logs.slice(0, 5))}</section>`
   );
 }
+
 function empty(title, desc) {
   return `<div class="card empty">${I('plug')}<h3>${title}</h3><p>${desc}</p></div>`;
 }
@@ -2326,6 +2379,10 @@ window.addEventListener('hashchange', async () => {
   close();
   if (state) {
     render();
+    if (route === 'overview') {
+      toolInventoryData = null;
+      loadToolInventory();
+    }
     if (route === 'audit') {
       fetchAuditLogs();
     }
