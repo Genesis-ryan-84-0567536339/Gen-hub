@@ -35,6 +35,7 @@ import {
 import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
+import { bootstrapService } from './bootstrap.mjs';
 import { kanbanService } from './kanban.mjs';
 import { githubRetryAt } from './github-rate.mjs';
 import { createChatService } from './llm.mjs';
@@ -100,6 +101,7 @@ export function createHub({
   origin = base.origin;
   const store = openStore(dir),
     vault = vaultService(store),
+    bootstrap = bootstrapService(store),
     auth = authService(store, origin),
     up = connector || connectorService(store),
     logger = createLogger(store),
@@ -512,7 +514,12 @@ export function createHub({
           : '2025-06-18',
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: 'gen-hub', version: '0.1.0' },
-        instructions: a.instructions?.trim() || 'Chỉ sử dụng các công cụ được owner cấp quyền.'
+        instructions: [
+          bootstrap.render(),
+          a.instructions?.trim() || 'Chỉ sử dụng các công cụ được owner cấp quyền.'
+        ]
+          .filter(Boolean)
+          .join('\n\n')
       });
     if (b.method === 'ping') return result({});
     if (b.method === 'tools/list') {
@@ -738,6 +745,7 @@ export function createHub({
       return respond(200, {
         mcps,
         vault: vault.list(),
+        bootstrap: bootstrap.get(),
         security: { pinConfigured: !!store.get('security', 'pin')?.hash },
         agents,
         logs: store.logs(200).map(redact),
@@ -810,6 +818,11 @@ export function createHub({
         return respond(200, vault.read(mid, actor));
       if (mid && action === 'grants' && method === 'POST')
         return respond(200, vault.share(mid, b, actor));
+      throw new HubError('Không tìm thấy API', 404);
+    }
+    if (resource === 'bootstrap') {
+      if (!write) return respond(200, bootstrap.get());
+      if (method === 'PATCH') return respond(200, bootstrap.update(b.groups, actor));
       throw new HubError('Không tìm thấy API', 404);
     }
     if (resource === 'settings' && method === 'PATCH') {

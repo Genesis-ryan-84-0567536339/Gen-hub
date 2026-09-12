@@ -1,0 +1,141 @@
+import { id } from './store.mjs';
+import { HubError } from './net.mjs';
+
+const MAX_GROUPS = 50;
+const MAX_STEPS_PER_GROUP = 50;
+const MAX_TITLE = 200;
+const MAX_CONTENT = 4000;
+
+function text(value, max, label) {
+  if (typeof value !== 'string' || !value.trim() || value.length > max)
+    throw new HubError(`${label} cần 1–${max} ký tự`);
+  return value.trim();
+}
+
+function normalizeStep(step) {
+  if (!step || typeof step !== 'object') throw new HubError('Bước không hợp lệ');
+  return {
+    id: typeof step.id === 'string' && step.id ? step.id : id('step'),
+    title: text(step.title, MAX_TITLE, 'Tiêu đề bước'),
+    content: text(step.content, MAX_CONTENT, 'Nội dung bước')
+  };
+}
+
+function normalizeGroup(group) {
+  if (!group || typeof group !== 'object') throw new HubError('Nhóm không hợp lệ');
+  if (!Array.isArray(group.steps) || group.steps.length > MAX_STEPS_PER_GROUP)
+    throw new HubError(`Mỗi nhóm tối đa ${MAX_STEPS_PER_GROUP} bước`);
+  return {
+    id: typeof group.id === 'string' && group.id ? group.id : id('grp'),
+    title: text(group.title, MAX_TITLE, 'Tiêu đề nhóm'),
+    steps: group.steps.map(normalizeStep)
+  };
+}
+
+// Áp dụng lúc đọc (giống DEFAULT_SETTINGS/normalizeSettings) — chưa ai lưu gì
+// thì agent vẫn nhận được bộ nhắc nhở mặc định này, không phải rỗng.
+export const DEFAULT_BOOTSTRAP_GROUPS = [
+  {
+    id: 'grp-default1',
+    title: 'Kết nối nguồn chuẩn',
+    steps: [
+      {
+        id: 'step-default1',
+        title: 'Đọc Brain trước',
+        content:
+          'Trước khi bắt đầu việc, đọc BOOTSTRAP.md của repo ' +
+          'Genesis-ryan-84-0567536339/Brain để lấy quy tắc dùng chung toàn hệ sinh thái Genesis.'
+      },
+      {
+        id: 'step-default2',
+        title: 'Đọc quy trình riêng của repo',
+        content:
+          'Nếu việc thuộc 1 repo cụ thể, đọc thêm file quy trình riêng của repo đó ' +
+          '(vd docs/TEAM_WORKFLOW.md của Gen-hub) trước khi thao tác.'
+      }
+    ]
+  },
+  {
+    id: 'grp-default2',
+    title: 'Quy trình Issue → Branch → PR',
+    steps: [
+      {
+        id: 'step-default3',
+        title: 'Tạo Issue trước khi làm',
+        content:
+          'Luôn tạo 1 Issue mô tả việc định làm trước khi bắt đầu — kể cả việc còn đang ' +
+          'brainstorm/chưa rõ hướng cũng tạo Issue để ghi lại, không chỉ việc đã chốt.'
+      },
+      {
+        id: 'step-default4',
+        title: 'Làm trên branch riêng',
+        content: 'Branch riêng cho PR đó là sổ tay tạm để code/làm việc — chưa phải chính thức.'
+      },
+      {
+        id: 'step-default5',
+        title: 'Chỉ merge sau khi có xác nhận',
+        content:
+          'Mở PR, chờ có label xác nhận từ người ra lệnh (label "Đã xác nhận") — chỉ merge vào ' +
+          'main sau khi có xác nhận đó, không tự merge khi chưa có bằng chứng chấp nhận kết quả.'
+      }
+    ]
+  },
+  {
+    id: 'grp-default3',
+    title: 'Nguyên tắc SSOT',
+    steps: [
+      {
+        id: 'step-default6',
+        title: 'Một chủ đề, một tài liệu',
+        content:
+          'Mỗi chủ đề chỉ có đúng 1 tài liệu chuẩn, luôn cập nhật tại chỗ, không tạo bản sao ở ' +
+          'nơi khác. Skill/instruction mới cũng hình thành dần qua đúng quy trình Issue→branch→' +
+          'PR→xác nhận→merge này, không phải quy trình ghi riêng nào khác.'
+      }
+    ]
+  },
+  {
+    id: 'grp-default4',
+    title: 'Phản hồi',
+    steps: [
+      {
+        id: 'step-default7',
+        title: 'Góp ý qua comment',
+        content:
+          'Phát hiện bất cập trong lúc làm việc thì comment trực tiếp trên Issue/PR liên quan, ' +
+          'như 1 lời nhắc tiện lợi cho người/agent sau.'
+      }
+    ]
+  }
+];
+
+export function bootstrapService(store) {
+  function get() {
+    const stored = store.get('bootstrap', 'main');
+    if (stored) return stored;
+    return { groups: DEFAULT_BOOTSTRAP_GROUPS, updated: null };
+  }
+
+  function update(groups, actor) {
+    if (!Array.isArray(groups) || groups.length > MAX_GROUPS)
+      throw new HubError(`Tối đa ${MAX_GROUPS} nhóm`);
+    const record = { groups: groups.map(normalizeGroup), updated: new Date().toISOString() };
+    store.put('bootstrap', 'main', record);
+    store.audit(actor, 'hub', 'bootstrap.update', 'success', { groupCount: record.groups.length }, {});
+    return record;
+  }
+
+  function render() {
+    const { groups } = get();
+    if (!groups.length) return '';
+    return groups
+      .map(
+        (g, gi) =>
+          `${gi + 1}. ${g.title}\n` +
+          g.steps.map((s, si) => `   ${gi + 1}.${si + 1}. ${s.title}: ${s.content}`).join('\n')
+      )
+      .join('\n\n');
+  }
+
+  return { get, update, render };
+}
