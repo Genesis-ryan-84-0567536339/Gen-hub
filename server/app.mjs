@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, createHash, randomUUID } from 'node:crypto';
 import {
   openStore,
   secret,
@@ -15,9 +15,11 @@ import {
   passwordHash,
   passwordCheck,
   redact,
+  sanitizeText,
   normalizeSettings,
   VALID_RETENTIONS
 } from './store.mjs';
+import { createLogger } from './logger.mjs';
 import { HubError, assertSchema, jsonRequest, request } from './net.mjs';
 import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
@@ -100,6 +102,7 @@ export function createHub({
     vault = vaultService(store),
     auth = authService(store, origin),
     up = connector || connectorService(store),
+    logger = createLogger(store),
     limits = new Map();
   const chatService = createChatService(store, origin);
   const kanban = kanbanService(store, up);
@@ -365,9 +368,14 @@ export function createHub({
     }
   }
   function send(res, status, data, headers = {}) {
+    const opId = store.currentOperationId?.() || res.getHeader?.('X-Request-ID');
+    if (opId && !res.getHeader?.('X-Request-ID')) {
+      res.setHeader('X-Request-ID', opId);
+    }
     res.writeHead(status, {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
+      ...(opId && !headers['X-Request-ID'] ? { 'X-Request-ID': opId } : {}),
       ...headers
     });
     res.end(data === undefined ? '' : typeof data === 'string' ? data : JSON.stringify(data));
@@ -476,8 +484,18 @@ export function createHub({
       throw e;
     }
     if (req.method !== 'POST') return send(res, 405, { error: 'Sử dụng POST' }, { Allow: 'POST' });
-    const rpcError = (code, message, status = 200) =>
-      send(res, status, { jsonrpc: '2.0', id: b?.id ?? null, error: { code, message } });
+    const rpcError = (code, message, status = 200) => {
+      const opId = store.currentOperationId?.() || res.getHeader?.('X-Request-ID');
+      return send(res, status, {
+        jsonrpc: '2.0',
+        id: b?.id ?? null,
+        error: {
+          code,
+          message: sanitizeText(message),
+          ...(opId ? { data: { operationId: opId } } : {})
+        }
+      });
+    };
     if (!b || b.jsonrpc !== '2.0' || Array.isArray(b) || typeof b.method !== 'string')
       return rpcError(-32600, 'Invalid Request', 400);
     const version = req.headers['mcp-protocol-version'];
@@ -531,7 +549,9 @@ export function createHub({
           'denied',
           { id: sid },
           {},
-          performance.now() - start
+          performance.now() - start,
+          'Secret không được cấp quyền',
+          { policyDecision: 'deny', phase: 'policy' }
         );
         return rpcError(-32602, 'Tool không khả dụng hoặc chưa được cấp quyền');
       }
@@ -550,7 +570,7 @@ export function createHub({
           {},
           performance.now() - start,
           '',
-          { policyDecision: 'allow' }
+          { policyDecision: 'allow', phase: 'internal' }
         );
         return result({
           content: [{ type: 'text', text: JSON.stringify(output) }],
@@ -565,8 +585,8 @@ export function createHub({
           { id: sid },
           {},
           performance.now() - start,
-          '',
-          { policyDecision: 'allow', errorCategory: classifyError(e, phase) }
+          sanitizeText(e.message),
+          { policyDecision: 'allow', errorCategory: classifyError(e, phase), phase }
         );
         return result({
           content: [{ type: 'text', text: 'Không thể đọc secret; kiểm tra tham số và nhật ký.' }],
@@ -585,10 +605,16 @@ export function createHub({
         mid,
         tn,
         'denied',
-        redact(args),
+        args,
         {},
         performance.now() - start,
-        'Tool không được cấp, không công bố hoặc kết nối chưa sẵn sàng'
+        'Tool không được cấp, không công bố hoặc kết nối chưa sẵn sàng',
+        {
+          policyDecision: 'deny',
+          phase: 'policy',
+          credentialVersion: m?.credentialVersion || 0,
+          credentialId: m?.id
+        }
       );
       return rpcError(-32602, 'Tool không khả dụng hoặc chưa được cấp quyền');
     }
@@ -621,14 +647,19 @@ export function createHub({
         mid,
         tn,
         out.isError ? 'error' : 'success',
-        redact(args),
-        redact(out),
+        args,
+        out,
         performance.now() - start,
         'Agent được cấp quyền và tool đang được công bố',
         {
           policyDecision: 'allow',
           errorCategory: out.isError ? 'upstream_tool_conflict' : null,
-          phases
+          phases,
+          phase: 'upstream',
+          upstreamStatus: out.upstreamStatus ?? out.status ?? (out.isError ? 500 : 200),
+          credentialVersion: m.credentialVersion || 0,
+          credentialId: m.id,
+          retryCount: 0
         }
       );
       return result(out);
@@ -640,17 +671,26 @@ export function createHub({
           store.put('mcp', mid, latest);
         }
       }
-      const message = e instanceof HubError ? e.message : 'Không thể hoàn tất yêu cầu đến dịch vụ';
+      const message = sanitizeText(e instanceof HubError ? e.message : 'Không thể hoàn tất yêu cầu đến dịch vụ');
       store.audit(
         a.id,
         mid,
         tn,
         'error',
-        redact(args),
+        args,
         { error: message },
         performance.now() - start,
         message,
-        { policyDecision: 'allow', errorCategory: classifyError(e, phase), phases }
+        {
+          policyDecision: 'allow',
+          errorCategory: classifyError(e, phase),
+          phases,
+          phase,
+          upstreamStatus: e.upstreamStatus ?? e.status ?? 502,
+          credentialVersion: m?.credentialVersion || 0,
+          credentialId: m?.id,
+          retryCount: e.retryCount || 0
+        }
       );
       return result({ content: [{ type: 'text', text: message }], isError: true });
     }
@@ -1227,7 +1267,7 @@ export function createHub({
   const assistant = adminAssistant(store, origin, ({ path, ...context }) =>
     ownerApi({ ...context, parts: path.split('/') })
   );
-  const server = createServer(async (req, res) => {
+  const server = createServer((req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
@@ -1235,7 +1275,14 @@ export function createHub({
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'"
     );
-    try {
+    // Always server-generated: this ID threads audit-log correlation, so it must
+    // never be attacker-influenced. A client-supplied X-Request-ID could otherwise
+    // spoof/collide with an unrelated operation's correlation chain on this public
+    // endpoint.
+    const opId = randomUUID();
+    res.setHeader('X-Request-ID', opId);
+    return store.operation(opId, async () => {
+      try {
       const u = new URL(req.url, origin),
         p = u.pathname;
       if (
@@ -1528,14 +1575,26 @@ export function createHub({
       res.setHeader('Cache-Control', 'no-cache');
       res.end(req.method === 'HEAD' ? undefined : data);
     } catch (e) {
+      const currentOpId = store.currentOperationId?.() || opId;
+      const sanitizedMessage = sanitizeText(
+        e instanceof HubError ? e.message : 'Lỗi hệ thống. Kiểm tra nhật ký dịch vụ.'
+      );
       if (!res.headersSent)
         send(res, e.status || 500, {
-          error: e instanceof HubError ? e.message : 'Lỗi hệ thống. Kiểm tra nhật ký dịch vụ.'
+          error: sanitizedMessage,
+          operationId: currentOpId
         });
       else res.end();
-      if (!(e instanceof HubError)) console.error('Request failure:', e.code || e.name);
+      if (!(e instanceof HubError)) {
+        logger.error('Request failure: ' + (e.code || e.name || e.message), {
+          status: e.status || 500,
+          code: e.code || e.name,
+          operationId: currentOpId
+        });
+      }
     }
   });
+});
   server.requestTimeout = 35000;
   server.headersTimeout = 15000;
   server.maxHeadersCount = 80;
