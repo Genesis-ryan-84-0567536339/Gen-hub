@@ -378,7 +378,7 @@ export function redact(value) {
     return Object.fromEntries(
       Object.entries(value).map(([k, v]) => [
         k,
-        /token|password|secret|authorization|api.?key|^pin$|^current$/i.test(k)
+        /(?:^|[_-])token(?:$|[_-])|password|secret|authorization|api.?key|^pin$|^current$/i.test(k)
           ? '[REDACTED]'
           : redact(v)
       ])

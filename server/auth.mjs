@@ -236,7 +236,22 @@ export function authService(store, origin) {
         )
           throw new HubError('invalid_grant');
         store.del('token', key);
-        return issue(t.agent, t.client, t.resource);
+        const issued = issue(t.agent, t.client, t.resource);
+        store.audit(
+          t.agent,
+          'hub',
+          'auth.token_refresh',
+          'success',
+          { client_id: b.client_id },
+          { agent: t.agent },
+          undefined,
+          '',
+          {
+            eventKind: 'auth',
+            actorType: 'agent'
+          }
+        );
+        return issued;
       }
       throw new HubError('unsupported_grant_type');
     });

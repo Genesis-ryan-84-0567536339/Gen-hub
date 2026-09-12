@@ -10,8 +10,8 @@ export const errorCategories = [
   'internal',
   'unclassified'
 ];
-const actor = `CASE WHEN actor='owner' THEN 'owner' WHEN actor='system' THEN 'system' WHEN actor LIKE 'admin-assistant:%' THEN 'admin' WHEN actor LIKE 'agent-%' OR actor LIKE 'agt-%' THEN 'agent' ELSE 'unclassified' END`;
-const kind = `CASE WHEN tool LIKE 'system.%' OR actor='system' THEN 'system' WHEN tool LIKE 'owner.%' OR tool LIKE 'security.%' OR tool LIKE 'auth.%' THEN 'auth' WHEN actor='owner' OR actor LIKE 'admin-assistant:%' THEN 'admin_action' WHEN (${actor})='agent' AND mcp!='hub' THEN 'tool_call' ELSE 'unclassified' END`;
+const actor = `CASE WHEN actor='owner' THEN 'owner' WHEN actor='system' THEN 'system' WHEN actor LIKE 'admin-assistant:%' THEN 'admin' WHEN actor LIKE 'agent-%' OR actor LIKE 'agt-%' THEN 'agent' WHEN actor='unauthenticated' OR actor='anonymous' THEN 'unauthenticated' ELSE 'unclassified' END`;
+const kind = `CASE WHEN tool LIKE 'system.%' OR tool='mcp.sync' OR tool='connector.sync' OR actor='system' THEN 'system' WHEN tool LIKE 'owner.%' OR tool LIKE 'security.%' OR tool LIKE 'auth.%' OR tool LIKE 'admin_assistant.%' THEN 'auth' WHEN tool LIKE 'llm.%' OR tool LIKE 'chat.%' THEN 'llm_call' WHEN actor='owner' OR actor LIKE 'admin-assistant:%' THEN 'admin_action' WHEN (${actor})='agent' AND mcp!='hub' THEN 'tool_call' ELSE 'unclassified' END`;
 export const auditFields = {
   eventKind: `COALESCE(eventKind, ${kind})`,
   actorType: `COALESCE(actorType, ${actor})`,
@@ -52,17 +52,25 @@ export function newClassification({ actor, mcp, tool, status, latency }, meta = 
           ? 'admin'
           : /^(agent|agt)-/.test(actor)
             ? 'agent'
-            : 'unclassified');
+            : actor === 'unauthenticated' || actor === 'anonymous'
+              ? 'unauthenticated'
+              : 'unclassified');
   const eventKind =
-    actor === 'system' || tool.startsWith('system.')
+    meta.eventKind ??
+    (actor === 'system' ||
+    tool.startsWith('system.') ||
+    tool === 'mcp.sync' ||
+    tool === 'connector.sync'
       ? 'system'
-      : /^(auth|owner|security)\./.test(tool)
+      : /^(auth|owner|security)\./.test(tool) || tool.startsWith('admin_assistant.')
         ? 'auth'
-        : ['owner', 'admin'].includes(actorType)
-          ? 'admin_action'
-          : actorType === 'agent' && mcp !== 'hub'
-            ? 'tool_call'
-            : 'unclassified';
+        : /^(llm|chat)\./.test(tool)
+          ? 'llm_call'
+          : ['owner', 'admin'].includes(actorType)
+            ? 'admin_action'
+            : actorType === 'agent' && mcp !== 'hub'
+              ? 'tool_call'
+              : 'unclassified');
   return {
     eventKind,
     actorType,
@@ -145,7 +153,7 @@ export function summarizeAudit(rows, { since, until, ...filters }, coverage) {
     legacyRecords: 0,
     unclassifiedRecords: 0,
     missingLatency: 0,
-    otherEvents: { admin_action: 0, auth: 0, system: 0, unclassified: 0 },
+    otherEvents: { admin_action: 0, auth: 0, system: 0, llm_call: 0, unclassified: 0 },
     securityErrors: Object.fromEntries(errorCategories.map(c => [c, 0]))
   };
   const seenOperations = new Set();

@@ -273,7 +273,13 @@ export function adminAssistant(store, origin, execute) {
         'admin_assistant.revoke',
         'success',
         { id: record.id },
-        { revoked: true }
+        { revoked: true },
+        undefined,
+        '',
+        {
+          eventKind: 'auth',
+          actorType: 'owner'
+        }
       );
     }
     return status();
