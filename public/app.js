@@ -580,8 +580,8 @@ async function boot() {
     else toast(e.message);
   }
 }
-function head(title, sub, actions = '') {
-  return `<div class="pagehead"><div><h1>${title}</h1><p class="subtitle">${sub}</p></div><div class="actions">${actions}</div></div>`;
+function head(title, sub, actions = '', extraClass = '') {
+  return `<div class="pagehead${extraClass ? ' ' + extraClass : ''}"><div><h1>${title}</h1><p class="subtitle">${sub}</p></div><div class="actions">${actions}</div></div>`;
 }
 function render() {
   if (!state) return;
@@ -1108,9 +1108,10 @@ function auditPage() {
       'Nhật ký',
       'Input, output và quyết định cấp quyền của từng lượt gọi.',
       btn('Xuất JSONL', 'export-jsonl', '', 'download') +
-      btn('Xuất CSV', 'export-csv', '', 'download')
+      btn('Xuất CSV', 'export-csv', '', 'download'),
+      'audit-pagehead'
     ) +
-    `${Object.keys(auditExact).length ? `<p class="footnote">Bộ lọc từ Tổng quan: ${esc(new URLSearchParams(auditExact).toString())} · <a href="#audit">Xóa bộ lọc</a></p>` : ''}<div class="toolbar">${searchInput('Tìm tool, actor hoặc ID…')}<div class="actions"><select id="statusfilter" class="filter" aria-label="Kết quả">${options(
+    `${Object.keys(auditExact).length ? `<p class="footnote">Bộ lọc từ Tổng quan: ${esc(new URLSearchParams(auditExact).toString())} · <a href="#audit">Xóa bộ lọc</a></p>` : ''}<div class="toolbar audit-toolbar">${searchInput('Tìm tool, actor hoặc ID…')}<div class="actions audit-filter-actions"><select id="statusfilter" class="filter" aria-label="Kết quả">${options(
       [
         ['all', 'Tất cả kết quả'],
         ['success', 'Thành công'],
@@ -1132,7 +1133,11 @@ function auditPage() {
 
 function logTable(rows) {
   return rows.length
-    ? `<div class="tablewrap"><table><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Công cụ / Thao tác</th><th>Kết quả</th><th>Xử lý</th><th></th></tr></thead><tbody>${rows.map(l => `<tr><td>${date(l.created)}</td><td>${esc(l.actor === 'owner' ? state.owner : state.agents.find(a => a.id === l.actor)?.name || l.actor)}</td><td><div class="mono">${esc(l.tool)}</div><div class="sub">${esc(state.mcps.find(m => m.id === l.mcp)?.name || 'Hub')} · #${l.id}</div></td><td>${badge(l.status)}<small class="sub operations-id">${esc(l.errorCategory || l.eventKind || 'Chưa phân loại')}${l.classification === 'legacy' ? ' · lịch sử' : ''}</small></td><td class="mono">${l.latencyMeasured ? l.latency + ' ms' : 'N/A'}</td><td>${btn('Chi tiết', 'log:' + l.id, 'small')}</td></tr>`).join('')}</tbody></table></div>`
+    ? `<div class="tablewrap audit-tablewrap"><table class="audit-table"><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Công cụ / Thao tác</th><th>Kết quả</th><th>Xử lý</th><th></th></tr></thead><tbody>${rows.map(l => {
+        const actorName = l.actor === 'owner' ? state.owner : state.agents.find(a => a.id === l.actor)?.name || l.actor;
+        const mcpName = state.mcps.find(m => m.id === l.mcp)?.name || 'Hub';
+        return `<tr class="audit-row"><td class="col-time">${date(l.created)}</td><td class="col-actor">${esc(actorName)}</td><td class="col-tool"><div class="mono">${esc(l.tool)}</div><div class="sub">${esc(mcpName)} · #${l.id}</div></td><td class="col-status">${badge(l.status)}<small class="sub operations-id">${esc(l.errorCategory || l.eventKind || 'Chưa phân loại')}${l.classification === 'legacy' ? ' · lịch sử' : ''}</small></td><td class="col-latency mono">${l.latencyMeasured ? l.latency + ' ms' : 'N/A'}</td><td class="col-action">${btn('Chi tiết', 'log:' + l.id, 'small')}</td></tr>`;
+      }).join('')}</tbody></table></div>`
     : '<div class="empty"><h3>Chưa có nhật ký phù hợp</h3><p>Thay đổi bộ lọc hoặc bắt đầu sử dụng Hub.</p></div>';
 }
 function vaultGrantRows(selected) {
