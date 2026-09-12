@@ -95,11 +95,12 @@ test(
     assert.match(await page.locator('dialog pre.json').innerText(), /"outcome": "error"/);
     await page.locator('dialog [data-action=close]').first().click();
     const downloadPromise = page.waitForEvent('download');
-    await page.locator('[data-action=export]').click();
+    await page.locator('[data-action=export-jsonl]').click();
     const download = await downloadPromise;
     const exported = readFileSync(await download.path(), 'utf8')
       .trim()
       .split('\n')
+      .filter(l => !l.startsWith('#'))
       .map(JSON.parse);
     assert.equal(exported.length, 32);
     await page.goBack();
