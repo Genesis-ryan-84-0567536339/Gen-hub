@@ -1,4 +1,6 @@
-"""Mandatory Gitea storage/bootstrap; no feature flag or optional install branch."""
+"""Gitea storage/bootstrap: mandatory by default for every install, with an
+explicit `gitea-disable` escape hatch (state['gitea_enabled'] = False) for an
+installation whose owner decided not to use it after all."""
 import contextlib
 import copy
 import json
@@ -260,3 +262,34 @@ def enable(state):
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build', '--force-recreate', 'caddy')
         raise
     print('✓ Bootstrap Gitea bắt buộc đã hoàn tất: https://' + state['domain'] + '/gitea/')
+
+
+def disable(state, purge=False):
+    """Reverse the mandatory bootstrap for this installation only: stop Gitea, drop its
+    route, and stop the updater from reintroducing it. Keeps volumes unless purge=True."""
+    from runtime import ROOT, CONF, atomic, caddy_config, backup
+    path = CONF / 'compose.json'
+    save = lambda: atomic(CONF / 'install.json', json.dumps(state, indent=2))
+    config = json.loads(path.read_text())
+    if 'gitea' in config['services']:
+        import time
+        target = ROOT / 'backups' / ('before-gitea-disable-' + str(time.time_ns()) + '.tar.gz')
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        backup(path, target)
+        compose(path, 'stop', 'gitea')
+        compose(path, 'rm', '-f', 'gitea')
+        del config['services']['gitea']
+        if purge:
+            config['volumes'] = {}
+        atomic(path, json.dumps(config, indent=2))
+    state['gitea_enabled'] = False
+    save()
+    atomic(CONF / 'Caddyfile', caddy_config(state), 0o644)
+    compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build', '--force-recreate', 'caddy')
+    if purge:
+        for name in check_volumes(state):
+            run([*DOCKER, 'volume', 'rm', name])
+    print(
+        '✓ Đã tắt Gitea.'
+        + (' Đã xóa dữ liệu Gitea.' if purge else ' Dữ liệu vẫn giữ nguyên; bật lại bằng sudo gen-hub gitea-enable.')
+    )

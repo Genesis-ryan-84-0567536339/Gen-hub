@@ -145,10 +145,11 @@ def repair(state, cloudflare=False):
     from runtime import manifest, caddy_config, verify_local, admin
     check_storage(state)
     from gitea import check_volumes, require_bootstrap
-    check_volumes(state, required=True)
-    if not state.get('gitea_bootstrapped'):
-        from gitea import PENDING
-        raise RuntimeError(PENDING)
+    if state.get('gitea_enabled', True):
+        check_volumes(state, required=True)
+        if not state.get('gitea_bootstrapped'):
+            from gitea import PENDING
+            raise RuntimeError(PENDING)
     release = ROOT / 'releases' / state['revision']
     if not (release / 'Dockerfile').exists():
         raise RuntimeError('Thiếu source của revision đang cài. Chạy lại install.sh để phục hồi source.')
@@ -186,7 +187,8 @@ def repair(state, cloudflare=False):
     prepare_images(path)
     compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--remove-orphans', '--no-build', '--force-recreate')
     verify_local(path, state); public_test(state)
-    require_bootstrap(state, path)
+    if state.get('gitea_enabled', True):
+        require_bootstrap(state, path)
     if admin(path, 'owner-exists').stdout.strip() != 'yes':
         raise RuntimeError('Thiếu owner; hoàn tất TUI cài đặt. Doctor không tự tạo tài khoản.')
     configure_updates(state)

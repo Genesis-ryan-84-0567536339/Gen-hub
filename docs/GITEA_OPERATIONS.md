@@ -1,6 +1,6 @@
 # Gitea storage và lifecycle — Refs #23
 
-Gitea là bước cố định của TUI cài mới, hoàn tất cùng owner sau các health gate. Không có câu hỏi bật/tắt hoặc cờ tính năng. Nếu một bước thất bại, cài đặt chưa hoàn tất; chạy lại TUI để tiếp tục, giữ owner và storage đã tạo. Bootstrap dùng tài khoản nội bộ `genhub-admin`, mật khẩu sinh từ `secret()` trong `server/store.mjs` và truyền qua stdin tới container. Mật khẩu chỉ được ghi một lần trực tiếp ra `/dev/tty`, không vào stdout, state, Compose hoặc log file; lưu ngay và đổi trong lần đăng nhập đầu. TUI cần terminal có controlling TTY.
+Gitea là bước cố định của TUI cài mới, hoàn tất cùng owner sau các health gate. Không có câu hỏi bật/tắt hoặc cờ tính năng ở bước cài — nếu một bước thất bại, cài đặt chưa hoàn tất; chạy lại TUI để tiếp tục, giữ owner và storage đã tạo. Sau khi cài xong, owner có thể tắt hẳn qua `sudo gen-hub gitea-disable` nếu quyết định không dùng — xem mục "Tắt Gitea" bên dưới. Bootstrap dùng tài khoản nội bộ `genhub-admin`, mật khẩu sinh từ `secret()` trong `server/store.mjs` và truyền qua stdin tới container. Mật khẩu chỉ được ghi một lần trực tiếp ra `/dev/tty`, không vào stdout, state, Compose hoặc log file; lưu ngay và đổi trong lần đăng nhập đầu. TUI cần terminal có controlling TTY.
 
 ## Máy đã có owner
 
@@ -12,6 +12,17 @@ sudo gen-hub doctor
 ```
 
 Đây là bước chuyển tiếp bắt buộc, không phải công tắc bật tính năng. Auto-update chuẩn bị container Gitea nhưng không tạo/giao mật khẩu trong journal của systemd. `status` báo còn thiếu bootstrap; `doctor` không báo PASS trước khi admin và health gate thành công. Chạy lại `gitea-enable` chỉ xác minh, không đổi mật khẩu hoặc tạo lại owner. Nếu TUI bị ngắt sau khi admin được ghi nhưng trước khi kịp lưu mật khẩu, dùng CLI `gitea admin user change-password` tại container để khôi phục tài khoản; không xóa database hoặc chạy lại installer với storage trống.
+
+## Tắt Gitea
+
+Installation đã bootstrap nhưng owner quyết định không dùng Gitea có thể tắt hẳn:
+
+```sh
+sudo gen-hub gitea-disable          # giữ dữ liệu, dừng và gỡ container, xóa route /gitea/*
+sudo gen-hub gitea-disable --purge  # đồng thời xóa vĩnh viễn volume dữ liệu Gitea (yêu cầu gõ DELETE GITEA)
+```
+
+Khác với việc chỉ dừng container bằng tay: `gitea-disable` ghi `gitea_enabled: false` vào `install.json`, nên các lần `sudo gen-hub update`/`restart`/`doctor` sau đó **không** tự bootstrap hay khởi động lại Gitea nữa — dừng thủ công một mình sẽ bị auto-update phục hồi trong vòng một giờ. Không xóa dữ liệu mặc định; bật lại bất kỳ lúc nào bằng `sudo gen-hub gitea-enable`, dữ liệu cũ vẫn còn nếu chưa `--purge`.
 
 ## Storage và route
 

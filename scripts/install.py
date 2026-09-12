@@ -225,7 +225,7 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, 
     previous = path.read_text() if path.exists() else None
     if previous:
         guard_transition(json.loads(previous), json.loads(candidate.read_text()))
-    check_volumes(state, required=bool(state.get('gitea_bootstrapped')))
+    check_volumes(state, required=bool(state.get('gitea_bootstrapped')) and state.get('gitea_enabled', True))
     previous_caddy = (CONF / 'Caddyfile').read_text() if (CONF / 'Caddyfile').exists() else None
     old_wrapper = pathlib.Path('/usr/local/bin/gen-hub')
     wrapper_text = old_wrapper.read_text() if old_wrapper.exists() else None
@@ -251,14 +251,17 @@ def activate(state, old, release, candidate, save, legacy, restore_tunnel=None, 
         config = json.loads(candidate.read_text())
         config['services']['caddy']['volumes'][0] = f'{CONF}/Caddyfile:/etc/caddy/Caddyfile:ro,Z'
         atomic(path, json.dumps(config, indent=2))
-        state.update(engine='compose', pending_revision=release.name, gitea_image=config['services']['gitea']['image'])
+        state.update(engine='compose', pending_revision=release.name)
+        if 'gitea' in config['services']:
+            state['gitea_image'] = config['services']['gitea']['image']
         save()
         atomic(old_wrapper, f'#!/usr/bin/env bash\nexec python3 {release}/scripts/manage.py "$@"\n', 0o755)
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--remove-orphans', '--no-build', '--force-recreate')
         checkpoint(state, save, 'Kiểm tra container, SQLite và kết nối nội bộ', lambda: verify_local(path, state))
         checkpoint(state, save, 'Kiểm tra HTTPS qua domain', lambda: public_test(state))
         checkpoint(state, save, 'Tạo hoặc xác minh owner', lambda: ensure_owner(path, unattended))
-        checkpoint(state, save, 'Bootstrap Gitea bắt buộc cùng owner', lambda: bootstrap(path, state, save, unattended))
+        if state.get('gitea_enabled', True):
+            checkpoint(state, save, 'Bootstrap Gitea bắt buộc cùng owner', lambda: bootstrap(path, state, save, unattended))
         # Ensure the owner is visible through the public route, not merely in the CLI process.
         status = json.loads(fetch('https://' + state['domain'] + '/healthz'))
         if not status.get('initialized') or status.get('installationId') != state['installation_id']:
@@ -387,7 +390,7 @@ def main():
             if installed_gitea:
                 state['gitea_image'] = installed_gitea['image']
         from gitea import check_volumes
-        check_volumes(state, required=bool(state.get('gitea_bootstrapped')))
+        check_volumes(state, required=bool(state.get('gitea_bootstrapped')) and state.get('gitea_enabled', True))
         candidate_state = {**state, 'revision': args.revision}
         staging = CONF / 'candidate'
         staging.mkdir(exist_ok=True, mode=0o700)

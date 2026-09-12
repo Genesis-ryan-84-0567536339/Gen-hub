@@ -27,7 +27,10 @@ def main():
         if state.get('last_error'):
             print('Lỗi gần nhất: ' + state['last_error'])
         from gitea import PENDING
-        print('Gitea: https://' + state['domain'] + '/gitea/' if state.get('gitea_bootstrapped') else PENDING)
+        if not state.get('gitea_enabled', True):
+            print('Gitea: đã tắt (bật lại bằng sudo gen-hub gitea-enable)')
+        else:
+            print('Gitea: https://' + state['domain'] + '/gitea/' if state.get('gitea_bootstrapped') else PENDING)
         compose(path, 'ps', '--all'); return
     if command == 'logs':
         compose(path, 'logs', '--tail', '100'); return
@@ -37,11 +40,12 @@ def main():
         check_storage(state); verify_local(path, state); public_test(state)
         if admin(path, 'owner-exists').stdout.strip() != 'yes':
             raise RuntimeError('Thiếu owner; cần hoàn tất TUI.')
-        from gitea import require_bootstrap
-        require_bootstrap(state, path)
-        print('✓ Owner và Gitea sẵn sàng.'); return
-    if command not in ['gitea-enable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
-        print('Lệnh: gitea-enable (bootstrap bắt buộc cho máy cũ) | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
+        if state.get('gitea_enabled', True):
+            from gitea import require_bootstrap
+            require_bootstrap(state, path)
+        print('✓ Owner' + (' và Gitea sẵn sàng.' if state.get('gitea_enabled', True) else ' sẵn sàng (Gitea đã tắt).')); return
+    if command not in ['gitea-enable', 'gitea-disable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
+        print('Lệnh: gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
@@ -51,6 +55,15 @@ def main():
     if command == 'gitea-enable':
         from gitea import enable
         enable(state)
+        return
+    if command == 'gitea-disable':
+        from gitea import disable
+        if not state.get('gitea_enabled', True):
+            print('Gitea đã tắt sẵn.'); return
+        if '--purge' in sys.argv:
+            if input('Sẽ xóa vĩnh viễn dữ liệu Gitea (repo, database, LFS, attachments, config/keys). Nhập DELETE GITEA để xác nhận: ') != 'DELETE GITEA':
+                print('Đã hủy.'); return
+        disable(state, purge='--purge' in sys.argv)
         return
     if command == 'github-token':
         try:
@@ -97,10 +110,14 @@ def main():
         repair(state, cloudflare='--cloudflare' in sys.argv); return
     if command == 'restart':
         from gitea import check_volumes, require_bootstrap
-        check_volumes(state, required=True)
+        if state.get('gitea_enabled', True):
+            check_volumes(state, required=True)
         compose(path, 'restart')
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
-        verify_local(path, state); require_bootstrap(state, path); return
+        verify_local(path, state)
+        if state.get('gitea_enabled', True):
+            require_bootstrap(state, path)
+        return
     if command == 'reset-password':
         password = input('Mật khẩu owner mới (12–256 ký tự): ')
         if password != input('Nhập lại mật khẩu: '):

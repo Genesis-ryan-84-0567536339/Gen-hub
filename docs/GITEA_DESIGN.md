@@ -4,7 +4,7 @@ Trạng thái: quyết định đã chốt theo comment mới nhất #23 ngày 2
 
 ## Quyết định đã chốt
 
-Gitea là thành phần bắt buộc của mọi bản cài Gen-hub. TUI luôn bootstrap Gitea cùng owner, không hỏi bật/tắt, không có cấu hình on/off. Route cố định `/gitea/` qua Caddy dùng hostname Gen-hub hiện tại; git/database và cấu hình/keys nằm trong hai named volume riêng của Gitea. Máy đã có owner nhận bước bootstrap bắt buộc một lần qua `sudo gen-hub gitea-enable`. Đây là luồng chuyển tiếp cho bản cài cũ, không phải lựa chọn sản phẩm.
+Gitea là thành phần bắt buộc của mọi bản cài Gen-hub. TUI luôn bootstrap Gitea cùng owner, không hỏi bật/tắt, không có cấu hình on/off. Route cố định `/gitea/` qua Caddy dùng hostname Gen-hub hiện tại; git/database và cấu hình/keys nằm trong hai named volume riêng của Gitea. Máy đã có owner nhận bước bootstrap bắt buộc một lần qua `sudo gen-hub gitea-enable`. Đây là luồng chuyển tiếp cho bản cài cũ, không phải lựa chọn sản phẩm ở bước cài. Sau khi đã bootstrap, owner vẫn có thể chủ động tắt qua `sudo gen-hub gitea-disable` nếu quyết định không dùng (xem `docs/GITEA_OPERATIONS.md`) — khác với việc TUI không hỏi lựa chọn lúc cài.
 
 PR storage/lifecycle dùng admin Gitea nội bộ với mật khẩu sinh bằng `secret()` của `server/store.mjs`, hiện một lần ở TUI. SSO owner được triển khai trong PR kế tiếp, không tái sử dụng mật khẩu owner, token MCP hoặc isAdmin. Chi tiết hiện thực, backup/restore và giới hạn phiên bản tại [GITEA_OPERATIONS.md](GITEA_OPERATIONS.md).
 
