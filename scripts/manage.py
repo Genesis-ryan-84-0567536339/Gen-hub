@@ -31,6 +31,8 @@ def main():
             print('Gitea: đã tắt (bật lại bằng sudo gen-hub gitea-enable)')
         else:
             print('Gitea: https://' + state['domain'] + '/gitea/' if state.get('gitea_bootstrapped') else PENDING)
+        from ci_runner import status as ci_status
+        ci_status(state)
         compose(path, 'ps', '--all'); return
     if command == 'logs':
         compose(path, 'logs', '--tail', '100'); return
@@ -43,15 +45,26 @@ def main():
         if state.get('gitea_enabled', True):
             from gitea import require_bootstrap
             require_bootstrap(state, path)
+        from ci_runner import status as ci_status
+        ci_status(state, doctor=True)
         print('✓ Owner' + (' và Gitea sẵn sàng.' if state.get('gitea_enabled', True) else ' sẵn sàng (Gitea đã tắt).')); return
-    if command not in ['gitea-enable', 'gitea-disable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
-        print('Lệnh: gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
+    if command not in ['ci-bootstrap', 'deploy-action-register', 'gitea-enable', 'gitea-disable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
+        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
     import fcntl
     lock = open(CONF / 'install.lock', 'w')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    if command == 'ci-bootstrap':
+        from ci_runner import cli
+        cli(state, sys.argv[2:]); return
+    if command == 'deploy-action-register':
+        from deploy_registry import register
+        if len(sys.argv) != 3:
+            raise RuntimeError('Dùng gen-hub deploy-action-register /đường/dẫn/action.json')
+        action = register(sys.argv[2])
+        print('✓ Đã đăng ký action ' + action['actionId'] + ' version ' + action['version']); return
     if command == 'gitea-enable':
         from gitea import enable
         enable(state)
@@ -110,13 +123,15 @@ def main():
         repair(state, cloudflare='--cloudflare' in sys.argv); return
     if command == 'restart':
         from gitea import check_volumes, require_bootstrap
+        from ci_runner import drained
         if state.get('gitea_enabled', True):
             check_volumes(state, required=True)
-        compose(path, 'restart')
-        compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
-        verify_local(path, state)
-        if state.get('gitea_enabled', True):
-            require_bootstrap(state, path)
+        with drained(state):
+            compose(path, 'restart')
+            compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
+            verify_local(path, state)
+            if state.get('gitea_enabled', True):
+                require_bootstrap(state, path)
         return
     if command == 'reset-password':
         password = input('Mật khẩu owner mới (12–256 ký tự): ')
@@ -190,6 +205,8 @@ def main():
             raise RuntimeError('--cloudflare cần đi cùng uninstall --purge.')
         if input('Gỡ container Gen-hub và Gitea, giữ dữ liệu/cấu hình/backup? Nhập UNINSTALL: ') != 'UNINSTALL':
             return
+        from ci_runner import uninstall as ci_uninstall
+        ci_uninstall(state)
         stop_updates()
         compose(path, 'down', '--remove-orphans')  # Never --volumes or system prune.
         state.update(completed=False, step='Đã gỡ container; giữ dữ liệu để cài lại')

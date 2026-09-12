@@ -36,7 +36,8 @@ def service(state, images, common):
             'GITEA__security__INSTALL_LOCK': 'true',
             'GITEA__service__DISABLE_REGISTRATION': 'true',
             'GITEA__service__REQUIRE_SIGNIN_VIEW': 'true',
-            'GITEA__actions__ENABLED': 'false', 'GITEA__packages__ENABLED': 'false',
+            'GITEA__actions__ENABLED': 'true' if state.get('gitea_actions_enabled') else 'false',
+            'GITEA__packages__ENABLED': 'false',
             'GITEA__oauth2_client__ENABLE_AUTO_REGISTRATION': 'true',
             'GITEA__oauth2_client__ACCOUNT_LINKING': 'disabled',
             'GITEA__oauth2_client__USERNAME': 'preferred_username',
@@ -167,6 +168,8 @@ def guard_transition(current, candidate):
     """Gitea schema migrations require a separate, explicit upgrade/restore procedure."""
     old = current['services'].get('gitea')
     new = candidate['services'].get('gitea')
+    if old and new and old.get('environment', {}).get('GITEA__actions__ENABLED') == 'true' and new.get('environment', {}).get('GITEA__actions__ENABLED') != 'true':
+        raise RuntimeError('Không rollback về cấu hình tắt Actions khi CI đã bootstrap. Deregister CI và kiểm tra thủ công trước.')
     if old and (not new or old['image'] != new['image'] or old['volumes'] != new['volumes'] or
                 current.get('volumes') != candidate.get('volumes')):
         raise RuntimeError('Không tự đổi image/storage hoặc hạ schema Gitea. Giữ phiên bản hiện tại; khôi phục backup cần quy trình riêng.')
