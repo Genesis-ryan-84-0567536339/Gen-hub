@@ -1,12 +1,328 @@
 name: "PR Governance Check"
 
+# Bản sao độc lập của .github/workflows/pr-governance-check.yml trong repo
+# Brain — không gọi lại được (GitHub không cho repo public gọi reusable
+# workflow từ repo private khác dưới tài khoản cá nhân, đã kiểm chứng thật).
+# Sửa quy tắc thì phải sửa cả 2 nơi.
+
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
-  governance:
-    uses: Genesis-ryan-84-0567536339/Brain/.github/workflows/pr-governance-check.yml@main
-    with:
-      runs-on: ubuntu-latest
-    secrets: inherit
+  check-process:
+    name: "Check lưu trình (Process)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout mã nguồn"
+        uses: actions/checkout@v4
+
+      - name: "Kiểm tra lưu trình (Refs issue & comment [BÀN GIAO])"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - << 'PYEOF'
+          import os, sys, re, json, subprocess
+
+          pr_number = os.environ.get("PR_NUMBER")
+          repo = os.environ.get("REPO")
+
+          if not pr_number:
+              print("Không tìm thấy PR_NUMBER, bỏ qua bước kiểm tra.")
+              sys.exit(0)
+
+          def run_cmd(args):
+              return subprocess.run(args, capture_output=True, text=True)
+
+          res = run_cmd(["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", "body,comments"])
+          if res.returncode != 0:
+              print(f"Lỗi khi lấy thông tin PR: {res.stderr}", file=sys.stderr)
+              sys.exit(1)
+
+          data = json.loads(res.stdout)
+          body = data.get("body") or ""
+          comments = data.get("comments") or []
+
+          errors = []
+
+          matches = re.findall(r"Refs\s+#([0-9]+)", body)
+          if not matches:
+              errors.append("PR body thiếu tham chiếu Issue hợp lệ theo cú pháp `Refs #<số_issue>` (ví dụ: `Refs #12`).")
+          else:
+              for issue_num in set(matches):
+                  ires = run_cmd(["gh", "issue", "view", issue_num, "--repo", repo, "--json", "number"])
+                  if ires.returncode != 0:
+                      errors.append(f"Issue `#{issue_num}` được tham chiếu trong PR body không tồn tại trên repository `{repo}`.")
+
+          has_handoff = any("[BÀN GIAO]" in (c.get("body") or "") for c in comments)
+          if not has_handoff:
+              errors.append("PR phải có ít nhất 1 comment chứa chuỗi `[BÀN GIAO]` để xác nhận bàn giao công việc.")
+
+          if errors:
+              items = "\n".join(f"- {err}" for err in errors)
+              comment_body = (
+                  f"🔍 Kỷ luật viên: Phát hiện vi phạm lưu trình PR:\n\n"
+                  f"{items}\n\n"
+                  f"> *Vui lòng bổ sung đầy đủ trước khi tiếp tục.*"
+              )
+              print("VIOLATIONS DETECTED:\n" + comment_body)
+
+              already_posted = any(
+                  "🔍 Kỷ luật viên: Phát hiện vi phạm lưu trình PR:" in (c.get("body") or "") and
+                  all(err in (c.get("body") or "") for err in errors)
+                  for c in comments
+              )
+              if not already_posted:
+                  c_res = run_cmd(["gh", "pr", "comment", str(pr_number), "--repo", repo, "--body", comment_body])
+                  if c_res.returncode != 0:
+                      print(f"Lỗi khi gửi comment: {c_res.stderr}", file=sys.stderr)
+              else:
+                  print("Đã có comment kỷ luật viên tương tự trước đó. Bỏ qua gửi trùng.")
+
+              sys.exit(1)
+
+          print("✓ Check lưu trình thành công: PR body có Refs issue hợp lệ và đã có comment [BÀN GIAO].")
+          PYEOF
+
+  check-ssot:
+    name: "Check trùng SSOT (Uniqueness)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout mã nguồn"
+        uses: actions/checkout@v4
+
+      - name: "Kiểm tra trùng lặp trường 'ten' trong SSOT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - << 'PYEOF'
+          import os, sys, glob, json, subprocess
+
+          try:
+              import yaml
+          except ImportError:
+              subprocess.run([sys.executable, "-m", "pip", "install", "pyyaml"], check=True)
+              import yaml
+
+          pr_number = os.environ.get("PR_NUMBER")
+          repo = os.environ.get("REPO")
+
+          if not pr_number:
+              print("Không tìm thấy PR_NUMBER, bỏ qua bước kiểm tra.")
+              sys.exit(0)
+
+          def run_cmd(args):
+              return subprocess.run(args, capture_output=True, text=True)
+
+          res = run_cmd(["gh", "api", f"repos/{repo}/pulls/{pr_number}/files", "--paginate"])
+          if res.returncode != 0:
+              print(f"Lỗi khi lấy danh sách files của PR: {res.stderr}", file=sys.stderr)
+              sys.exit(1)
+
+          files_data = json.loads(res.stdout)
+
+          added_ssot_files = []
+          for f in files_data:
+              fn = f.get("filename", "")
+              st = f.get("status", "")
+              if st == "added" and (fn.endswith("SKILL.md") or fn == "index.yaml" or fn.endswith("/index.yaml")):
+                  added_ssot_files.append(fn)
+
+          print(f"Các file SSOT mới được thêm trong PR: {added_ssot_files}")
+          if not added_ssot_files:
+              print("✓ PR không thêm file SKILL.md hoặc index.yaml mới nào. Pass check trùng SSOT.")
+              sys.exit(0)
+
+          def extract_ten(filepath):
+              names = set()
+              if not os.path.exists(filepath):
+                  return names
+              try:
+                  with open(filepath, "r", encoding="utf-8") as fp:
+                      content = fp.read()
+                  stripped = content.lstrip()
+                  if stripped.startswith("---"):
+                      parts = stripped.split("---", 2)
+                      if len(parts) >= 3:
+                          d = yaml.safe_load(parts[1])
+                          if isinstance(d, dict) and d.get("ten"):
+                              names.add(str(d["ten"]).strip())
+                  elif filepath.endswith(".yaml") or filepath.endswith(".yml"):
+                      d = yaml.safe_load(content)
+                      if isinstance(d, dict):
+                          if d.get("ten"):
+                              names.add(str(d["ten"]).strip())
+                          for key in ("categories", "leaves"):
+                              if key in d and isinstance(d[key], list):
+                                  for item in d[key]:
+                                      if isinstance(item, dict) and item.get("ten"):
+                                          names.add(str(item["ten"]).strip())
+              except Exception as e:
+                  print(f"Cảnh báo khi đọc {filepath}: {e}", file=sys.stderr)
+              return names
+
+          all_ssot_files = set(glob.glob("**/SKILL.md", recursive=True) + glob.glob("**/index.yaml", recursive=True))
+          for extra in ("SKILL.md", "index.yaml"):
+              if os.path.exists(extra):
+                  all_ssot_files.add(extra)
+          existing_files = [f for f in all_ssot_files if f not in added_ssot_files]
+
+          existing_ten_map = {}
+          for ef in existing_files:
+              for name in extract_ten(ef):
+                  existing_ten_map.setdefault(name, []).append(ef)
+
+          conflicts = []
+          for af in added_ssot_files:
+              new_names = extract_ten(af)
+              for name in new_names:
+                  if name in existing_ten_map:
+                      conflicts.append((af, name, existing_ten_map[name]))
+
+          if conflicts:
+              items = "\n".join(f"- File mới `{af}` khai báo `ten: '{name}'` bị trùng với file đã có từ trước: `{', '.join(exs)}`" for af, name, exs in conflicts)
+              comment_body = (
+                  f"🔍 Kỷ luật viên: Phát hiện vi phạm trùng lặp SSOT:\n\n"
+                  f"{items}\n\n"
+                  f"> *Nguyên tắc SSOT: mỗi tài liệu chuẩn phải có định danh `ten` duy nhất. Vui lòng đặt tên phân biệt hoặc cập nhật file có sẵn thay vì tạo mới trùng tên.*"
+              )
+              print("SSOT CONFLICTS DETECTED:\n" + comment_body)
+
+              pres = run_cmd(["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", "comments"])
+              comments = json.loads(pres.stdout).get("comments", []) if pres.returncode == 0 else []
+              already_posted = any("🔍 Kỷ luật viên: Phát hiện vi phạm trùng lặp SSOT:" in (c.get("body") or "") for c in comments)
+              if not already_posted:
+                  run_cmd(["gh", "pr", "comment", str(pr_number), "--repo", repo, "--body", comment_body])
+              sys.exit(1)
+
+          print("✓ Check trùng SSOT thành công: không có trường 'ten' mới nào bị trùng lặp.")
+          PYEOF
+
+  check-rules:
+    name: "Check nội quy (Tiếng Việt)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Checkout mã nguồn"
+        uses: actions/checkout@v4
+
+      - name: "Kiểm tra tỉ lệ ký tự có dấu tiếng Việt trong skills/, rules/, Project/, docs/"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          python3 - << 'PYEOF'
+          import os, sys, json, subprocess
+
+          pr_number = os.environ.get("PR_NUMBER")
+          repo = os.environ.get("REPO")
+
+          if not pr_number:
+              print("Không tìm thấy PR_NUMBER, bỏ qua bước kiểm tra.")
+              sys.exit(0)
+
+          def run_cmd(args):
+              return subprocess.run(args, capture_output=True, text=True)
+
+          res = run_cmd(["gh", "api", f"repos/{repo}/pulls/{pr_number}/files", "--paginate"])
+          if res.returncode != 0:
+              print(f"Lỗi khi lấy danh sách files của PR: {res.stderr}", file=sys.stderr)
+              sys.exit(1)
+
+          files_data = json.loads(res.stdout)
+
+          target_dirs = ("skills/", "rules/", "Project/", "docs/")
+          md_files_to_check = []
+
+          for f in files_data:
+              fn = f.get("filename", "")
+              st = f.get("status", "")
+              if st in ("added", "modified", "changed", "renamed") and fn.endswith(".md"):
+                  if any(fn.startswith(prefix) for prefix in target_dirs):
+                      if os.path.isfile(fn):
+                          md_files_to_check.append(fn)
+
+          print(f"Các file .md cần kiểm tra nội quy tiếng Việt: {md_files_to_check}")
+          if not md_files_to_check:
+              print("✓ PR không thêm/sửa file .md nào trong phạm vi kiểm tra. Pass.")
+              sys.exit(0)
+
+          VN_DIACRITICS = set("àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ"
+                              "ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ")
+
+          THRESHOLD = 0.02
+          violations = []
+
+          for fn in md_files_to_check:
+              with open(fn, "r", encoding="utf-8", errors="replace") as fp:
+                  content = fp.read()
+
+              letters = [c for c in content if ("a" <= c.lower() <= "z") or c in VN_DIACRITICS]
+              total_letters = len(letters)
+
+              if total_letters > 200:
+                  vn_letters = [c for c in letters if c in VN_DIACRITICS]
+                  ratio = len(vn_letters) / total_letters if total_letters else 0.0
+                  if ratio < THRESHOLD:
+                      violations.append((fn, total_letters, len(vn_letters), ratio))
+
+          if violations:
+              items = "\n".join(
+                  f"- File `{fn}`: độ dài {total} chữ cái, chỉ có {vn_count} ký tự có dấu ({ratio*100:.2f}%), thấp hơn ngưỡng quy định 2.00%."
+                  for fn, total, vn_count, ratio in violations
+              )
+              comment_body = (
+                  f"🔍 Kỷ luật viên: Phát hiện vi phạm nội quy ngôn ngữ (Tiếng Việt):\n\n"
+                  f"{items}\n\n"
+                  f"> *Tài liệu trong `skills/`, `rules/`, `Project/`, `docs/` phải soạn bằng tiếng Việt chuẩn có dấu đầy đủ.*"
+              )
+              print("VIOLATIONS DETECTED:\n" + comment_body)
+
+              pres = run_cmd(["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", "comments"])
+              comments = json.loads(pres.stdout).get("comments", []) if pres.returncode == 0 else []
+              already_posted = any("🔍 Kỷ luật viên: Phát hiện vi phạm nội quy ngôn ngữ" in (c.get("body") or "") for c in comments)
+              if not already_posted:
+                  run_cmd(["gh", "pr", "comment", str(pr_number), "--repo", repo, "--body", comment_body])
+              sys.exit(1)
+
+          print("✓ Check nội quy thành công.")
+          PYEOF
+
+  confirmation-required:
+    name: "confirmation-required"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Kiểm tra nhãn 'Đã xác nhận' (Gate bắt buộc trước khi merge)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo "Không tìm thấy PR_NUMBER, bỏ qua gate."
+            exit 0
+          fi
+
+          echo "Kiểm tra nhãn 'Đã xác nhận' trên PR #$PR_NUMBER (repo: $REPO)..."
+          LABELS_JSON=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels -q '.labels[].name')
+
+          if echo "$LABELS_JSON" | grep -Fxq "Đã xác nhận"; then
+            echo "✓ PR #$PR_NUMBER đã có nhãn 'Đã xác nhận'. Pass confirmation gate."
+            exit 0
+          else
+            echo "❌ PR #$PR_NUMBER chưa có nhãn 'Đã xác nhận'."
+            echo "Đây là cổng kiểm soát bắt buộc cuối cùng trước khi merge."
+            echo "Vui lòng kiểm tra bằng chứng nghiệm thu và gắn nhãn 'Đã xác nhận' lên PR để pass gate này."
+            exit 1
+          fi
