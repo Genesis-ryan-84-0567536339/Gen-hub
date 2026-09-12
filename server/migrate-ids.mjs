@@ -170,12 +170,18 @@ export function migrateIds(store) {
       }
     }
 
-    // 8. OAuth State: update mid references if connector was migrated
+    // 8. OAuth State: update mcp references for in-flight/pending OAuth flows if connector was migrated
     const states = store.list('oauthstate');
     for (const s of states) {
-      if (s.id && mappings.mcp[s.id]) {
-        s.id = mappings.mcp[s.id];
-        store.put('oauthstate', s.state || s.id, s);
+      let changed = false;
+      const targetMcp = s.mcp || s.mid;
+      if (targetMcp && mappings.mcp[targetMcp]) {
+        s.mcp = mappings.mcp[targetMcp];
+        if (s.mid) s.mid = mappings.mcp[targetMcp];
+        changed = true;
+      }
+      if (changed) {
+        store.put('oauthstate', s.id, s);
       }
     }
 
