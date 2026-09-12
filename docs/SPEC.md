@@ -45,7 +45,7 @@ Chốt với Ryan ngày 2026-09-08. Đích: Hub tự sở hữu; repo Gen-hub l�
 - Remote OAuth tự khám phá cho MCP bên thứ ba chưa có; dùng bearer token. OAuth tích hợp cho Google Drive/GitHub/Slack và OAuth phía agent đã có.
 - Không proxy sampling/elicitation server-to-client; chưa hỗ trợ giao thức 2026-07-28.
 - Các bộ công cụ tích hợp là tập tool được định nghĩa trong catalog, không phải toàn bộ API nhà cung cấp.
-- Dashboard tính trên 200 log gần nhất; export tối đa 5.000 bản ghi. Dữ liệu lưu theo retention 7/30/90 ngày.
+- Bản đầu: Dashboard tính trên 200 log gần nhất; export tối đa 5.000 bản ghi JSONL. Từ Gói B (PR #67) và Gói O8 (PR #70), hệ thống hỗ trợ phân trang con trỏ (cursor) server-side đầy đủ, lazy-load payload và export JSONL/CSV kèm manifest đối chiếu lên tới 50.000 bản ghi. Dữ liệu lưu theo retention 7/30/90 ngày.
 
 ## Chi tiết theo tab và thống kê audit (#27)
 
