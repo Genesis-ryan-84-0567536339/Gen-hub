@@ -1,8 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { fixture } from './helpers.mjs';
 import { authService } from '../server/auth.mjs';
 import { dispatchLlmCall, calculateCost, MODEL_PRICING } from '../server/llm.mjs';
+
+test('O10 Telemetry: requestId extraction survives the real production transport (not mocked fetch)', async t => {
+  // All other tests here mock globalThis.fetch with a native Response, whose
+  // .headers is a real Headers object with .get(). The real deployed path goes
+  // through net.mjs's request() instead, whose res.headers is Node's raw
+  // http.IncomingMessage.headers (a plain lowercase-keyed object, no .get()).
+  // This exercises that real path end-to-end against a live HTTP server.
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', c => (body += c));
+    req.on('end', () => {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('x-request-id', 'req-real-transport-001');
+      res.end(
+        JSON.stringify({
+          id: 'chatcmpl-real-1',
+          choices: [{ message: { role: 'assistant', content: 'ok' } }]
+        })
+      );
+    });
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const res = await dispatchLlmCall({
+    provider: 'ollama', // allows plain HTTP + loopback, exercising the same code path as openai
+    model: 'test-model',
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    systemPrompt: 'sys',
+    messages: [{ role: 'user', content: 'hi' }]
+  });
+
+  assert.equal(res.content, 'ok');
+  assert.equal(res.requestId, 'req-real-transport-001');
+});
 
 test('O10 Telemetry: LLM usage, request ID, and pricing vs unmeasured mock', async t => {
   const originalFetch = globalThis.fetch;
