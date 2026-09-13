@@ -88,6 +88,8 @@ test('Approved Monitor layout, inline tool details and bulk grants across viewpo
   await page.check('#bulk-grants [name=permissions][value="mcp-one:unused"]');
   const beforeOne = [...s.get('agent', 'agent-one').permissions];
   const beforeTwo = [...s.get('agent', 'agent-two').permissions];
+  await page.locator('#modal .modalbody').evaluate(el => el.scrollTo(0, 0));
+  await screenshot('bulk-grants-selection');
   await page.click('#bulk-grants [type=submit]');
   await page.waitForSelector('.bulk-preview');
   assert.deepEqual(s.get('agent', 'agent-one').permissions, beforeOne);

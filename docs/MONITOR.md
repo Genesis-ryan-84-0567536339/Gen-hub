@@ -85,4 +85,8 @@ Bài kiểm tra cuối dựng cùng một installation thử nghiệm và chạy
 
 CI tạo artifact **monitor-design-screenshots**. Ảnh `approved-*` lấy nguyên mẫu đã chốt; `monitor-*` và `bulk-grants-*` lấy app chạy thật với dữ liệu kiểm thử tổng hợp. Tên ảnh chỉ trạng thái/viewport, không phải bằng chứng của production. Đọc commit/run/artifact cụ thể ở bàn giao PR #96; không dùng ảnh từ commit cũ để xác nhận commit mới.
 
-Lần chạy trên `0195d48`: backend 202/202, Python 78/78, Docker Ubuntu 22.04/24.04 PASS; UI 14/16 do hai bài kiểm tra chọn sai selector/fixture sau đổi thiết kế. Các selector đã sửa trong `e9b06bc`; xem kết quả lần chạy mới tại PR. Kiểm tra nâng cấp và quay lại nền production `9959e10` đã chạy lại thành công sau bổ sung cấp quyền. Không coi kết quả này là nghiệm thu trên máy Ryan.
+Mốc tích hợp `1f8b4c759b18b1b84b6788e099005daedc26dfb2` đã ghép main `c8125fa`, giữ chức năng tạo Brain và Skills mới. [CI 34749039188](https://github.com/Genesis-ryan-84-0567536339/Gen-hub/actions/runs/34749039188) PASS: backend 206/206, UI 17/17 (gồm Skills và cấp quyền hàng loạt), Python 78/78, Docker Ubuntu 22.04/24.04. Lần kiểm tra và bộ ảnh cuối cùng sau tinh chỉnh cuộn đến kết quả xem trước được dẫn ở bàn giao mới nhất PR #96.
+
+Các ảnh đã được mở để đối chiếu bố cục desktop/mobile, trạng thái chọn, chat, bảng tồn kho/chi tiết và kết quả cấp quyền. Giữ menu và khung quản lý hiện tại; không thay shell bằng shell minh họa. Mẫu và fixture có số lượng/nội dung khác nhau nên không so pixel số liệu. Ảnh xem trước ban đầu cho thấy kết quả nằm thấp trong cửa sổ; form đã được chỉnh tự cuộn tới nút xác nhận sau khi có kết quả.
+
+Kiểm tra nâng cấp và quay lại nền production `9959e10` chạy lại thành công sau khi ghép main mới; giữ DB/key/session/token/credential/Vault/pending OAuth/Bootstrap. Không coi kết quả trên dữ liệu thử nghiệm là nghiệm thu trên máy Ryan. Claude vẫn cần review độc lập cả kỹ thuật và độ khớp mẫu; Ryan chưa xác nhận phát hành.

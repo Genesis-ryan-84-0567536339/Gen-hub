@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { fixture } from './helpers.mjs';
 import { seedMonitor } from './monitor-fixture.mjs';
@@ -30,6 +32,11 @@ test('Integrated Monitor: real request → audit → permissions, inventory and 
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.setDefaultTimeout(10000);
+  const capture = async name => {
+    if (!process.env.UI_SCREENSHOT_DIR) return;
+    mkdirSync(process.env.UI_SCREENSHOT_DIR, { recursive: true });
+    await page.locator('#monitor-detail').screenshot({ path: join(process.env.UI_SCREENSHOT_DIR, name + '.png'), animations: 'disabled' });
+  };
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(x.origin);
@@ -54,13 +61,16 @@ test('Integrated Monitor: real request → audit → permissions, inventory and 
   await page.locator('[data-action^="monitor-operation:"]').click();
   await page.waitForSelector('#monitor-detail .monitor-timeline .current');
   assert.match(await page.locator('#monitor-detail').innerText(), /Đang xử lý/);
+  await capture('monitor-request-running');
   release();
   await pending;
   await page.waitForFunction(() =>
     document.querySelector('#monitor-detail')?.textContent.includes('Thành công')
   );
+  await capture('monitor-request-complete');
   await page.click('[data-action="monitor-detail-tab:output"]');
   assert.match(await page.locator('#monitor-detail pre').innerText(), /Kết quả kiểm tra Monitor/);
+  await capture('monitor-request-output');
   await page.click(`[data-action="monitor-manage:agents:${worker.id}:grants"]`);
   await page.waitForSelector('#grants');
   assert.equal(await page.locator('#grants input[value="mcp-one:echo"]').isChecked(), true);

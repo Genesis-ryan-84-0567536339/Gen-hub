@@ -2680,7 +2680,9 @@ document.addEventListener('submit', async e => {
       if (version !== modalVersion || !modal.open || signature !== JSON.stringify({ agentIds: current.getAll('agentIds'), permissions: current.getAll('permissions') })) return;
       bulkPreview = { ...draft, previewToken: result.previewToken };
       document.getElementById('bulk-preview').innerHTML = `<div class="bulk-preview"><h3>3. Xem trước: thêm ${result.addedCount} quyền</h3><p class="footnote">${result.agentCount} agent × ${result.toolCount} công cụ đã chọn. Quyền trùng được bỏ qua; quyền cũ được giữ nguyên.</p>${result.agents.map(a => `<div class="listrow"><span>${esc(a.name)}<small> · ${esc(a.id)}</small></span><span>Thêm ${a.added.length} · Đã có ${a.alreadyGranted} · Tổng sau cấp ${a.total}</span></div>${a.added.length ? `<p class="footnote">Thêm: ${a.added.map(esc).join(', ')}</p>` : ''}`).join('')}</div>`;
-      document.querySelector('[data-action="bulk-apply"]').disabled = result.addedCount === 0;
+      const apply = document.querySelector('[data-action="bulk-apply"]');
+      apply.disabled = result.addedCount === 0;
+      apply.scrollIntoView({ block: 'end' });
       return;
     }
     if (f.id === 'pin-setup') {
