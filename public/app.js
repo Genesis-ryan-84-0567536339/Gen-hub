@@ -1,5 +1,15 @@
+import { renderMonitor, monitorTimeline, layoutMonitorMap } from './monitor.js';
 import { kanbanPage, kanbanCards } from './kanban.js';
-import { auditStats, isToolCall, pieArc, CHART_PALETTE, chartColor, chartCssBackground, chartSvgPatternDefs, chartFill } from './audit-stats.js';
+import {
+  auditStats,
+  isToolCall,
+  pieArc,
+  CHART_PALETTE,
+  chartColor,
+  chartCssBackground,
+  chartSvgPatternDefs,
+  chartFill
+} from './audit-stats.js';
 import { connectionGuide } from './connection-guides.js';
 import { getNotifications, timeAgo } from './notifications.js';
 import { normalizeSettings } from './settings.js';
@@ -78,8 +88,6 @@ let auditExact = {};
 const logDetailCache = new Map();
 let notifOpen = false,
   notifSnapshotTime = 0;
-// Tool inventory state: null = not yet fetched, 'error' = fetch failed, array = loaded data.
-let toolInventoryData = null;
 const notifStorageKey = () => 'genhub_notifs_read_' + (state?.owner || 'owner');
 const getNotifLastRead = () => {
   try {
@@ -284,18 +292,43 @@ setInterval(() => {
   )
     loadKanban();
 }, 120000);
-let toolInventoryGeneration = 0;
-async function loadToolInventory() {
-  const generation = ++toolInventoryGeneration;
+const monitorView = { tab: 'overview', actor: '', mcp: '', toolFilter: 'all', period: '12' };
+let monitorData = null,
+  monitorGeneration = 0,
+  monitorBusy = false;
+let monitorDetail = null,
+  monitorDetailTab = 'summary',
+  monitorDetailGeneration = 0;
+function renderMonitorBody(background = false) {
+  const el = document.getElementById('monitor-body');
+  if (!el || route !== 'overview') return;
+  const focused = document.activeElement;
+  if (background && focused?.matches('#monitor-period,#monitor-tool-filter')) return;
+  const expanded = !!el.querySelector('.monitor-relations[open]');
+  const action = focused?.closest('#monitor-body') ? focused.dataset.action : null;
+  el.innerHTML = renderMonitor(monitorData, monitorView, { badge, endpoint: monitorEndpoint() });
+  layoutMonitorMap(monitorData, monitorView);
+  if (expanded) el.querySelector('.monitor-relations')?.setAttribute('open', '');
+  if (action)
+    [...el.querySelectorAll('[data-action]')]
+      .find(b => b.dataset.action === action)
+      ?.focus({ preventScroll: true });
+}
+async function loadMonitor(background = false) {
+  const generation = ++monitorGeneration;
+  monitorBusy = true;
   try {
-    const data = await api('tool-inventory');
-    if (generation !== toolInventoryGeneration || !state || route !== 'overview') return;
-    toolInventoryData = data.inventory;
-    render();
-  } catch (e) {
-    if (generation !== toolInventoryGeneration || !state || route !== 'overview') return;
-    toolInventoryData = 'error';
-    render();
+    const data = await api('monitor?' + monitorQuery({ period: monitorView.period }));
+    if (generation !== monitorGeneration || !state) return;
+    monitorData = data;
+  } catch (error) {
+    if (generation !== monitorGeneration || !state) return;
+    monitorData = { ...monitorData, error: error.message };
+  } finally {
+    if (generation === monitorGeneration) {
+      monitorBusy = false;
+      renderMonitorBody(background);
+    }
   }
 }
 let bootstrapState = null;
@@ -391,6 +424,112 @@ async function saveBootstrap() {
   toast('Đã lưu thay đổi hướng dẫn Bootstrap');
   render();
 }
+setInterval(() => {
+  if (
+    state &&
+    route === 'overview' &&
+    !document.hidden &&
+    !monitorBusy &&
+    !document.activeElement?.matches('#monitor-period,#monitor-tool-filter')
+  )
+    loadMonitor(true);
+}, 15000);
+let monitorActiveBusy = false;
+setInterval(async () => {
+  if (
+    !state ||
+    document.hidden ||
+    monitorActiveBusy ||
+    !(route === 'overview' || (route === 'audit' && monitorDetail?.state === 'running'))
+  )
+    return;
+  monitorActiveBusy = true;
+  try {
+    if (route === 'audit') await loadMonitorDetail();
+    else if (monitorData?.totals) {
+      const { active } = await api('monitor/active');
+      if (!state || !monitorData?.totals) return;
+      monitorData.active = active;
+      monitorData.totals.running = active.filter(o => o.state === 'running').length;
+      renderMonitorBody(true);
+    }
+  } catch {
+    /* The full refresh reports fetch failures with its timestamp. */
+  } finally {
+    monitorActiveBusy = false;
+  }
+}, 3000);
+function monitorQuery(extra = {}) {
+  return new URLSearchParams({
+    ...(monitorView.actor ? { actor: monitorView.actor } : {}),
+    ...(monitorView.mcp ? { mcp: monitorView.mcp } : {}),
+    ...extra
+  });
+}
+async function loadMonitorDetail() {
+  const search = new URLSearchParams(location.hash.split('?')[1] || '');
+  const id = search.get('detail'),
+    operation = search.get('operation');
+  if (!id && !operation) {
+    monitorDetail = null;
+    return;
+  }
+  const generation = ++monitorDetailGeneration;
+  try {
+    let detail;
+    if (id) detail = await api('logs/' + encodeURIComponent(id));
+    else {
+      const { active } = await api('monitor/active');
+      detail = active.find(o => o.id === operation);
+      if (!detail) {
+        const found = await api('logs?operationId=' + encodeURIComponent(operation) + '&limit=1');
+        if (found.length) detail = await api('logs/' + found[0].id);
+        else
+          detail = {
+            error:
+              'Không còn yêu cầu đang chạy và chưa tìm được nhật ký kết quả. Không tự động thử lại.'
+          };
+      }
+    }
+    if (route !== 'audit' || generation !== monitorDetailGeneration || !state) return;
+    monitorDetail = detail;
+  } catch (error) {
+    if (generation !== monitorDetailGeneration || !state) return;
+    monitorDetail = { error: error.message };
+  }
+  const el = document.getElementById('monitor-detail');
+  if (el) el.innerHTML = monitorAuditPanel();
+}
+function monitorAuditPanel() {
+  const l = monitorDetail;
+  if (!l) return '';
+  if (l.error)
+    return `<section class="card cardpad monitor-detail"><p class="errorline">${esc(l.error)}</p>${btn('Quay lại Tổng quan', 'go:overview', 'small')}</section>`;
+  const live = !!l.state;
+  let content = '';
+  if (monitorDetailTab === 'input' || monitorDetailTab === 'output')
+    content = live
+      ? '<p class="footnote">Nội dung sẽ có trong nhật ký sau khi yêu cầu kết thúc. Monitor đang chạy chỉ giữ thông tin trạng thái.</p>'
+      : `<pre class="json">${esc(JSON.stringify(l[monitorDetailTab], null, 2) ?? 'Không có dữ liệu')}</pre>`;
+  else if (monitorDetailTab === 'rights')
+    content = `<p>Quyết định tại thời điểm gọi: <b>${l.policyDecision === 'allow' ? 'Cho phép' : l.policyDecision === 'deny' ? 'Từ chối' : 'Chưa ghi nhận'}</b></p><p>${esc(l.reason || '')}</p>`;
+  else
+    content = `<p>${live ? (l.state === 'running' ? 'Yêu cầu đang được Hub xử lý.' : 'Chưa xác nhận kết quả cuối cùng.') : esc(l.reason || 'Đã ghi nhận kết quả.')}</p>`;
+  return `<section class="card monitor-detail"><div class="cardhead"><div><h2>${esc(l.tool)}</h2><p class="sub">${esc(state.agents.find(a => a.id === l.actor)?.name || l.actor)} → ${esc(state.mcps.find(m => m.id === l.mcp)?.name || l.mcp)} · ${esc(l.operationId || l.id)}</p></div>${live ? badge(l.state === 'running' ? 'Đang xử lý' : 'Chưa rõ kết quả') : badge(l.status)}</div><div class="cardpad">${monitorTimeline(l)}<div class="tabs">${[
+    ['summary', 'Tóm tắt'],
+    ['input', 'Đầu vào'],
+    ['output', 'Đầu ra'],
+    ['rights', 'Quyền sử dụng']
+  ]
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="tab ${monitorDetailTab === id ? 'active' : ''}" data-action="monitor-detail-tab:${id}">${label}</button>`
+    )
+    .join(
+      ''
+    )}</div>${content}<div class="actions">${state.agents.some(a => a.id === l.actor) ? btn('Quyền của agent', 'monitor-manage:agents:' + l.actor + ':grants', 'small') : ''}${state.mcps.some(m => m.id === l.mcp) ? btn('Mở kết nối', 'monitor-manage:mcps:' + l.mcp, 'small') : ''}${btn('Hỏi trợ lý', 'monitor-ask', 'small')}${btn('Quay lại Tổng quan', 'go:overview', 'small')}</div></div></section>`;
+}
+
 async function createBrainRepo() {
   const name = ($('#brain-repo-name')?.value || 'Brain').trim();
   const org = ($('#brain-repo-org')?.value || '').trim();
@@ -410,12 +549,12 @@ async function refresh() {
   if (state?.bootstrap) bootstrapState = JSON.parse(JSON.stringify(state.bootstrap));
   if (route === 'kanban') await loadKanban();
   if (route === 'overview') {
-    toolInventoryData = null; // reset so card shows "loading" while fetching
-    loadToolInventory();      // fire-and-forget; re-renders when done
+    loadMonitor();
   }
   if (route === 'audit') {
     parseAuditHash();
     await fetchAuditLogs();
+    await loadMonitorDetail();
   }
   if (route === 'skills' && !skillsData && !skillsLoading && state.settings.brainRepo) loadSkills();
   activity = new Map();
@@ -490,7 +629,13 @@ function executeClientTool(name, args = {}) {
     } else if (sub && (base === 'mcps' || base === 'agents' || base === 'vault')) {
       selected[base] = sub;
     }
-    location.hash = routeTarget;
+    if (base === 'audit' && sub && /^\d+$/.test(sub)) {
+      location.hash = 'audit?' + new URLSearchParams({ q: sub, detail: sub });
+    } else {
+      if (base === 'overview' && ['flows', 'tools'].includes(sub)) monitorView.tab = sub;
+      if (location.hash === '#' + base) render();
+      else location.hash = base;
+    }
   } else if (name === 'open_modal') {
     const kind = String(args.kind || '').trim();
     const id = args.id ? String(args.id).trim() : undefined;
@@ -672,7 +817,17 @@ async function sendChatMessage(text) {
   try {
     const res = await api('chat', 'POST', {
       messages: chatMessages.slice(-15),
-      currentRoute: route
+      currentRoute: route,
+      monitorContext: {
+        period: monitorView.period,
+        actor: monitorView.actor,
+        mcp: monitorView.mcp,
+        ...(route === 'audit' && monitorDetail
+          ? monitorDetail.state
+            ? { operationId: monitorDetail.id }
+            : { logId: monitorDetail.id }
+          : {})
+      }
     });
 
     if (res.message) {
@@ -741,129 +896,21 @@ function render() {
       )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'skills' ? skillsPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
+  layoutMonitorMap(monitorData, monitorView);
 }
-function smallPie(title, entries, unit) {
-  const total = entries.reduce((s, [, v]) => s + v, 0);
-  if (!total)
-    return `<div class="pie-mini"><h4>${esc(title)}</h4><p class="footnote">Chưa có dữ liệu.</p></div>`;
-  const pieId =
-    'pie-' +
-    Math.abs(title.split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0)).toString(36);
-  const defs = chartSvgPatternDefs(pieId, entries.length);
-  let frac = 0;
-  const slices = entries
-    .map(([label, value], i) => {
-      const f = value / total,
-        d = pieArc(100, 100, 80, 48, frac, frac + f),
-        pct = (f * 100).toFixed(1);
-      frac += f;
-      return `<path class="pie-slice" d="${d}" fill="${chartFill(pieId, i)}" stroke="#fff" stroke-width="2"><title>${esc(label + ': ' + value.toLocaleString('vi-VN') + ' ' + unit + ' (' + pct + '%)')}</title></path>`;
-    })
-    .join('');
-  const legend = entries
-    .map(([label, value], i) => {
-      const pct = ((value / total) * 100).toFixed(1);
-      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${chartCssBackground(i)}"></i>${esc(label)}</span><span class="pie-legend-value"><strong>${value.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
-    })
-    .join('');
-  return `<div class="pie-mini"><h4>${esc(title)}</h4><svg class="pie-chart" viewBox="0 0 200 200" role="img" aria-label="${esc(title)}">${defs}<g>${slices}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${total.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">${esc(unit)}</text></svg><div class="pie-legend">${legend}</div></div>`;
+function monitorEndpoint() {
+  return `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section>`;
 }
 function overview() {
-  const logs = state.logs,
-    day = v =>
-      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date(v)),
-    today = day(Date.now()),
-    calls = logs.filter(l => isToolCall(l) && day(l.created) === today),
-    connected = state.mcps.filter(m => m.status === 'connected').length,
-    tools = state.mcps.reduce(
-      (s, m) =>
-        s + (m.on && m.status === 'connected' ? m.tools.filter(t => t.published).length : 0),
-      0
-    );
-  const stats12h = auditStats(logs, 12, Date.now());
-  const byKey = new Map();
-  for (const b of stats12h.buckets)
-    for (const [key, row] of b.tools) {
-      const r = byKey.get(key) || { count: 0, bytes: 0 };
-      r.count += row.count;
-      r.bytes += row.input + row.output;
-      byKey.set(key, r);
-    }
-  const mcpName = id => (id === 'vault' ? 'Vault' : state.mcps.find(m => m.id === id)?.name || id);
-  const byMcpCalls = new Map(),
-    byMcpBytes = new Map(),
-    byToolCalls = new Map(),
-    byAgentCalls = new Map();
-  for (const [key, row] of byKey) {
-    const [mid, ...rest] = key.split(' / '),
-      mName = mcpName(mid),
-      tName = mName + ' / ' + rest.join(' / ');
-    byMcpCalls.set(mName, (byMcpCalls.get(mName) || 0) + row.count);
-    byMcpBytes.set(mName, (byMcpBytes.get(mName) || 0) + row.bytes);
-    byToolCalls.set(tName, (byToolCalls.get(tName) || 0) + row.count);
-  }
-  // Build byAgentCalls: group 12h isToolCall logs by actor ID → display name.
-  // isToolCall() already filters out owner/system/admin-assistant/hub events.
-  // Use agentId as the unique key to prevent two agents with the same display name from merging.
-  const agentNameMap = new Map(state.agents.map(a => [a.id, a.name]));
-  for (const log of logs) {
-    if (!isToolCall(log)) continue;
-    const ts = Date.parse(log.created);
-    if (ts < Date.now() - 12 * 3600000) continue;
-    const agentId = log.actor;
-    const agentLabel = agentNameMap.get(agentId) || agentId;
-    // Compound key: id + display name, so two agents with same name stay separate.
-    const key = agentId + '\x00' + agentLabel;
-    byAgentCalls.set(key, (byAgentCalls.get(key) || 0) + 1);
-  }
-  // Flatten to [label, count] pairs sorted descending (same style as other pies).
-  const agentCallEntries = [...byAgentCalls.entries()]
-    .map(([key, count]) => [key.split('\x00')[1], count])
-    .sort((a, b) => b[1] - a[1]);
-
-  const sortDesc = m => [...m.entries()].sort((a, b) => b[1] - a[1]);
-
-  // Tool inventory: rendered from cached data (loaded once on overview mount).
-  const invHtml = toolInventoryData === null
-    ? `<p class="footnote" id="tool-inv-loading">Đang tải tồn kho công cụ\u2026</p>`
-    : toolInventoryData === 'error'
-    ? `<p class="errorline">Không tải được tồn kho công cụ.</p>`
-    : toolInventoryData.length === 0
-    ? `<p class="muted">Chưa có tool nào được công bố từ MCP đang kết nối.</p>`
-    : `<div class="tablewrap"><table><thead><tr><th>MCP</th><th>Tool</th><th>Tổng lượt gọi</th><th>Lần gọi gần nhất</th></tr></thead><tbody>${toolInventoryData.map(item =>
-        `<tr><td>${esc(item.mcpName)}</td><td class="mono">${esc(item.toolName)}</td><td>${item.callCount === 0 ? '<span class="badge gray">Chưa từng gọi</span>' : item.callCount.toLocaleString('vi-VN')}</td><td class="sub">${item.lastCall ? date(item.lastCall) : '\u2014'}</td></tr>`
-      ).join('')}</tbody></table></div>`;
-
   return (
     head(
       'Tổng quan',
-      'Mọi kết nối. Một nơi kiểm soát.',
-      btn('Kiểm tra cập nhật', 'check-update', 'small', 'refresh') +
-        btn('Kết nối agent', 'connect', '', 'link') +
-        btn('Thêm MCP', 'add', 'primary', 'plus')
+      'Tài nguyên, hoạt động và lưu trình của Gen-hub.',
+      btn('Kiểm tra cập nhật', 'check-update', '', 'refresh') +
+      btn('Kết nối agent', 'connect', '', 'link') + btn('Thêm MCP', 'add', 'primary', 'plus')
     ) +
     renderUpdateBanner() +
-    `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><span class="endpointbar-sub">Chỉ tool bạn cấp mới được agent thấy và dùng.</span>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section><section class="stats">${[
-      ['MCP đã kết nối', connected, '/ ' + state.mcps.length, 'plug'],
-      ['Agent đã duyệt', state.agents.filter(a => a.status === 'active').length, 'agent', 'bot'],
-      ['Tool đang cung cấp', tools, 'tool', 'shield'],
-      ['Lượt gọi hôm nay', calls.length, 'trong 200 log gần nhất', 'activity']
-    ]
-      .map(
-        s =>
-          `<div class="card stat"><div class="statlabel">${s[0]}${I(s[3])}</div><div class="statvalue">${s[1]}<small>${s[2]}</small></div></div>`
-      )
-      .join(
-        ''
-      )}</section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Hoạt động công cụ</h2><span class="badge gray">12 giờ gần đây</span></div><div class="cardpad"><div class="pie-row">${smallPie('MCP theo lượt gọi', sortDesc(byMcpCalls), 'lượt')}${smallPie('Tool theo lượt gọi', sortDesc(byToolCalls), 'lượt')}${smallPie('MCP theo dung lượng', sortDesc(byMcpBytes), 'byte')}${smallPie('Lượt gọi theo Agent', agentCallEntries, 'lượt')}</div>${!byKey.size ? '<p class="footnote">Chưa có lượt gọi công cụ trong 12 giờ qua.</p>' : '<p class="footnote">Dung lượng tính theo byte JSON input/output đã redact (không phải token LLM). Agent chưa gọi tool nào trong 12 giờ không xuất hiện trong pie.</p>'}</div></section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Tồn kho công cụ</h2><span class="badge gray">Toàn bộ thời gian</span></div><div class="cardpad">${invHtml}<p class="footnote">Danh sách tool đã công bố trên mọi MCP đang kết nối. Sắp xếp theo lượt gọi tăng dần — tool chưa dùng nổi lên đầu. Xóa/tắt MCP thì tool của nó không còn xuất hiện.</p></div></section><section class="card" style="margin-bottom:22px"><div class="cardhead"><h2>Kết nối cần chú ý</h2>${btn('Quản lý MCP', 'go:mcps', 'small')}</div><div class="cardpad">${
-      state.mcps
-        .filter(m => m.status !== 'connected')
-        .map(
-          m =>
-            `<div class="listrow"><div class="inline">${logo(m)}<div><h3>${esc(m.name)}</h3><p class="sub">${esc(m.lastError || 'Chưa hoàn tất kết nối')}</p></div></div>${btn('Kết nối', 'credential:' + m.id, 'small')}</div>`
-        )
-        .join('') || '<p class="muted">Không có kết nối lỗi.</p>'
-    }</div></section><section class="card"><div class="cardhead"><h2>Nhật ký gần đây</h2>${btn('Xem tất cả', 'go:audit', 'small')}</div>${logTable(logs.slice(0, 5))}</section>`
+    `<div id="monitor-body">${renderMonitor(monitorData, monitorView, { badge, endpoint: monitorEndpoint() })}</div>`
   );
 }
 
@@ -891,7 +938,7 @@ function agents() {
     head(
       'Agent & quyền',
       'Cấp công cụ riêng cho từng agent; thu hồi ngay khi cần.',
-      btn('Kết nối agent', 'connect', 'primary', 'plus')
+      btn('Cấp quyền hàng loạt', 'bulk-grants') + btn('Kết nối agent', 'connect', 'primary', 'plus')
     ) +
     `<div class="toolbar">${searchInput('Tìm agent…')}</div><div id="results">${agentResults()}</div>`
   );
@@ -1146,7 +1193,8 @@ function parseAuditHash() {
       'actorType',
       'errorCategory',
       'policyDecision',
-      'outcome'
+      'outcome',
+      'operationId'
     ]) {
       if (search.has(key)) auditExact[key] = search.get(key);
     }
@@ -1268,10 +1316,10 @@ function auditPage() {
       'Nhật ký',
       'Input, output và quyết định cấp quyền của từng lượt gọi.',
       btn('Xuất JSONL', 'export-jsonl', '', 'download') +
-      btn('Xuất CSV', 'export-csv', '', 'download'),
+        btn('Xuất CSV', 'export-csv', '', 'download'),
       'audit-pagehead'
     ) +
-    `${Object.keys(auditExact).length ? `<p class="footnote">Bộ lọc từ Tổng quan: ${esc(new URLSearchParams(auditExact).toString())} · <a href="#audit">Xóa bộ lọc</a></p>` : ''}<div class="toolbar audit-toolbar">${searchInput('Tìm tool, actor hoặc ID…')}<div class="actions audit-filter-actions"><select id="statusfilter" class="filter" aria-label="Kết quả">${options(
+    `<div id="monitor-detail">${monitorAuditPanel()}</div>${Object.keys(auditExact).length ? `<p class="footnote">Bộ lọc từ Tổng quan: ${esc(new URLSearchParams(auditExact).toString())} · <a href="#audit">Xóa bộ lọc</a></p>` : ''}<div class="toolbar audit-toolbar">${searchInput('Tìm tool, actor hoặc ID…')}<div class="actions audit-filter-actions"><select id="statusfilter" class="filter" aria-label="Kết quả">${options(
       [
         ['all', 'Tất cả kết quả'],
         ['success', 'Thành công'],
@@ -1293,11 +1341,16 @@ function auditPage() {
 
 function logTable(rows) {
   return rows.length
-    ? `<div class="tablewrap audit-tablewrap"><table class="audit-table"><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Công cụ / Thao tác</th><th>Kết quả</th><th>Xử lý</th><th></th></tr></thead><tbody>${rows.map(l => {
-        const actorName = l.actor === 'owner' ? state.owner : state.agents.find(a => a.id === l.actor)?.name || l.actor;
-        const mcpName = state.mcps.find(m => m.id === l.mcp)?.name || 'Hub';
-        return `<tr class="audit-row"><td class="col-time">${date(l.created)}</td><td class="col-actor">${esc(actorName)}</td><td class="col-tool"><div class="mono">${esc(l.tool)}</div><div class="sub">${esc(mcpName)} · #${l.id}</div></td><td class="col-status">${badge(l.status)}<small class="sub operations-id">${esc(l.errorCategory || l.eventKind || 'Chưa phân loại')}${l.classification === 'legacy' ? ' · lịch sử' : ''}</small></td><td class="col-latency mono">${l.latencyMeasured ? l.latency + ' ms' : 'N/A'}</td><td class="col-action">${btn('Chi tiết', 'log:' + l.id, 'small')}</td></tr>`;
-      }).join('')}</tbody></table></div>`
+    ? `<div class="tablewrap audit-tablewrap"><table class="audit-table"><thead><tr><th>Thời gian</th><th>Người thực hiện</th><th>Công cụ / Thao tác</th><th>Kết quả</th><th>Xử lý</th><th></th></tr></thead><tbody>${rows
+        .map(l => {
+          const actorName =
+            l.actor === 'owner'
+              ? state.owner
+              : state.agents.find(a => a.id === l.actor)?.name || l.actor;
+          const mcpName = state.mcps.find(m => m.id === l.mcp)?.name || 'Hub';
+          return `<tr class="audit-row"><td class="col-time">${date(l.created)}</td><td class="col-actor">${esc(actorName)}</td><td class="col-tool"><div class="mono">${esc(l.tool)}</div><div class="sub">${esc(mcpName)} · #${l.id}</div></td><td class="col-status">${badge(l.status)}<small class="sub operations-id">${esc(l.errorCategory || l.eventKind || 'Chưa phân loại')}${l.classification === 'legacy' ? ' · lịch sử' : ''}</small></td><td class="col-latency mono">${l.latencyMeasured ? l.latency + ' ms' : 'N/A'}</td><td class="col-action">${btn('Chi tiết', 'log:' + l.id, 'small')}</td></tr>`;
+        })
+        .join('')}</tbody></table></div>`
     : '<div class="empty"><h3>Chưa có nhật ký phù hợp</h3><p>Thay đổi bộ lọc hoặc bắt đầu sử dụng Hub.</p></div>';
 }
 function vaultGrantRows(selected) {
@@ -1745,7 +1798,7 @@ function updateGrantCounts(container = document) {
     const checkedBoxes = g.querySelectorAll('input[name="permissions"]:checked');
     const badge = g.querySelector('.grant-count');
     if (badge) {
-      badge.textContent = `${checkedBoxes.length}/${allBoxes.length} tool đã cấp`;
+      badge.textContent = `${checkedBoxes.length}/${allBoxes.length} tool ${g.closest('#bulk-grants') ? 'được chọn' : 'đã cấp'}`;
     }
   }
 }
@@ -1771,8 +1824,9 @@ function setGrantSelection(mcpId, mode) {
     }
   }
   updateGrantCounts(form);
+  if (form.id === 'bulk-grants') invalidateBulkPreview();
 }
-function grantRows(selected) {
+function grantRows(selected, toolsOnly = false) {
   if (!state.mcps.length && !state.vault.length) {
     return '<div class="info">Thêm MCP hoặc secret trước khi cấp quyền.</div>';
   }
@@ -1807,11 +1861,27 @@ function grantRows(selected) {
               .join('')
           : '<p class="footnote" style="padding:15px">Chưa công bố tool.</p>';
 
-      return `<details class="toolgroup" data-mcp="${esc(m.id)}"><summary class="toolgrouphead"><div class="inline">${logo(m)}<div><h3>${esc(m.name)}</h3><p class="sub">${m.on ? '' : 'MCP tạm dừng · '}${m.status === 'connected' ? 'Đã kết nối' : 'Kết nối chưa sẵn sàng'}</p></div></div><div class="inline"><span class="badge gray grant-count" data-mcp="${esc(m.id)}">${grantedCount}/${totalCount} tool đã cấp</span><span class="chevron" aria-hidden="true">${I('chevron')}</span></div></summary><div class="toolgroupbody">${actionsHtml}${toolRowsHtml}</div></details>`;
+      return `<details class="toolgroup" data-mcp="${esc(m.id)}" ${toolsOnly && grantedCount ? 'open' : ''}><summary class="toolgrouphead"><div class="inline">${logo(m)}<div><h3>${esc(m.name)}</h3><p class="sub">${m.on ? '' : 'MCP tạm dừng · '}${m.status === 'connected' ? 'Đã kết nối' : 'Kết nối chưa sẵn sàng'}</p></div></div><div class="inline"><span class="badge gray grant-count" data-mcp="${esc(m.id)}">${grantedCount}/${totalCount} tool đã cấp</span><span class="chevron" aria-hidden="true">${I('chevron')}</span></div></summary><div class="toolgroupbody">${actionsHtml}${toolRowsHtml}</div></details>`;
     })
     .join('');
 
-  return globalToolbar + mcpGroups + vaultGrantRows(selected);
+  const rows = globalToolbar + mcpGroups + (toolsOnly ? '' : vaultGrantRows(selected));
+  return toolsOnly ? rows.replaceAll('Thu hồi toàn bộ', 'Bỏ chọn công cụ').replaceAll('Cấp quyền toàn bộ', 'Chọn tất cả công cụ').replaceAll('Cấp quyền cơ bản', 'Chọn công cụ chỉ đọc').replaceAll('tool đã cấp', 'tool được chọn') : rows;
+}
+let bulkPreview = null;
+function invalidateBulkPreview() {
+  bulkPreview = null;
+  const result = document.getElementById('bulk-preview');
+  if (result) result.replaceChildren();
+  const apply = document.querySelector('[data-action="bulk-apply"]');
+  if (apply) apply.disabled = true;
+}
+async function openBulkGrants(tool = '') {
+  await refresh();
+  bulkPreview = null;
+  const agents = state.agents.filter(a => a.status === 'active');
+  show('Cấp quyền hàng loạt', 'Chọn agent và công cụ. Quyền đang có được giữ nguyên.',
+    `<form id="bulk-grants"><h3>1. Chọn agent đang hoạt động</h3><div class="actions">${btn('Chọn tất cả agent', 'bulk-agents:all', 'small')}${btn('Bỏ chọn agent', 'bulk-agents:none', 'small')}</div><div class="bulk-agent-list">${agents.map(a => `<label><input type="checkbox" name="agentIds" value="${esc(a.id)}" ${monitorView.actor === a.id ? 'checked' : ''}><span>${esc(a.name)}<small>${esc(a.id)}</small></span></label>`).join('') || '<p class="footnote">Chưa có agent đang hoạt động.</p>'}</div><h3>2. Chọn công cụ cần thêm</h3><p class="footnote">Chỉ công cụ đã công bố. Kết nối đang tắt vẫn có thể được cấp quyền và dùng khi kết nối sẵn sàng.</p>${grantRows(tool ? [tool] : [], true)}<div id="bulk-preview" aria-live="polite"></div><div class="actions"><button class="btn" type="submit">Xem trước quyền sẽ thêm</button><button class="btn primary" type="button" data-action="bulk-apply" disabled>Cấp quyền đã xem trước</button></div></form>`, btn('Đóng', 'close'), true);
 }
 function agent(id) {
   return selectEntity('agents', id);
@@ -1970,6 +2040,108 @@ function download(name, data) {
 }
 async function act(action, args, el = null) {
   const id = args[0];
+  if (action === 'bulk-grants') return openBulkGrants(id ? decodeURIComponent(args.join(':')) : '');
+  if (action === 'bulk-agents') {
+    document.querySelectorAll('#bulk-grants [name=agentIds]').forEach(box => { box.checked = id === 'all'; });
+    invalidateBulkPreview();
+    return;
+  }
+  if (action === 'bulk-apply') {
+    if (!bulkPreview) throw Error('Vui lòng xem trước quyền sẽ thêm');
+    const version = modalVersion;
+    const result = await api('agents/bulk-grants', 'POST', bulkPreview);
+    bulkPreview = null;
+    if (version === modalVersion && modal.open) {
+      show('Đã cấp quyền hàng loạt', `${result.agentCount} agent · ${result.toolCount} công cụ`,
+        `<p>Đã thêm <strong>${result.addedCount}</strong> quyền. Các quyền trước đó được giữ nguyên.</p>${result.agents.map(a => `<div class="listrow"><span>${esc(a.name)}<small> · ${esc(a.id)}</small></span><span>+${a.added.length} quyền · ${a.alreadyGranted} đã có</span></div>`).join('')}`, btn('Hoàn tất', 'close'));
+    }
+    await refresh();
+    loadMonitor();
+    return;
+  }
+  if (action === 'monitor-tool') {
+    monitorView.selectedTool = decodeURIComponent(args.join(':'));
+    renderMonitorBody();
+    document.querySelector('.monitor-tool-detail')?.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  if (action === 'monitor-refresh') return loadMonitor();
+  if (action === 'monitor-tab') {
+    monitorView.tab = id;
+    renderMonitorBody();
+    return;
+  }
+  if (action === 'monitor-actor' || action === 'monitor-mcp') {
+    const key = action === 'monitor-actor' ? 'actor' : 'mcp';
+    monitorView[key] = monitorView[key] === id ? '' : id;
+    monitorView[key === 'actor' ? 'mcp' : 'actor'] = '';
+    monitorData = null;
+    renderMonitorBody();
+    return loadMonitor();
+  }
+  if (action === 'monitor-clear') {
+    monitorView.actor = '';
+    monitorView.mcp = '';
+    monitorData = null;
+    renderMonitorBody();
+    return loadMonitor();
+  }
+  if (action === 'monitor-unused') {
+    monitorView.tab = 'tools';
+    monitorView.toolFilter = 'unused';
+    renderMonitorBody();
+    return;
+  }
+  if (action === 'monitor-manage') {
+    selectEntity(id, args[1]);
+    if (args[2]) detailTabs[id] = args[2];
+    if (route === id) render();
+    return;
+  }
+  if (action === 'monitor-history') {
+    location.hash =
+      'audit?' +
+      monitorQuery({
+        since: monitorData.since,
+        until: monitorData.until,
+        eventKind: 'tool_call',
+        actorType: 'agent'
+      });
+    return;
+  }
+  if (action === 'monitor-tool-log') {
+    location.hash =
+      'audit?' +
+      new URLSearchParams({ mcp: id, tool: decodeURIComponent(args.slice(1).join(':')) });
+    return;
+  }
+  if (action === 'monitor-log' || action === 'monitor-operation') {
+    monitorDetail = null;
+    monitorDetailTab = 'summary';
+    location.hash =
+      'audit?' +
+      new URLSearchParams(
+        action === 'monitor-log' ? { q: id, detail: id } : { operationId: id, operation: id }
+      );
+    return;
+  }
+  if (action === 'monitor-detail-tab') {
+    monitorDetailTab = id;
+    $('#monitor-detail').innerHTML = monitorAuditPanel();
+    return;
+  }
+  if (action === 'monitor-ask') {
+    chatOpen = true;
+    renderChat();
+    const question =
+      route === 'audit'
+        ? 'Giải thích yêu cầu đang xem, kết quả và quyền sử dụng.'
+        : monitorView.actor || monitorView.mcp
+          ? 'Phân tích hoạt động và công cụ của đối tượng tôi đang chọn.'
+          : 'Tóm tắt tôi có những tài nguyên nào, ai đang sử dụng và việc gì đang xử lý.';
+    if (state.llm?.configured) await sendChatMessage(question);
+    return;
+  }
   if (action === 'select') return selectEntity(id, args[1]);
   if (action === 'detail-tab') {
     detailTabs[route] = id;
@@ -2334,7 +2506,10 @@ async function act(action, args, el = null) {
     }
     if (!resp.ok) {
       let msg = 'Xuất thất bại';
-      try { const d = await resp.json(); msg = d.error || msg; } catch {}
+      try {
+        const d = await resp.json();
+        msg = d.error || msg;
+      } catch {}
       return toast(msg);
     }
     const body = await resp.text();
@@ -2350,7 +2525,9 @@ async function act(action, args, el = null) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(u), 1000);
     if (truncated) {
-      toast(`Đã xuất ${totalRows.toLocaleString()} bản ghi (bị cắt tại giới hạn 50.000 — hãy thu hẹp bộ lọc để lấy đầy đủ)`);
+      toast(
+        `Đã xuất ${totalRows.toLocaleString()} bản ghi (bị cắt tại giới hạn 50.000 — hãy thu hẹp bộ lọc để lấy đầy đủ)`
+      );
     } else {
       toast(`Đã xuất ${totalRows.toLocaleString()} bản ghi`);
     }
@@ -2480,6 +2657,7 @@ document.addEventListener('click', async e => {
   }
 });
 document.addEventListener('change', e => {
+  if (e.target.closest('#bulk-grants')) invalidateBulkPreview();
   if (e.target.matches('input[name="permissions"]')) {
     updateGrantCounts(e.target.closest('form') || document);
   }
@@ -2491,6 +2669,22 @@ document.addEventListener('submit', async e => {
     button = f.querySelector('[type=submit]');
   if (button) button.disabled = true;
   try {
+    if (f.id === 'bulk-grants') {
+      invalidateBulkPreview();
+      const fd = new FormData(f);
+      const draft = { agentIds: fd.getAll('agentIds'), permissions: fd.getAll('permissions') };
+      const version = modalVersion;
+      const signature = JSON.stringify(draft);
+      const result = await api('agents/bulk-grants', 'POST', { ...draft, preview: true });
+      const current = new FormData(f);
+      if (version !== modalVersion || !modal.open || signature !== JSON.stringify({ agentIds: current.getAll('agentIds'), permissions: current.getAll('permissions') })) return;
+      bulkPreview = { ...draft, previewToken: result.previewToken };
+      document.getElementById('bulk-preview').innerHTML = `<div class="bulk-preview"><h3>3. Xem trước: thêm ${result.addedCount} quyền</h3><p class="footnote">${result.agentCount} agent × ${result.toolCount} công cụ đã chọn. Quyền trùng được bỏ qua; quyền cũ được giữ nguyên.</p>${result.agents.map(a => `<div class="listrow"><span>${esc(a.name)}<small> · ${esc(a.id)}</small></span><span>Thêm ${a.added.length} · Đã có ${a.alreadyGranted} · Tổng sau cấp ${a.total}</span></div>${a.added.length ? `<p class="footnote">Thêm: ${a.added.map(esc).join(', ')}</p>` : ''}`).join('')}</div>`;
+      const apply = document.querySelector('[data-action="bulk-apply"]');
+      apply.disabled = result.addedCount === 0;
+      apply.scrollIntoView({ block: 'end' });
+      return;
+    }
     if (f.id === 'pin-setup') {
       if (b.pin !== b.repeat) throw Error('PIN nhập lại không khớp');
       await api('security/pin', 'POST', { password: b.password, pin: b.pin });
@@ -2727,6 +2921,18 @@ document.addEventListener('keydown', e => {
   tabs[next].click();
 });
 document.addEventListener('change', e => {
+  if (e.target.id === 'monitor-period') {
+    monitorView.period = e.target.value;
+    monitorData = null;
+    renderMonitorBody();
+    loadMonitor();
+    return;
+  }
+  if (e.target.id === 'monitor-tool-filter') {
+    monitorView.toolFilter = e.target.value;
+    renderMonitorBody();
+    return;
+  }
   if (e.target.id === 'kanban-connector-select') {
     const opt = e.target.selectedOptions[0];
     const prov = opt?.dataset?.provider;
@@ -2793,11 +2999,11 @@ window.addEventListener('hashchange', async () => {
   if (state) {
     render();
     if (route === 'overview') {
-      toolInventoryData = null;
-      loadToolInventory();
+      loadMonitor();
     }
     if (route === 'audit') {
       fetchAuditLogs();
+      loadMonitorDetail();
     }
     if (route.startsWith('gitea/')) {
       location.assign('/oidc/owner/resume?flow=' + encodeURIComponent(route.slice(6)));
