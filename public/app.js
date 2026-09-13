@@ -1,4 +1,4 @@
-import { renderMonitor, monitorTimeline } from './monitor.js';
+import { renderMonitor, monitorTimeline, layoutMonitorMap } from './monitor.js';
 import { kanbanPage, kanbanCards } from './kanban.js';
 import {
   auditStats,
@@ -305,7 +305,8 @@ function renderMonitorBody(background = false) {
   if (background && focused?.matches('#monitor-period,#monitor-tool-filter')) return;
   const expanded = !!el.querySelector('.monitor-relations[open]');
   const action = focused?.closest('#monitor-body') ? focused.dataset.action : null;
-  el.innerHTML = renderMonitor(monitorData, monitorView, { smallPie, badge });
+  el.innerHTML = renderMonitor(monitorData, monitorView, { badge, endpoint: monitorEndpoint() });
+  layoutMonitorMap(monitorData, monitorView);
   if (expanded) el.querySelector('.monitor-relations')?.setAttribute('open', '');
   if (action)
     [...el.querySelectorAll('[data-action]')]
@@ -878,34 +879,10 @@ function render() {
       )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
+  layoutMonitorMap(monitorData, monitorView);
 }
-function smallPie(title, entries, unit) {
-  const total = entries.reduce((s, [, v]) => s + v, 0);
-  if (!total)
-    return `<div class="pie-mini"><h4>${esc(title)}</h4><p class="footnote">Chưa có dữ liệu.</p></div>`;
-  const pieId =
-    'pie-' +
-    Math.abs(title.split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0)).toString(
-      36
-    );
-  const defs = chartSvgPatternDefs(pieId, entries.length);
-  let frac = 0;
-  const slices = entries
-    .map(([label, value], i) => {
-      const f = value / total,
-        d = pieArc(100, 100, 80, 48, frac, frac + f),
-        pct = (f * 100).toFixed(1);
-      frac += f;
-      return `<path class="pie-slice" d="${d}" fill="${chartFill(pieId, i)}" stroke="#fff" stroke-width="2"><title>${esc(label + ': ' + value.toLocaleString('vi-VN') + ' ' + unit + ' (' + pct + '%)')}</title></path>`;
-    })
-    .join('');
-  const legend = entries
-    .map(([label, value], i) => {
-      const pct = ((value / total) * 100).toFixed(1);
-      return `<div class="pie-legend-item"><span class="pie-legend-label"><i style="background:${chartCssBackground(i)}"></i>${esc(label)}</span><span class="pie-legend-value"><strong>${value.toLocaleString('vi-VN')}</strong> (${pct}%)</span></div>`;
-    })
-    .join('');
-  return `<div class="pie-mini"><h4>${esc(title)}</h4><svg class="pie-chart" viewBox="0 0 200 200" role="img" aria-label="${esc(title)}">${defs}<g>${slices}</g><text x="100" y="96" text-anchor="middle" class="pie-total">${total.toLocaleString('vi-VN')}</text><text x="100" y="112" text-anchor="middle" class="pie-total-label">${esc(unit)}</text></svg><div class="pie-legend">${legend}</div></div>`;
+function monitorEndpoint() {
+  return `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section>`;
 }
 function overview() {
   return (
@@ -916,7 +893,7 @@ function overview() {
       btn('Kết nối agent', 'connect', '', 'link') + btn('Thêm MCP', 'add', 'primary', 'plus')
     ) +
     renderUpdateBanner() +
-    `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section><div id="monitor-body">${renderMonitor(monitorData, monitorView, { smallPie, badge })}</div>`
+    `<div id="monitor-body">${renderMonitor(monitorData, monitorView, { badge, endpoint: monitorEndpoint() })}</div>`
   );
 }
 
@@ -944,7 +921,7 @@ function agents() {
     head(
       'Agent & quyền',
       'Cấp công cụ riêng cho từng agent; thu hồi ngay khi cần.',
-      btn('Kết nối agent', 'connect', 'primary', 'plus')
+      btn('Cấp quyền hàng loạt', 'bulk-grants') + btn('Kết nối agent', 'connect', 'primary', 'plus')
     ) +
     `<div class="toolbar">${searchInput('Tìm agent…')}</div><div id="results">${agentResults()}</div>`
   );
@@ -1708,7 +1685,7 @@ function updateGrantCounts(container = document) {
     const checkedBoxes = g.querySelectorAll('input[name="permissions"]:checked');
     const badge = g.querySelector('.grant-count');
     if (badge) {
-      badge.textContent = `${checkedBoxes.length}/${allBoxes.length} tool đã cấp`;
+      badge.textContent = `${checkedBoxes.length}/${allBoxes.length} tool ${g.closest('#bulk-grants') ? 'được chọn' : 'đã cấp'}`;
     }
   }
 }
@@ -1734,8 +1711,9 @@ function setGrantSelection(mcpId, mode) {
     }
   }
   updateGrantCounts(form);
+  if (form.id === 'bulk-grants') invalidateBulkPreview();
 }
-function grantRows(selected) {
+function grantRows(selected, toolsOnly = false) {
   if (!state.mcps.length && !state.vault.length) {
     return '<div class="info">Thêm MCP hoặc secret trước khi cấp quyền.</div>';
   }
@@ -1774,7 +1752,23 @@ function grantRows(selected) {
     })
     .join('');
 
-  return globalToolbar + mcpGroups + vaultGrantRows(selected);
+  const rows = globalToolbar + mcpGroups + (toolsOnly ? '' : vaultGrantRows(selected));
+  return toolsOnly ? rows.replaceAll('Thu hồi toàn bộ', 'Bỏ chọn công cụ').replaceAll('Cấp quyền toàn bộ', 'Chọn tất cả công cụ').replaceAll('Cấp quyền cơ bản', 'Chọn công cụ chỉ đọc').replaceAll('tool đã cấp', 'tool được chọn') : rows;
+}
+let bulkPreview = null;
+function invalidateBulkPreview() {
+  bulkPreview = null;
+  const result = document.getElementById('bulk-preview');
+  if (result) result.replaceChildren();
+  const apply = document.querySelector('[data-action="bulk-apply"]');
+  if (apply) apply.disabled = true;
+}
+async function openBulkGrants(tool = '') {
+  await refresh();
+  bulkPreview = null;
+  const agents = state.agents.filter(a => a.status === 'active');
+  show('Cấp quyền hàng loạt', 'Chọn agent và công cụ. Quyền đang có được giữ nguyên.',
+    `<form id="bulk-grants"><h3>1. Chọn agent đang hoạt động</h3><div class="actions">${btn('Chọn tất cả agent', 'bulk-agents:all', 'small')}${btn('Bỏ chọn agent', 'bulk-agents:none', 'small')}</div><div class="bulk-agent-list">${agents.map(a => `<label><input type="checkbox" name="agentIds" value="${esc(a.id)}" ${monitorView.actor === a.id ? 'checked' : ''}><span>${esc(a.name)}<small>${esc(a.id)}</small></span></label>`).join('') || '<p class="footnote">Chưa có agent đang hoạt động.</p>'}</div><h3>2. Chọn công cụ cần thêm</h3><p class="footnote">Chỉ công cụ đã công bố. Kết nối đang tắt vẫn có thể được cấp quyền và dùng khi kết nối sẵn sàng.</p>${grantRows(tool ? [tool] : [], true)}<div id="bulk-preview" aria-live="polite"></div><div class="actions"><button class="btn" type="submit">Xem trước quyền sẽ thêm</button><button class="btn primary" type="button" data-action="bulk-apply" disabled>Cấp quyền đã xem trước</button></div></form>`, btn('Đóng', 'close'), true);
 }
 function agent(id) {
   return selectEntity('agents', id);
@@ -1933,6 +1927,31 @@ function download(name, data) {
 }
 async function act(action, args, el = null) {
   const id = args[0];
+  if (action === 'bulk-grants') return openBulkGrants(id ? decodeURIComponent(args.join(':')) : '');
+  if (action === 'bulk-agents') {
+    document.querySelectorAll('#bulk-grants [name=agentIds]').forEach(box => { box.checked = id === 'all'; });
+    invalidateBulkPreview();
+    return;
+  }
+  if (action === 'bulk-apply') {
+    if (!bulkPreview) throw Error('Vui lòng xem trước quyền sẽ thêm');
+    const version = modalVersion;
+    const result = await api('agents/bulk-grants', 'POST', bulkPreview);
+    bulkPreview = null;
+    if (version === modalVersion && modal.open) {
+      show('Đã cấp quyền hàng loạt', `${result.agentCount} agent · ${result.toolCount} công cụ`,
+        `<p>Đã thêm <strong>${result.addedCount}</strong> quyền. Các quyền trước đó được giữ nguyên.</p>${result.agents.map(a => `<div class="listrow"><span>${esc(a.name)}<small> · ${esc(a.id)}</small></span><span>+${a.added.length} quyền · ${a.alreadyGranted} đã có</span></div>`).join('')}`, btn('Hoàn tất', 'close'));
+    }
+    await refresh();
+    loadMonitor();
+    return;
+  }
+  if (action === 'monitor-tool') {
+    monitorView.selectedTool = decodeURIComponent(args.join(':'));
+    renderMonitorBody();
+    document.querySelector('.monitor-tool-detail')?.scrollIntoView({ block: 'nearest' });
+    return;
+  }
   if (action === 'monitor-refresh') return loadMonitor();
   if (action === 'monitor-tab') {
     monitorView.tab = id;
@@ -2515,6 +2534,7 @@ document.addEventListener('click', async e => {
   }
 });
 document.addEventListener('change', e => {
+  if (e.target.closest('#bulk-grants')) invalidateBulkPreview();
   if (e.target.matches('input[name="permissions"]')) {
     updateGrantCounts(e.target.closest('form') || document);
   }
@@ -2526,6 +2546,20 @@ document.addEventListener('submit', async e => {
     button = f.querySelector('[type=submit]');
   if (button) button.disabled = true;
   try {
+    if (f.id === 'bulk-grants') {
+      invalidateBulkPreview();
+      const fd = new FormData(f);
+      const draft = { agentIds: fd.getAll('agentIds'), permissions: fd.getAll('permissions') };
+      const version = modalVersion;
+      const signature = JSON.stringify(draft);
+      const result = await api('agents/bulk-grants', 'POST', { ...draft, preview: true });
+      const current = new FormData(f);
+      if (version !== modalVersion || !modal.open || signature !== JSON.stringify({ agentIds: current.getAll('agentIds'), permissions: current.getAll('permissions') })) return;
+      bulkPreview = { ...draft, previewToken: result.previewToken };
+      document.getElementById('bulk-preview').innerHTML = `<div class="bulk-preview"><h3>3. Xem trước: thêm ${result.addedCount} quyền</h3><p class="footnote">${result.agentCount} agent × ${result.toolCount} công cụ đã chọn. Quyền trùng được bỏ qua; quyền cũ được giữ nguyên.</p>${result.agents.map(a => `<div class="listrow"><span>${esc(a.name)}<small> · ${esc(a.id)}</small></span><span>Thêm ${a.added.length} · Đã có ${a.alreadyGranted} · Tổng sau cấp ${a.total}</span></div>${a.added.length ? `<p class="footnote">Thêm: ${a.added.map(esc).join(', ')}</p>` : ''}`).join('')}</div>`;
+      document.querySelector('[data-action="bulk-apply"]').disabled = result.addedCount === 0;
+      return;
+    }
     if (f.id === 'pin-setup') {
       if (b.pin !== b.repeat) throw Error('PIN nhập lại không khớp');
       await api('security/pin', 'POST', { password: b.password, pin: b.pin });

@@ -69,34 +69,19 @@ test('Overview #75: Agent pie + Tool inventory UI', async t => {
   await page.click('#login button[type=submit]');
   await page.waitForSelector('.sidebar');
 
-  // ── Overview page should be default ──────────────────────────────
-  // 1. "Hoạt động công cụ" section must exist with 4 pie charts
-  await page.waitForSelector('h2:has-text("Hoạt động công cụ")');
-
-  // Count .pie-mini elements — should now be 4 (3 original + 1 new agent pie)
-  // Wait for inventory to load first (async)
+  // Approved integrated layout: one agent donut beside the activity map.
   await page.waitForSelector('#monitor-body .monitor-total');
-
-  const pieMinis = await page.locator('.pie-mini').count();
-  assert.ok(
-    pieMinis >= 4,
-    `Expected at least 4 pie-mini elements (3 original + 1 agent), got ${pieMinis}`
-  );
-
-  // 2. The 4th pie must be titled "Lượt gọi theo Agent"
-  const agentPieTitle = await page.locator('.pie-mini h4:has-text("Lượt gọi theo Agent")').count();
-  assert.ok(agentPieTitle >= 1, '"Lượt gọi theo Agent" pie title must be visible');
-
-  // 3. Agent Beta (no calls in 12h) must NOT appear in the agent pie legend
-  const legendText = await page
-    .locator('.pie-mini:has(h4:has-text("Lượt gọi theo Agent")) .pie-legend')
-    .innerText();
-  assert.ok(
-    !legendText.includes('Agent Beta'),
-    'Agent Beta (0 calls) must not appear in agent pie'
-  );
-  // Agent Alpha (has calls) must appear
-  assert.ok(legendText.includes('Agent Alpha'), 'Agent Alpha must appear in agent pie legend');
+  assert.equal(await page.locator('.monitor-donut').count(), 1);
+  assert.equal(await page.locator('.monitor-pair > .card').count(), 2);
+  const legendText = await page.locator('.monitor-legend').innerText();
+  assert.ok(!legendText.includes('Agent Beta'), 'Zero-call agents remain in the map, not the donut');
+  assert.ok(legendText.includes('Agent Alpha'));
+  assert.equal(await page.locator('.monitor-wires path').count(), 2);
+  await page.locator('.monitor-legendbutton').click();
+  await page.waitForSelector('.monitor-node.selected');
+  assert.equal(await page.locator('.monitor-node.dim').count(), 1);
+  await page.click('[data-action="monitor-clear"]');
+  await page.waitForSelector('.monitor-donut');
 
   // ── Tool inventory card ──────────────────────────────────────────
   await page.click('[data-action="monitor-tab:tools"]');

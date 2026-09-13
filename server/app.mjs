@@ -340,7 +340,8 @@ export function createHub({
         if (!store.get('vault', p.slice(6))) throw new HubError('Secret không tồn tại');
         continue;
       }
-      const [mid, name] = p.split(':');
+      const [mid, name, extra] = p.split(':');
+      if (!mid || !name || extra !== undefined) throw new HubError('Quyền công cụ không hợp lệ');
       if (!store.get('mcp', mid)?.tools.some(t => t.name === name && t.published))
         throw new HubError('Tool chưa được công bố: ' + p);
     }
@@ -1008,6 +1009,44 @@ export function createHub({
         audit('connection.disconnect', {}, {}, mid);
         return respond(200, { ok: true });
       }
+    }
+    if (resource === 'agents' && mid === 'bulk-grants' && !action && method === 'POST') {
+      if (!Array.isArray(b.agentIds) || !b.agentIds.length || b.agentIds.length > 100 ||
+          b.agentIds.some(id => typeof id !== 'string' || !id || id.length > 128))
+        throw new HubError('Chọn từ 1 đến 100 agent');
+      if (!Array.isArray(b.permissions) || !b.permissions.length ||
+          b.permissions.some(p => typeof p !== 'string' || p.startsWith('vault:')))
+        throw new HubError('Chọn công cụ MCP đã công bố để cấp quyền hàng loạt');
+      const permissions = validateGrants(b.permissions);
+      const agents = [...new Set(b.agentIds)].map(id => {
+        const a = store.get('agent', id);
+        if (!a || a.status !== 'active') throw new HubError('Agent không còn hoạt động: ' + id, 409);
+        const existing = a.permissions || [];
+        const added = permissions.filter(p => !existing.includes(p));
+        const merged = [...new Set([...existing, ...permissions])];
+        if (merged.length > 2000) throw new HubError('Agent vượt giới hạn 2000 quyền: ' + id);
+        return { a, added, merged };
+      });
+      const previewToken = digest(JSON.stringify({ permissions, agents: agents.map(({ a }) => [a.id, a.name, a.status, a.permissions]) }));
+      const result = {
+        previewToken,
+        agentCount: agents.length,
+        toolCount: permissions.length,
+        addedCount: agents.reduce((sum, x) => sum + x.added.length, 0),
+        agents: agents.map(({ a, added, merged }) => ({ id: a.id, name: a.name, added, alreadyGranted: permissions.length - added.length, total: merged.length }))
+      };
+      if (b.preview === true) return respond(200, result);
+      if (b.previewToken !== previewToken)
+        throw new HubError('Quyền hoặc agent đã thay đổi. Vui lòng xem trước lại trước khi cấp.', 409);
+      store.tx(() => {
+        for (const { a, added, merged } of agents)
+          if (added.length) store.put('agent', a.id, { ...a, permissions: merged });
+        if (result.addedCount) store.audit(actor, 'hub', 'agent.bulk_grants', 'success',
+          { agentIds: agents.map(x => x.a.id), permissions },
+          { addedCount: result.addedCount, agents: result.agents }, undefined, '',
+          { eventKind: 'admin_action', actorType: actor === 'owner' ? 'owner' : 'admin' });
+      });
+      return respond(200, { ...result, applied: true });
     }
     if (resource === 'agents' && method === 'POST' && !mid) {
       const aid = uniqueId(store, 'agent', 'agent');
