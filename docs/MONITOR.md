@@ -2,6 +2,36 @@
 
 Tổng quan là nơi xem tài nguyên, hoạt động và yêu cầu đi qua Hub. Dữ liệu do backend trả về; không có fixture hoặc hội thoại mẫu trong sản phẩm. Các trang Agent, MCP, Vault, Bootstrap, Nhật ký và khung chat hiện có tiếp tục là nơi quản lý/thao tác.
 
+## Mẫu giao diện đã chốt và trạng thái nghiệm thu
+
+**Chưa đạt nghiệm thu giao diện.** Mã tại `67819e272e29f78dd98b170e3b1315ff4051676b` đã qua kiểm thử kỹ thuật và được agent local review kỹ thuật, nhưng Ryan chỉ ra bố cục chưa đúng mẫu đã chọn. Các kết quả PASS phía dưới không thay thế đối chiếu thiết kế.
+
+Nguồn chuẩn giao diện: [gen-hub-integrated-monitor.html](design/gen-hub-integrated-monitor.html). Đây là nguyên bản HTML tích hợp đã trình bày và được Ryan chốt trong hội thoại, đưa vào repo để Claude có thể mở trực tiếp. Đây là tài liệu mẫu có dữ liệu minh họa và tương tác mô phỏng, không phải trang production. Không dùng các số liệu, hội thoại mẫu hoặc trạng thái giả của file này làm dữ liệu app.
+
+Mẫu này là chuẩn đối chiếu bố cục, thứ tự khối, cách biểu diễn quan hệ và tương tác. Nội dung thực tế phải đọc từ Hub; giữ Bootstrap và các chức năng mới của repo. Nếu dữ liệu thật không có trường trong mẫu, ghi rõ chưa ghi nhận, không dựng số liệu để làm giống hình.
+
+| Khu vực | Mẫu đã chốt | Sai khác ở bản kỹ thuật hiện tại / việc Claude cần kiểm tra |
+|---|---|---|
+| Tổng quan | Tab gạch dưới → endpoint → 4 thẻ tài nguyên → lựa chọn → cặp bản đồ và hoạt động → bảng yêu cầu | Tab dạng nút, endpoint đứng trước tab; cần so thứ tự, khoảng cách và phân cấp thông tin |
+| Bản đồ hoạt động | Đường nối Agent–Kết nối, chọn đối tượng làm nổi quan hệ và làm mờ phần không liên quan | Hai danh sách cùng bảng quan hệ thu gọn; chưa có đường nối tương tác |
+| Hoạt động bên phải | Biểu đồ vòng lượt gọi theo agent, chú giải chọn được, thanh tỷ lệ dung lượng vào/ra, lối mở công cụ ít dùng | Thay bằng số liệu chữ; 4 biểu đồ đặt thành hàng riêng phía dưới |
+| Yêu cầu gần đây | Bảng cột yêu cầu/công cụ, agent→kết nối, trạng thái, thời điểm; chọn để mở Nhật ký | Đang dùng danh sách thẻ; chưa đối chiếu khả năng đọc và chọn hàng theo mẫu |
+| Tồn kho công cụ | Bảng theo mẫu, bộ lọc, chọn công cụ mở chi tiết quan hệ và đường tới quản lý | Đang dùng thẻ và liên kết quản lý; thiếu phần chọn công cụ mở chi tiết tại chỗ |
+| Chi tiết yêu cầu | Các nút tròn nối thành 5 bước; tab Tóm tắt/Đầu vào/Đầu ra/Quyền; đường quay lại và mở đúng đối tượng | Có dữ liệu mốc và tab nhưng hình thức bước, bố cục chi tiết chưa theo mẫu |
+| Chat, màn hình nhỏ | Chat gắn với ngữ cảnh đang xem; bố cục và đường nối thay đổi theo không gian còn lại | Kiểm thử hiện tại chưa đối chiếu trực quan khi chat mở và các trạng thái chọn/lọc |
+
+### Bàn giao Claude kiểm tra
+
+1. Đọc PR #96, bàn giao mới nhất và mẫu HTML trên nhánh `feat/integrated-monitor`. Dùng worktree riêng. Không cần hỏi Ryan gửi lại mẫu.
+2. Mở file mẫu bằng trình duyệt, thao tác các tab, chọn agent/kết nối/công cụ, mở chi tiết và chat để hiểu hành vi; sau đó chạy app thật trên dữ liệu thử nghiệm riêng.
+3. So sánh mẫu và app ở cùng kích thước: desktop 1440×1000, tablet 1024×900, mobile 390×844; thêm desktop khi chat mở. Chụp ảnh cả hai phía cho cùng trạng thái và ghi rõ ảnh mẫu/ảnh app, commit và viewport. Dùng dữ liệu tổng hợp/ẩn danh, không đưa thông tin production lên PR.
+4. Phân biệt hai kết luận: **đạt kỹ thuật** và **khớp thiết kế đã chốt**. Bảng review cần có khu vực, mong đợi, thực tế, bằng chứng ảnh, mức độ và đề xuất sửa. Không chỉ chạy lại bộ test đang PASS rồi kết luận giao diện hoàn tất.
+5. Kiểm tra đúng dữ liệu thực tế: `tools[].published` khác permission; quyền đã cấp khác đang dùng được; bytes chỉ đo JSON sau che bí mật; timeline chỉ có mốc đã ghi nhận; không vẽ hàng đợi vì Hub hiện từ chối khi hết suất xử lý.
+6. Rà lại các chỗ render dữ liệu vào HTML. Nhận xét trước rằng không có `innerHTML` mới là chưa chính xác: `public/app.js` có cập nhật `innerHTML` cho Monitor. Điều cần xác minh là escape, dữ liệu được đưa vào DOM và cách tạo thuộc tính/SVG; sự tồn tại của `innerHTML` tự nó chưa chứng minh có lỗi XSS.
+7. Đăng `[REVIEW — THIẾT KẾ MONITOR]` trực tiếp PR #96, nêu các phần phải sửa và các điểm chưa kiểm chứng. Yêu cầu hiện tại của Ryan là bàn giao để Claude kiểm tra; không đồng nghĩa đã nghiệm thu hoặc cho phép merge/deploy.
+
+Tiêu chí hoàn tất phần giao diện: các khối và tương tác bám mẫu; trường thiếu có giải thích trung thực; không mất Bootstrap/chức năng hiện có; không tràn ngang hoặc che nút trên viewport kiểm tra; có bằng chứng trực quan và kiểm thử luồng thật. Các test UI về bố cục phải phản ánh mẫu đã chốt, không giữ bố cục sai chỉ vì test cũ đang PASS.
+
 ## Trải nghiệm
 
 - **Toàn cảnh:** agent, kết nối, toàn bộ công cụ, Vault; quan hệ cấp quyền/sử dụng; số lượt gọi và dung lượng đầu vào/đầu ra. Chọn agent hoặc kết nối để xem quan hệ và yêu cầu tương ứng, rồi mở trang quản lý đúng đối tượng.
