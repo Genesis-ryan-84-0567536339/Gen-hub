@@ -417,6 +417,7 @@ async function refresh() {
     parseAuditHash();
     await fetchAuditLogs();
   }
+  if (route === 'skills' && !skillsData && !skillsLoading && state.settings.brainRepo) loadSkills();
   activity = new Map();
   render();
   renderChat();
@@ -2778,6 +2779,7 @@ window.addEventListener('hashchange', async () => {
   route = hashRoute;
   kanbanGeneration++;
   if (state && route === 'kanban') loadKanban();
+  if (state && route === 'skills' && !skillsData && !skillsLoading && state.settings.brainRepo) loadSkills();
   if (route === 'audit') {
     parseAuditHash();
   } else {
