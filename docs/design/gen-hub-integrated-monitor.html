@@ -1,0 +1,418 @@
+<div id="gh-integrated">
+  <style>
+    #gh-integrated{--gh-bg:light-dark(#f5f6f2,#151a18);--gh-surface:light-dark(#ffffff,#1d2420);--gh-ink:light-dark(#203b31,#e4ede6);--gh-muted:light-dark(#68766e,#a6b6ab);--gh-line:light-dark(#e2e7e0,#344239);--gh-green:light-dark(#287657,#73c6a0);--gh-soft:light-dark(#eaf3eb,#263e31);--gh-amber:light-dark(#976119,#e9b66b);--gh-amber-bg:light-dark(#fbf2df,#3b3222);--gh-red:light-dark(#ad4d45,#f19a8a);--gh-red-bg:light-dark(#fbeee9,#3c2925);--gh-blue:light-dark(#577bab,#9ebcea);--gh-purple:light-dark(#9778af,#c0a1d6);--gh-track:light-dark(#edf0e9,#2c3830);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;font-size:13px;line-height:1.5;color:var(--gh-ink);background:var(--gh-bg);border:1px solid var(--gh-line);border-radius:14px;overflow:hidden;isolation:isolate}
+    #gh-integrated *{box-sizing:border-box}
+    #gh-integrated button,#gh-integrated select{font:inherit;color:inherit}
+    #gh-integrated button{cursor:pointer}
+    #gh-integrated button:focus-visible,#gh-integrated select:focus-visible{outline:2px solid var(--gh-green);outline-offset:3px}
+    #gh-integrated h1,#gh-integrated h2,#gh-integrated h3,#gh-integrated p{margin:0}
+    #gh-integrated h1{font-size:25px;font-weight:500;letter-spacing:-.7px}
+    #gh-integrated h2{font-size:15px;font-weight:500}
+    #gh-integrated h3{font-size:13px;font-weight:500}
+    #gh-integrated small{font-size:11px;color:var(--gh-muted)}
+    #gh-integrated b,#gh-integrated strong{font-weight:500}
+    #gh-integrated .gh-top{min-height:60px;padding:12px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--gh-surface);border-bottom:1px solid var(--gh-line)}
+    #gh-integrated .gh-brand{display:flex;align-items:center;gap:9px;letter-spacing:-.5px;font-size:19px;font-weight:500}
+    #gh-integrated .gh-mark{width:29px;height:29px;display:grid;place-items:center;background:var(--gh-green);color:var(--gh-surface);border-radius:9px;font-size:24px}
+    #gh-integrated .gh-topright{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+    #gh-integrated .gh-demo{font-size:11px;color:var(--gh-amber);background:var(--gh-amber-bg);padding:4px 9px;border-radius:5px}
+    #gh-integrated .gh-user{display:flex;gap:7px;align-items:center}
+    #gh-integrated .gh-avatar{display:inline-grid;place-items:center;border-radius:50%;width:26px;height:26px;background:var(--gh-soft);color:var(--gh-green)}
+    #gh-integrated .gh-layout{display:grid;grid-template-columns:144px minmax(0,1fr)}
+    #gh-integrated .gh-side{padding:24px 10px;background:var(--gh-surface);border-right:1px solid var(--gh-line)}
+    #gh-integrated .gh-navlabel{padding:0 10px 10px;color:var(--gh-muted);font-size:11px;letter-spacing:1.2px}
+    #gh-integrated .gh-nav{display:flex;align-items:center;gap:9px;padding:11px 10px;margin-bottom:4px;border:0;border-radius:7px;background:transparent;width:100%;text-align:left}
+    #gh-integrated .gh-nav.active{background:var(--gh-soft);color:var(--gh-green)}
+    #gh-integrated .gh-nav i{width:16px;height:16px}
+    #gh-integrated .gh-nav svg{width:16px;height:16px;flex:none}
+    #gh-integrated .gh-sidefoot{margin-top:42px;padding:13px 10px;border-top:1px solid var(--gh-line);color:var(--gh-muted);font-size:11px}
+    #gh-integrated .gh-main{min-width:0;padding:24px}
+    #gh-integrated .gh-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+    #gh-integrated .gh-sub{color:var(--gh-muted);margin-top:5px}
+    #gh-integrated .gh-date{background:var(--gh-surface);border:1px solid var(--gh-line);padding:7px 10px;border-radius:7px;font-size:11px;white-space:nowrap}
+    #gh-integrated .gh-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:20px}
+    #gh-integrated .gh-stat{background:var(--gh-surface);border:1px solid var(--gh-line);border-radius:10px;padding:14px;text-align:left;min-width:0}
+    #gh-integrated .gh-stat:hover{border-color:var(--gh-green)}
+    #gh-integrated .gh-statlabel{color:var(--gh-muted);display:flex;justify-content:space-between;gap:5px;align-items:center;font-size:12px}
+    #gh-integrated .gh-statlabel svg{width:15px;height:15px}
+    #gh-integrated .gh-statnum{font-size:29px;letter-spacing:-1px;line-height:1.4;font-weight:500;margin-top:3px}
+    #gh-integrated .gh-statfoot{font-size:11px;color:var(--gh-muted)}
+    #gh-integrated .gh-panel{background:var(--gh-surface);border:1px solid var(--gh-line);border-radius:10px;min-width:0}
+    #gh-integrated .gh-panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px 17px 12px;flex-wrap:wrap}
+    #gh-integrated .gh-panelbody{padding:0 17px 17px}
+    #gh-integrated .gh-pair{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:14px;margin-bottom:18px}
+    #gh-integrated .gh-textbutton{border:0;background:transparent;color:var(--gh-green);padding:2px 0;font-size:11px}
+    #gh-integrated .gh-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 7px;border-radius:5px;font-size:11px;white-space:nowrap;color:var(--gh-muted);background:var(--gh-track)}
+    #gh-integrated .gh-pill.ok{color:var(--gh-green);background:var(--gh-soft)}
+    #gh-integrated .gh-pill.wait{color:var(--gh-amber);background:var(--gh-amber-bg)}
+    #gh-integrated .gh-pill.bad{color:var(--gh-red);background:var(--gh-red-bg)}
+    #gh-integrated .gh-graph{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:54px;padding-top:4px}
+    #gh-integrated .gh-wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+    #gh-integrated .gh-wire{fill:none;stroke:var(--gh-line);stroke-width:1.4}
+    #gh-integrated .gh-wire.on{stroke:var(--gh-green);stroke-width:2}
+    #gh-integrated .gh-graphcol{position:relative;z-index:1;min-width:0}
+    #gh-integrated .gh-coltitle{font-size:11px;color:var(--gh-muted);letter-spacing:1px;margin-bottom:10px}
+    #gh-integrated .gh-node{background:var(--gh-surface);border:1px solid var(--gh-line);border-radius:7px;width:100%;display:flex;align-items:center;gap:8px;text-align:left;margin-bottom:10px;padding:9px 10px;min-height:48px}
+    #gh-integrated .gh-node.selected{border-color:var(--gh-green);background:var(--gh-soft)}
+    #gh-integrated .gh-node.dim{opacity:.4}
+    #gh-integrated .gh-node .gh-avatar{width:23px;height:23px;border-radius:6px;flex:none;font-size:11px}
+    #gh-integrated .gh-node strong{display:block;font-size:12px}
+    #gh-integrated .gh-node small{display:block;font-size:11px}
+    #gh-integrated .gh-nodecount{margin-left:auto;font-size:11px;font-variant-numeric:tabular-nums}
+    #gh-integrated .gh-nodetext{min-width:0;overflow-wrap:anywhere}
+    #gh-integrated .gh-mapfoot{font-size:11px;color:var(--gh-muted);border-top:1px solid var(--gh-line);padding-top:10px}
+    #gh-integrated .gh-donutrow{display:flex;align-items:center;gap:17px;padding:6px 0 14px}
+    #gh-integrated .gh-donut{width:98px;height:98px;border-radius:50%;background:conic-gradient(var(--gh-green) 0 48.148%,var(--gh-blue) 48.148% 81.481%,var(--gh-purple) 81.481% 100%);display:grid;place-items:center;flex:none}
+    #gh-integrated .gh-donutinner{width:75px;height:75px;border-radius:50%;background:var(--gh-surface);display:flex;flex-direction:column;align-items:center;justify-content:center}
+    #gh-integrated .gh-donutinner strong{font-size:23px;letter-spacing:-.8px}
+    #gh-integrated .gh-donutinner small{font-size:11px}
+    #gh-integrated .gh-legend{width:100%;display:grid;gap:8px}
+    #gh-integrated .gh-legendbutton{display:flex;align-items:center;gap:6px;width:100%;border:0;background:transparent;padding:0;font-size:11px;text-align:left}
+    #gh-integrated .gh-swatch{width:7px;height:7px;border-radius:2px;flex:none;background:var(--gh-green)}
+    #gh-integrated .gh-legendbutton b{margin-left:auto;font-variant-numeric:tabular-nums}
+    #gh-integrated .gh-divider{height:1px;background:var(--gh-line);margin:12px 0}
+    #gh-integrated .gh-numbers{display:flex;justify-content:space-between;gap:8px;margin:9px 0;font-size:11px}
+    #gh-integrated .gh-volume{height:7px;display:flex;gap:2px;border-radius:3px;overflow:hidden}
+    #gh-integrated .gh-volume span:first-child{width:23%;background:var(--gh-blue)}
+    #gh-integrated .gh-volume span:last-child{width:77%;background:var(--gh-green)}
+    #gh-integrated .gh-low{font-size:11px;color:var(--gh-muted)}
+    #gh-integrated .gh-attention{margin-top:13px;border:0;background:var(--gh-amber-bg);color:var(--gh-amber);border-radius:6px;padding:9px;width:100%;text-align:left;font-size:11px}
+    #gh-integrated .gh-focus{margin-bottom:18px;background:var(--gh-soft);border-radius:8px;padding:12px 15px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+    #gh-integrated .gh-focus strong{font-size:13px}
+    #gh-integrated .gh-focus small{display:block;margin-top:2px;color:var(--gh-muted)}
+    #gh-integrated .gh-flowtable{width:100%;border-collapse:collapse;text-align:left}
+    #gh-integrated .gh-flowtable th{font-size:11px;color:var(--gh-muted);font-weight:400;padding:9px 14px;background:var(--gh-bg)}
+    #gh-integrated .gh-flowtable td{padding:11px 14px;border-top:1px solid var(--gh-line);vertical-align:middle;font-size:11px;overflow-wrap:anywhere}
+    #gh-integrated .gh-flowtable th:first-child,#gh-integrated .gh-flowtable td:first-child{padding-left:17px}
+    #gh-integrated .gh-flowtable td small{display:block;font-size:11px;margin-top:2px}
+    #gh-integrated .gh-rowbutton{background:transparent;border:0;padding:0;text-align:left;color:var(--gh-ink);font-size:11px}
+    #gh-integrated .gh-rowbutton:hover{color:var(--gh-green)}
+    #gh-integrated .gh-flowtable tr.chosen td{background:var(--gh-soft)}
+    #gh-integrated .gh-rowbutton strong{display:block}
+    #gh-integrated .gh-trace{margin-top:16px;border:1px solid var(--gh-line);border-radius:10px;background:var(--gh-surface)}
+    #gh-integrated .gh-tracehead{padding:16px 17px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    #gh-integrated .gh-tracetitle{font-size:15px;font-weight:500;margin-top:3px}
+    #gh-integrated .gh-tracecontext{font-size:11px;color:var(--gh-muted);margin-top:4px}
+    #gh-integrated .gh-steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));padding:2px 17px 17px;gap:10px}
+    #gh-integrated .gh-step{position:relative;padding-top:5px}
+    #gh-integrated .gh-step:after{content:"";height:1px;background:var(--gh-line);position:absolute;left:28px;right:-10px;top:16px}
+    #gh-integrated .gh-step:last-child:after{display:none}
+    #gh-integrated .gh-stepcircle{height:23px;width:23px;border:1px solid var(--gh-line);color:var(--gh-muted);background:var(--gh-surface);border-radius:50%;display:grid;place-items:center;font-size:11px}
+    #gh-integrated .gh-step.done .gh-stepcircle{background:var(--gh-soft);color:var(--gh-green);border-color:var(--gh-soft)}
+    #gh-integrated .gh-step.current .gh-stepcircle{background:var(--gh-amber-bg);color:var(--gh-amber);border-color:var(--gh-amber)}
+    #gh-integrated .gh-step.failed .gh-stepcircle{background:var(--gh-red-bg);color:var(--gh-red);border-color:var(--gh-red)}
+    #gh-integrated .gh-step strong{display:block;font-size:11px;margin-top:8px}
+    #gh-integrated .gh-step small{font-size:11px;display:block;margin-top:3px}
+    #gh-integrated .gh-tabs{display:flex;gap:18px;flex-wrap:wrap;border-bottom:1px solid var(--gh-line);padding:0 17px}
+    #gh-integrated .gh-tab{border:0;border-bottom:2px solid transparent;background:transparent;padding:9px 0;color:var(--gh-muted);font-size:11px}
+    #gh-integrated .gh-tab.active{border-bottom-color:var(--gh-green);color:var(--gh-green)}
+    #gh-integrated .gh-payload{padding:14px 17px;min-height:104px}
+    #gh-integrated .gh-payload pre{margin:0;background:var(--gh-bg);border:1px solid var(--gh-line);border-radius:6px;padding:11px;color:var(--gh-ink);font-size:11px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+    #gh-integrated .gh-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    #gh-integrated .gh-details span{display:block;font-size:11px;color:var(--gh-muted)}
+    #gh-integrated .gh-details strong{display:block;margin-top:3px;font-size:12px;overflow-wrap:anywhere}
+    #gh-integrated .gh-tabbar{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+    #gh-integrated .gh-tabpill{border:1px solid var(--gh-line);border-radius:7px;padding:7px 11px;background:var(--gh-surface);font-size:12px}
+    #gh-integrated .gh-tabpill.active{background:var(--gh-green);border-color:var(--gh-green);color:var(--gh-surface)}
+    #gh-integrated .gh-filter{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    #gh-integrated .gh-filter select{border:1px solid var(--gh-line);border-radius:6px;padding:6px 9px;background:var(--gh-surface);font-size:11px;max-width:100%}
+    #gh-integrated .gh-inventoryfoot{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:18px;color:var(--gh-muted);font-size:11px}
+    #gh-integrated .gh-empty{padding:25px;color:var(--gh-muted);font-size:12px;text-align:center}
+    #gh-integrated .gh-footer{margin-top:18px;font-size:11px;color:var(--gh-muted);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    @media(max-width:900px){#gh-integrated .gh-layout{grid-template-columns:120px minmax(0,1fr)}#gh-integrated .gh-main{padding:18px}#gh-integrated .gh-side{padding:23px 6px}#gh-integrated .gh-nav{font-size:11px;gap:7px}#gh-integrated .gh-pair{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)}#gh-integrated .gh-node{padding:8px;gap:6px}#gh-integrated .gh-graph{column-gap:35px}#gh-integrated .gh-donutrow{flex-direction:column;align-items:stretch}#gh-integrated .gh-donut{margin:0 auto}#gh-integrated .gh-stat{padding:11px}#gh-integrated .gh-flowtable td,#gh-integrated .gh-flowtable th{padding-left:10px;padding-right:10px}}
+    @media(max-width:700px){#gh-integrated .gh-layout{display:block}#gh-integrated .gh-side{padding:8px 14px;display:flex;gap:6px;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--gh-line)}#gh-integrated .gh-nav{width:auto;margin:0;padding:8px 10px}#gh-integrated .gh-navlabel,#gh-integrated .gh-sidefoot{display:none}#gh-integrated .gh-pair{grid-template-columns:minmax(0,1fr)}#gh-integrated .gh-donutrow{flex-direction:row;gap:24px}#gh-integrated .gh-donut{margin:0}#gh-integrated .gh-counts{grid-template-columns:repeat(2,minmax(0,1fr))}#gh-integrated .gh-top{padding:12px 16px}#gh-integrated .gh-topright{gap:8px}#gh-integrated .gh-user{display:none}#gh-integrated .gh-heading{align-items:flex-start}#gh-integrated .gh-flowtable th:last-child,#gh-integrated .gh-flowtable td:last-child{display:none}#gh-integrated .gh-flowtable{table-layout:fixed}#gh-integrated .gh-flowtable th:first-child{width:40%}#gh-integrated .gh-graph{column-gap:54px}}
+    @media(max-width:440px){#gh-integrated .gh-main{padding:14px}#gh-integrated h1{font-size:21px}#gh-integrated .gh-demo{font-size:11px}#gh-integrated .gh-brand{font-size:17px}#gh-integrated .gh-panelhead{padding:14px 12px 10px}#gh-integrated .gh-panelbody{padding:0 12px 14px}#gh-integrated .gh-node .gh-avatar{display:none}#gh-integrated .gh-graph{column-gap:30px}#gh-integrated .gh-node{gap:4px;padding:8px}#gh-integrated .gh-nodecount{font-size:11px}#gh-integrated .gh-statfoot{font-size:11px}#gh-integrated .gh-flowtable th,#gh-integrated .gh-flowtable td{font-size:11px;padding:10px 8px}#gh-integrated .gh-flowtable th:first-child,#gh-integrated .gh-flowtable td:first-child{padding-left:12px}#gh-integrated .gh-flowtable .gh-pill{white-space:normal}#gh-integrated .gh-rowbutton{font-size:11px}#gh-integrated .gh-steps{display:block;padding:0 17px 10px}#gh-integrated .gh-step{min-height:47px;padding:0 0 12px 34px}#gh-integrated .gh-stepcircle{position:absolute;left:0;top:0}#gh-integrated .gh-step:after{left:11px;top:24px;width:1px;height:calc(100% - 24px)}#gh-integrated .gh-step strong{margin:0}#gh-integrated .gh-step small{margin:2px 0 0}#gh-integrated .gh-details{grid-template-columns:1fr}#gh-integrated .gh-tabs{gap:12px}#gh-integrated .gh-tab{font-size:11px}#gh-integrated .gh-focus{align-items:flex-start}}
+    @media(pointer:coarse){#gh-integrated .gh-nav,#gh-integrated .gh-tab,#gh-integrated .gh-tabpill,#gh-integrated .gh-rowbutton,#gh-integrated .gh-legendbutton,#gh-integrated .gh-textbutton{min-height:44px}#gh-integrated .gh-filter select{min-height:44px;font-size:16px}}
+  </style>
+<style>
+  #gh-integrated .gh-layout{grid-template-columns:158px minmax(0,1fr)}
+  #gh-integrated .gh-main{padding:22px;container-type:inline-size;container-name:ghcenter}
+  #gh-integrated .gh-navlabel{letter-spacing:.5px}
+  #gh-integrated .gh-nav{font-size:12px;padding:11px 9px;gap:8px}
+  #gh-integrated .gh-topbutton{border:1px solid var(--gh-line);background:var(--gh-surface);border-radius:6px;padding:5px 9px;display:flex;gap:7px;align-items:center;font-size:12px}
+  #gh-integrated .gh-topbutton svg{width:14px;height:14px}
+  #gh-integrated .gh-endpoint{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--gh-surface);border:1px solid var(--gh-line);padding:10px 13px;border-radius:8px;margin-bottom:16px;min-width:0;font-size:11px}
+  #gh-integrated .gh-endpoint span{display:flex;align-items:center;gap:6px;color:var(--gh-muted)}
+  #gh-integrated .gh-endpoint svg{width:14px;height:14px}
+  #gh-integrated .gh-endpoint code{font-size:11px;color:var(--gh-ink);background:none;overflow-wrap:anywhere;min-width:0}
+  #gh-integrated .gh-endpoint button{margin-left:auto}
+  #gh-integrated .gh-sectiontabs{display:flex;gap:22px;border-bottom:1px solid var(--gh-line);margin-bottom:17px;flex-wrap:wrap}
+  #gh-integrated .gh-sectiontab{padding:0 0 11px;border:0;border-bottom:2px solid transparent;background:none;font-size:12px;color:var(--gh-muted)}
+  #gh-integrated .gh-sectiontab.active{color:var(--gh-green);border-color:var(--gh-green)}
+  #gh-integrated .gh-bottomaction,#gh-integrated .gh-contextactions,#gh-integrated .gh-auditactions{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:13px}
+  #gh-integrated .gh-contextactions{margin-top:-8px;margin-bottom:18px}
+  #gh-integrated .gh-bottomaction{margin-bottom:10px}
+  #gh-integrated .gh-queueitem{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;border:0;border-bottom:1px solid var(--gh-line);background:transparent;padding:15px 0;text-align:left}
+  #gh-integrated .gh-queueitem strong,#gh-integrated .gh-queueitem small{display:block}
+  #gh-integrated .gh-queueitem small{margin-top:4px}
+  #gh-integrated .gh-manager{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:start}
+  #gh-integrated .gh-entitylist{display:grid;gap:8px}
+  #gh-integrated .gh-entity{background:var(--gh-surface);border:1px solid var(--gh-line);border-radius:8px;text-align:left;padding:11px 12px}
+  #gh-integrated .gh-entity.selected{background:var(--gh-soft);border-color:var(--gh-green)}
+  #gh-integrated .gh-entity strong,#gh-integrated .gh-entity small{display:block}
+  #gh-integrated .gh-entity small{margin-top:4px}
+  #gh-integrated .gh-managerdetail{padding:17px;min-height:260px}
+  #gh-integrated .gh-managementrow{display:flex;justify-content:space-between;align-items:center;gap:15px;padding:13px 0;border-bottom:1px solid var(--gh-line)}
+  #gh-integrated .gh-managementrow strong,#gh-integrated .gh-managementrow small{display:block;overflow-wrap:anywhere}
+  #gh-integrated .gh-managementrow small{margin-top:3px}
+  #gh-integrated .gh-managementrow>span:first-child{min-width:0}
+  #gh-integrated .gh-switch{background:var(--gh-track);border:1px solid var(--gh-line);border-radius:20px;width:33px;height:19px;padding:2px;flex:none}
+  #gh-integrated .gh-switch span{display:block;border-radius:50%;width:13px;height:13px;background:var(--gh-muted)}
+  #gh-integrated .gh-switch.on{background:var(--gh-green);border-color:var(--gh-green)}
+  #gh-integrated .gh-switch.on span{margin-left:auto;background:var(--gh-surface)}
+  #gh-integrated .gh-permissiongroup{padding:12px 0;border-bottom:1px solid var(--gh-line)}
+  #gh-integrated .gh-permissiongroup summary{cursor:pointer;font-weight:500}
+  #gh-integrated .gh-permissiongroup summary small{font-weight:400;margin-left:6px}
+  #gh-integrated .gh-checkrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0 0 13px;font-size:11px;overflow-wrap:anywhere}
+  #gh-integrated .gh-checkrow input{accent-color:var(--gh-green);flex:none}
+  #gh-integrated .gh-infofoot{font-size:11px;color:var(--gh-muted)}
+  #gh-integrated .gh-notice{background:var(--gh-amber-bg);color:var(--gh-amber);padding:12px;border-radius:7px;margin-top:15px;font-size:12px}
+  #gh-integrated .gh-kanban{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  #gh-integrated .gh-kanban>section{background:var(--gh-track);padding:12px;border-radius:8px}
+  #gh-integrated .gh-kanban h3{margin-bottom:12px}
+  #gh-integrated .gh-kanbancard{background:var(--gh-surface);border:1px solid var(--gh-line);border-radius:6px;padding:12px;font-size:12px}
+  #gh-integrated .gh-kanbancard small{display:block;margin-top:9px}
+  #gh-integrated .gh-chat{display:none;min-width:0;background:var(--gh-surface);border-left:1px solid var(--gh-line);padding:16px}
+  #gh-integrated.gh-chat-open .gh-layout{grid-template-columns:146px minmax(0,1fr) 248px}
+  #gh-integrated.gh-chat-open .gh-chat{display:block}
+  #gh-integrated .gh-chathead{display:flex;justify-content:space-between;gap:7px;align-items:center;font-size:12px}
+  #gh-integrated .gh-chathead>span{display:flex;align-items:center;gap:6px}
+  #gh-integrated .gh-chathead svg{width:15px;height:15px;color:var(--gh-green)}
+  #gh-integrated .gh-chatcontext{padding:14px 0;margin-top:8px;border-bottom:1px solid var(--gh-line)}
+  #gh-integrated .gh-chatcontext strong{display:block;margin-top:4px;font-size:12px}
+  #gh-integrated .gh-chatmessage{background:var(--gh-soft);padding:13px;border-radius:9px;margin-top:16px;font-size:12px;line-height:1.7}
+  #gh-integrated .gh-chatprompts{display:grid;gap:8px;margin-top:17px}
+  #gh-integrated .gh-chatprompts button{border:1px solid var(--gh-line);border-radius:6px;background:var(--gh-surface);text-align:left;padding:9px;font-size:11px}
+  #gh-integrated .gh-chatprompts button:hover{border-color:var(--gh-green);color:var(--gh-green)}
+  #gh-integrated .gh-chatprimary{background:var(--gh-green);color:var(--gh-surface);padding:9px;border:0;border-radius:6px;margin-top:13px;font-size:11px;width:100%}
+  #gh-integrated .gh-chatpreview{font-size:11px;color:var(--gh-muted);margin-top:18px}
+  @container ghcenter (max-width:620px){#gh-integrated .gh-pair{grid-template-columns:1fr}#gh-integrated .gh-donutrow{flex-direction:row;gap:24px}#gh-integrated .gh-donut{margin:0}#gh-integrated .gh-counts{grid-template-columns:repeat(2,minmax(0,1fr))}#gh-integrated .gh-manager{grid-template-columns:1fr}#gh-integrated .gh-entitylist{grid-template-columns:repeat(2,minmax(0,1fr))}#gh-integrated .gh-flowtable th:last-child,#gh-integrated .gh-flowtable td:last-child{display:none}#gh-integrated .gh-kanban{grid-template-columns:repeat(2,minmax(0,1fr))}#gh-integrated .gh-endpoint button{margin-left:0}}
+  @media(max-width:900px){#gh-integrated .gh-layout,#gh-integrated.gh-chat-open .gh-layout{grid-template-columns:130px minmax(0,1fr)}#gh-integrated .gh-chat{grid-column:2;border-left:0;border-top:1px solid var(--gh-line)}#gh-integrated .gh-main{padding:17px}}
+  @media(max-width:700px){#gh-integrated .gh-layout,#gh-integrated.gh-chat-open .gh-layout{display:block}#gh-integrated .gh-main{padding:15px}#gh-integrated .gh-nav{font-size:11px;padding:7px}#gh-integrated .gh-manager{grid-template-columns:1fr}#gh-integrated .gh-entitylist{grid-template-columns:repeat(2,minmax(0,1fr))}#gh-integrated .gh-chat{border-left:0;border-top:1px solid var(--gh-line)}#gh-integrated .gh-topright .gh-user{display:none}#gh-integrated .gh-top{flex-wrap:wrap}}
+  @media(max-width:440px){#gh-integrated .gh-sectiontabs{gap:14px}#gh-integrated .gh-sectiontab{font-size:11px}#gh-integrated .gh-kanban{grid-template-columns:1fr}}
+  @media(pointer:coarse){#gh-integrated .gh-sectiontab,#gh-integrated .gh-entity,#gh-integrated .gh-chatprompts button,#gh-integrated .gh-checkrow{min-height:44px}}
+</style>
+
+  <header class="gh-top">
+    <div class="gh-brand"><span class="gh-mark">g</span>gen-hub</div>
+    <div class="gh-topright"><span class="gh-demo">BẢN TÍCH HỢP · DỮ LIỆU MẪU</span><button type="button" class="gh-topbutton" data-chat-toggle="1"><i data-lucide="sparkles" aria-hidden="true"></i>Trợ lý</button><span class="gh-user"><span class="gh-avatar">R</span>Ryan</span></div>
+  </header>
+  <div class="gh-layout">
+    <nav class="gh-side" aria-label="Điều hướng Gen-hub">
+      <div class="gh-navlabel">KHÔNG GIAN CỦA RYAN</div>
+      <button type="button" class="gh-nav active" data-app="overview"><i data-lucide="layout-dashboard" aria-hidden="true"></i>Tổng quan</button>
+      <button type="button" class="gh-nav" data-app="mcps"><i data-lucide="plug" aria-hidden="true"></i>MCP &amp; kết nối</button>
+      <button type="button" class="gh-nav" data-app="agents"><i data-lucide="bot" aria-hidden="true"></i>Agent &amp; quyền</button>
+      <button type="button" class="gh-nav" data-app="vault"><i data-lucide="key-round" aria-hidden="true"></i>Kho bí mật</button>
+      <button type="button" class="gh-nav" data-app="kanban"><i data-lucide="columns-3" aria-hidden="true"></i>Kanban</button>
+      <button type="button" class="gh-nav" data-app="audit"><i data-lucide="scroll-text" aria-hidden="true"></i>Nhật ký</button>
+      <button type="button" class="gh-nav" data-app="settings"><i data-lucide="settings" aria-hidden="true"></i>Cài đặt</button>
+      <div class="gh-sidefoot">Không gian của Ryan<br><span style="color:var(--gh-green)">Gen-hub cá nhân</span></div>
+    </nav>
+    <main class="gh-main">
+      <div class="gh-heading"><div><h1 id="gh-heading">Toàn cảnh hệ thống</h1><p class="gh-sub" id="gh-subheading">Mọi tài nguyên. Mọi hoạt động. Một nơi theo dõi.</p></div><span class="gh-date">12.09.2026 · Hôm nay</span></div>
+      <div id="gh-content"></div>
+      <div class="gh-footer"><span>Phạm vi: hoạt động đi qua Gen-hub</span><span>Ảnh chụp dữ liệu mẫu · 14:32</span></div>
+    </main>
+    <aside class="gh-chat" id="gh-chat" aria-label="Trợ lý Gen-hub" aria-live="polite"></aside>
+  </div>
+  <script>
+    (function(){
+      const root=document.getElementById('gh-integrated');
+      const q=s=>root.querySelector(s);
+      const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const agents=[
+        {id:'claude',name:'Claude',initial:'C',calls:416,grants:13,activity:'Đang xử lý',color:'var(--gh-green)'},
+        {id:'codex',name:'Codex',initial:'X',calls:288,grants:9,activity:'Đang xử lý',color:'var(--gh-blue)'},
+        {id:'gemini',name:'Gemini',initial:'G',calls:160,grants:6,activity:'Sẵn sàng',color:'var(--gh-purple)'},
+        {id:'assistant',name:'Trợ lý Ryan',initial:'R',calls:0,grants:2,activity:'Chưa hoạt động',color:'var(--gh-muted)'}
+      ];
+      const services=[
+        {id:'github',name:'GitHub',initial:'GH',calls:480,count:8,published:7,status:'Sẵn sàng',tone:'ok'},
+        {id:'drive',name:'Google Drive',initial:'D',calls:240,count:6,published:5,status:'Sẵn sàng',tone:'ok'},
+        {id:'slack',name:'Slack',initial:'S',calls:96,count:5,published:4,status:'Sẵn sàng',tone:'ok'},
+        {id:'figma',name:'Figma',initial:'F',calls:48,count:4,published:3,status:'Cần xác thực lại',tone:'wait'},
+        {id:'internal',name:'MCP nội bộ',initial:'M',calls:0,count:1,published:0,status:'Đang tắt',tone:''}
+      ];
+      const links=[['claude','github',240],['claude','drive',120],['claude','slack',56],['codex','github',240],['codex','drive',48],['gemini','drive',72],['gemini','slack',40],['gemini','figma',48]];
+      const toolSpec={
+        github:[['list_issues',192,true],['get_file_contents',144,true],['push_files',96,true],['create_pull_request',48,true],['add_issue_comment',0,true],['list_branches',0,true],['get_commit',0,true],['merge_pull_request',0,false]],
+        drive:[['read_file',120,true],['list_files',72,true],['export_file',48,true],['get_file',0,true],['create_file',0,true],['delete_file',0,false]],
+        slack:[['search_messages',56,true],['send_message',40,true],['list_channels',0,true],['read_thread',0,true],['delete_message',0,false]],
+        figma:[['get_file',32,true],['get_images',16,true],['get_comments',0,true],['post_comment',0,false]],
+        internal:[['run_task',0,false]]
+      };
+      const toolsList=Object.keys(toolSpec).flatMap(s=>toolSpec[s].map(t=>({id:s+':'+t[0],service:s,name:t[0],calls:t[1],published:t[2]})));
+      const grants={
+        claude:['github:list_issues','github:get_file_contents','github:push_files','github:create_pull_request','github:add_issue_comment','github:list_branches','github:get_commit','drive:read_file','drive:list_files','drive:export_file','drive:get_file','slack:search_messages','slack:send_message'],
+        codex:['github:list_issues','github:get_file_contents','github:push_files','github:create_pull_request','github:add_issue_comment','github:list_branches','github:get_commit','drive:read_file','drive:list_files'],
+        gemini:['drive:read_file','drive:list_files','slack:search_messages','figma:get_file','figma:get_images','figma:get_comments'],
+        assistant:['github:list_issues','drive:list_files']
+      };
+      const secrets=[
+        ['API dự phòng','Claude'],['Khóa môi trường thử','Codex'],['Webhook nội bộ','Claude, Codex'],['Token dịch thuật','Gemini'],['Khóa lưu trữ','Trợ lý Ryan'],['Cloudflare','Riêng tư'],['Khóa production','Riêng tư'],['Mã khôi phục','Riêng tư']
+      ];
+      const flows=[
+        {id:'1048',agent:'codex',service:'github',tool:'create_pull_request',title:'Tạo PR giao diện Monitor',target:'Gen-hub · feat/monitor',status:'Đang xử lý',tone:'wait',phase:2,time:'14:32:18',duration:'Đang chạy',input:{repo:'Gen-hub',head:'feat/monitor',base:'main',title:'Giao diện Monitor'},output:null},
+        {id:'1049',agent:'claude',service:'drive',tool:'list_files',title:'Tìm tài liệu yêu cầu',target:'Drive · Thư mục Gen-hub',status:'Đang chờ',tone:'wait',phase:1,time:'14:32:19',duration:'Chờ kết nối',input:{query:'Gen-hub / Yêu cầu Monitor'},output:null},
+        {id:'1047',agent:'claude',service:'drive',tool:'read_file',title:'Đọc bản yêu cầu Monitor',target:'Gen-hub-monitor-spec.md',status:'Hoàn tất',tone:'ok',phase:4,time:'14:32:12',duration:'1,2 giây',input:{file:'Gen-hub-monitor-spec.md'},output:{title:'Yêu cầu Monitor',content:'Quan sát tài nguyên, quyền sử dụng và từng bước xử lý.',bytes:18420}},
+        {id:'1046',agent:'gemini',service:'slack',tool:'send_message',title:'Gửi cập nhật tiến độ',target:'#genesis-control',status:'Bị từ chối',tone:'bad',phase:1,time:'14:31:58',duration:'Chặn tại Hub',input:{channel:'#genesis-control',text:'Bản giao diện đã sẵn sàng review.'},output:{allowed:false,reason:'Gemini chưa được cấp công cụ send_message.',sentToService:false}},
+        {id:'1045',agent:'claude',service:'github',tool:'list_issues',title:'Xem các yêu cầu đang mở',target:'Gen-hub · Issue',status:'Hoàn tất',tone:'ok',phase:4,time:'14:31:51',duration:'0,8 giây',input:{repo:'Gen-hub',state:'open'},output:{count:6,items:['Hoàn thiện Tổng quan','Liên kết lượt gọi với công việc','Kiểm tra quyền công cụ']}},
+        {id:'1044',agent:'gemini',service:'figma',tool:'get_file',title:'Đọc thiết kế tham khảo',target:'Gen-hub / Monitor',status:'Cần xác thực',tone:'bad',phase:2,time:'14:31:42',duration:'Dịch vụ từ chối',input:{file:'Gen-hub / Monitor'},output:{error:'Credential Figma hết hiệu lực.',action:'Owner kết nối lại Figma.'}}
+      ];
+      let page='overview',selectedAgent='',selectedService='',resourceKind='tools',resourceFilter='all',selectedFlow='1048',detailTab='summary',selectedTool='';
+      const agentName=id=>agents.find(a=>a.id===id).name;
+      const serviceName=id=>services.find(s=>s.id===id).name;
+      const pill=(text,tone)=>'<span class="gh-pill '+(tone||'')+'">'+esc(text)+'</span>';
+      const icon=name=>'<i data-lucide="'+name+'" aria-hidden="true"></i>';
+      function counts(){return '<div class="gh-counts">'+[
+        ['agents','Agent','4','2 đang xử lý','bot'],
+        ['connections','Kết nối','5','3 sẵn sàng · 1 cần xác thực','plug'],
+        ['tools','Công cụ',toolsList.length,toolsList.filter(t=>t.published).length+' công bố · '+toolsList.filter(t=>t.published&&services.find(s=>s.id===t.service).tone==='ok').length+' khả dụng','blocks'],
+        ['secrets','Kho bí mật','8','5 đã chia sẻ · 3 riêng tư','key-round']
+      ].map(x=>'<button class="gh-stat" type="button" data-resource="'+x[0]+'"><span class="gh-statlabel">'+x[1]+icon(x[4])+'</span><div class="gh-statnum">'+x[2]+'</div><div class="gh-statfoot">'+x[3]+'</div></button>').join('')+'</div>'}
+      function focus(){if(!selectedAgent&&!selectedService)return '';let name=selectedAgent?agentName(selectedAgent):serviceName(selectedService),total=selectedAgent?agents.find(a=>a.id===selectedAgent).calls:services.find(s=>s.id===selectedService).calls;return '<div class="gh-focus"><div><strong>Đang xem: '+esc(name)+'</strong><small>'+total+' lượt gọi hôm nay · Bản đồ và danh sách yêu cầu đã được lọc</small></div><button type="button" class="gh-textbutton" data-clear="1">Xem tất cả</button></div>'}
+      function map(){return '<section class="gh-panel"><div class="gh-panelhead"><h2>Bản đồ hoạt động</h2><span class="gh-pill ok">Qua Gen-hub</span></div><div class="gh-panelbody"><div class="gh-graph" id="gh-graph"><svg class="gh-wires" aria-hidden="true"></svg><div class="gh-graphcol"><div class="gh-coltitle">AGENT · LƯỢT GỌI</div>'+agents.map(a=>{
+        const connected=!selectedService||links.some(l=>l[0]===a.id&&l[1]===selectedService);
+        const n=selectedService?(links.find(l=>l[0]===a.id&&l[1]===selectedService)||[0,0,0])[2]:a.calls;
+        return '<button type="button" class="gh-node '+(selectedAgent===a.id?'selected ':'')+(!connected?'dim':'')+'" id="gh-node-'+a.id+'" data-agent="'+a.id+'" aria-pressed="'+(selectedAgent===a.id)+'"><span class="gh-avatar">'+a.initial+'</span><span class="gh-nodetext"><strong>'+a.name+'</strong><small>'+a.activity+'</small></span><span class="gh-nodecount">'+n+'</span></button>'
+      }).join('')+'</div><div class="gh-graphcol"><div class="gh-coltitle">KẾT NỐI · LƯỢT GỌI</div>'+services.filter(s=>s.id!=='internal').map(s=>{
+        const connected=!selectedAgent||links.some(l=>l[0]===selectedAgent&&l[1]===s.id);
+        const n=selectedAgent?(links.find(l=>l[0]===selectedAgent&&l[1]===s.id)||[0,0,0])[2]:s.calls;
+        return '<button type="button" class="gh-node '+(selectedService===s.id?'selected ':'')+(!connected?'dim':'')+'" id="gh-node-'+s.id+'" data-service="'+s.id+'" aria-pressed="'+(selectedService===s.id)+'"><span class="gh-avatar">'+s.initial+'</span><span class="gh-nodetext"><strong>'+s.name+'</strong><small>'+s.count+' công cụ'+(s.id==='figma'?' · Cần xác thực':'')+'</small></span><span class="gh-nodecount">'+n+'</span></button>'
+      }).join('')+'</div></div><div class="gh-mapfoot">Đường nối = đã có lượt gọi hôm nay · MCP nội bộ đang tắt</div></div></section>'}
+      function activity(){return '<section class="gh-panel"><div class="gh-panelhead"><h2>Lượt gọi theo agent</h2></div><div class="gh-panelbody"><div class="gh-donutrow"><div class="gh-donut" role="img" aria-label="864 lượt gọi: Claude 416, Codex 288, Gemini 160, Trợ lý Ryan 0"><div class="gh-donutinner"><strong>864</strong><small>lượt hôm nay</small></div></div><div class="gh-legend">'+agents.map(a=>'<button class="gh-legendbutton" type="button" data-agent="'+a.id+'"><span class="gh-swatch" style="background:'+a.color+'"></span>'+a.name+'<b>'+a.calls+'</b></button>').join('')+'</div></div><div class="gh-divider"></div><h3>Nội dung trao đổi hôm nay</h3><div class="gh-numbers"><span>Đầu vào <b>2,4 MB</b></span><span>Đầu ra <b>8,1 MB</b></span></div><div class="gh-volume" role="img" aria-label="Đầu vào 2,4 MB, đầu ra 8,1 MB"><span></span><span></span></div><div class="gh-low" style="margin-top:8px">Dung lượng nội dung đã che bí mật</div><button type="button" class="gh-attention" data-resource="tools" data-filter="unused">'+toolsList.filter(t=>t.published&&t.calls===0).length+' công cụ đã công bố chưa được dùng hôm nay →</button></div></section>'}
+      function filteredFlows(){return flows.filter(f=>(!selectedAgent||f.agent===selectedAgent)&&(!selectedService||f.service===selectedService))}
+      function flowTable(){const rows=filteredFlows();return '<section class="gh-panel"><div class="gh-panelhead"><h2>Yêu cầu gần đây</h2><span class="gh-low">'+rows.length+' yêu cầu minh họa'+(!selectedAgent&&!selectedService?' · 2 đang xử lý':'')+'</span></div><table class="gh-flowtable"><thead><tr><th>Yêu cầu / Công cụ</th><th>Agent → Kết nối</th><th>Trạng thái</th><th>Thời điểm</th></tr></thead><tbody>'+rows.map(f=>'<tr class="'+(selectedFlow===f.id?'chosen':'')+'"><td><button type="button" class="gh-rowbutton" data-flow="'+f.id+'"><strong>'+esc(f.title)+'</strong><small>#'+f.id+' · '+esc(f.tool)+'</small></button></td><td>'+agentName(f.agent)+' → '+serviceName(f.service)+'<small>'+esc(f.target)+'</small></td><td>'+pill(f.status,f.tone)+'</td><td>'+f.time+'</td></tr>').join('')+'</tbody></table>'+(!rows.length?'<div class="gh-empty">Không có yêu cầu minh họa trong lựa chọn này.</div>':'')+'</section>'}
+      function trace(){const f=flows.find(x=>x.id===selectedFlow);if(!f)return '';const denied=f.id==='1046',failed=f.id==='1044',done=f.status==='Hoàn tất',waiting=f.id==='1049';
+        const names=['Tiếp nhận','Kiểm tra quyền','Gọi dịch vụ','Nhận kết quả','Lưu nhật ký'];
+        const sub=done?['Đã nhận','Đã cho phép','Đã gửi','Đã nhận','Đã lưu']:denied?['Đã nhận','Chưa được cấp','Không gửi','Không thực hiện','Đã lưu từ chối']:failed?['Đã nhận','Đã cho phép','Lỗi xác thực','Nhận lỗi','Đã lưu lỗi']:waiting?['Đã nhận','Đã cho phép','Chờ kết nối','Chưa có','Đã ghi bắt đầu']:['Đã nhận','Đã cho phép','Đang thực hiện','Đang chờ','Đã ghi bắt đầu'];
+        return '<section class="gh-trace" id="gh-trace"><div class="gh-tracehead"><div><span class="gh-low">CHI TIẾT LUỒNG · #'+f.id+'</span><div class="gh-tracetitle">'+esc(f.title)+'</div><div class="gh-tracecontext">'+agentName(f.agent)+' → Gen-hub → '+serviceName(f.service)+' · '+esc(f.tool)+'</div></div><div>'+pill(f.status,f.tone)+'</div></div><div class="gh-steps">'+names.map((n,i)=>{let cls='';if(done)cls='done';else if(denied)cls=i===1?'failed':i===0||i===4?'done':'';else if(failed)cls=i===2?'failed':i===0||i===1||i===3||i===4?'done':'';else cls=i<(waiting?2:2)?'done':i===2?'current':'';return '<div class="gh-step '+cls+'"><span class="gh-stepcircle">'+(cls==='done'?'✓':cls==='failed'?'!':i+1)+'</span><strong>'+n+'</strong><small>'+sub[i]+'</small></div>'}).join('')+'</div><div class="gh-tabs" aria-label="Chi tiết yêu cầu">'+[['summary','Tóm tắt'],['input','Đầu vào'],['output','Đầu ra'],['rights','Quyền sử dụng']].map(t=>'<button type="button" class="gh-tab '+(detailTab===t[0]?'active':'')+'" data-detail-tab="'+t[0]+'" aria-pressed="'+(detailTab===t[0])+'">'+t[1]+'</button>').join('')+'</div><div class="gh-payload" aria-live="polite">'+payload(f)+'</div></section>'
+      }
+      function payload(f){if(detailTab==='input')return '<pre>'+esc(JSON.stringify(f.input,null,2))+'</pre>';if(detailTab==='output')return f.output?'<pre>'+esc(JSON.stringify(f.output,null,2))+'</pre>':'<div class="gh-empty">Chưa có đầu ra · '+(f.id==='1049'?'Yêu cầu đang chờ kết nối.':'Đang chờ GitHub trả kết quả.')+'</div>';if(detailTab==='rights')return '<div class="gh-details"><div><span>Công cụ</span><strong>'+esc(f.tool)+' · Đã công bố</strong></div><div><span>Quyền của '+agentName(f.agent)+'</span><strong>'+pill(f.id==='1046'?'Chưa được cấp':'Đã được cấp',f.id==='1046'?'bad':'ok')+'</strong></div><div><span>Kết nối dịch vụ</span><strong>'+pill(f.id==='1044'?'Cần xác thực lại':'Sẵn sàng',f.id==='1044'?'wait':'ok')+'</strong></div><div><span>Quyết định tại Hub</span><strong>'+(f.id==='1046'?'Chặn trước khi gửi ra Slack':'Cho phép gọi công cụ')+'</strong></div></div>';
+        return '<div class="gh-details"><div><span>Đối tượng được xử lý</span><strong>'+esc(f.target)+'</strong></div><div><span>Kết quả hiện tại</span><strong>'+esc(f.output?(f.output.error||f.output.reason||'Đã nhận kết quả và lưu nhật ký'):(f.id==='1049'?'Chờ lượt gọi tới Google Drive':'Đã gửi yêu cầu tới GitHub'))+'</strong></div><div><span>Bắt đầu</span><strong>'+f.time+' · '+f.duration+'</strong></div><div><span>Lần thực hiện</span><strong>1 lần · Chưa thử lại</strong></div></div>'
+      }
+      function toolDetails(){const t=toolsList.find(x=>x.id===selectedTool);if(!t)return '';const granted=agents.filter(a=>grants[a.id].includes(t.id));return '<section class="gh-trace"><div class="gh-panelhead"><div><small>QUAN HỆ CỦA CÔNG CỤ</small><h2>'+esc(t.name)+'</h2></div><button type="button" class="gh-textbutton" data-close-tool="1">Đóng chi tiết</button></div><div class="gh-panelbody"><div class="gh-details"><div><span>Thuộc kết nối</span><strong>'+serviceName(t.service)+'</strong></div><div><span>Hoạt động hôm nay</span><strong>'+t.calls+' lượt gọi</strong></div><div><span>Được cấp cho</span><strong>'+(granted.map(a=>a.name).join(', ')||'Chưa cấp cho agent nào')+'</strong></div><div><span>Khả năng sử dụng hiện tại</span><strong>'+(!t.published?'Chưa công bố':t.service==='figma'?'Chờ xác thực lại Figma':'Sẵn sàng cho agent đã được cấp')+'</strong></div></div><div class="gh-bottomaction"><button type="button" class="gh-textbutton" data-manage-kind="mcps" data-manage-id="'+t.service+'" data-open-tab="tools">Quản lý trong MCP &amp; kết nối →</button></div></div></section>'}
+      function resources(){let content='',rows=[],thead='';
+        if(resourceKind==='tools'){
+          rows=toolsList.filter(t=>resourceFilter==='unused'?t.published&&t.calls===0:resourceFilter==='unpublished'?!t.published:resourceFilter==='unavailable'?t.published&&t.service==='figma':true);
+          thead='<tr><th>Công cụ / Kết nối</th><th>Đã cấp cho</th><th>Trạng thái</th><th>Lượt hôm nay</th></tr>';
+          content=rows.map(t=>'<tr><td><button type="button" class="gh-rowbutton" data-tool="'+t.id+'"><strong>'+esc(t.name)+'</strong><small>'+serviceName(t.service)+'</small></button></td><td>'+(agents.filter(a=>grants[a.id].includes(t.id)).map(a=>a.name).join(', ')||'Chưa cấp')+'</td><td>'+pill(!t.published?'Chưa công bố':t.service==='figma'?'Cần xác thực':'Khả dụng',!t.published?'':t.service==='figma'?'wait':'ok')+'</td><td>'+t.calls+'</td></tr>').join('');
+        }else if(resourceKind==='agents'){
+          rows=agents;thead='<tr><th>Agent</th><th>Công cụ được cấp</th><th>Hoạt động</th><th>Lượt hôm nay</th></tr>';
+          content=agents.map(a=>'<tr><td><button type="button" class="gh-rowbutton" data-agent="'+a.id+'"><strong>'+a.name+'</strong><small>Xem các kết nối đã sử dụng →</small></button></td><td>'+a.grants+' công cụ</td><td>'+pill(a.activity,a.calls?'ok':'')+'</td><td>'+a.calls+'</td></tr>').join('');
+        }else if(resourceKind==='connections'){
+          rows=services;thead='<tr><th>Kết nối</th><th>Công cụ</th><th>Trạng thái</th><th>Lượt hôm nay</th></tr>';
+          content=services.map(s=>'<tr><td><button type="button" class="gh-rowbutton" data-service="'+s.id+'"><strong>'+s.name+'</strong><small>Xem agent đã sử dụng →</small></button></td><td>'+s.count+' có sẵn<small>'+s.published+' đã công bố</small></td><td>'+pill(s.status,s.tone)+'</td><td>'+s.calls+'</td></tr>').join('');
+        }else{
+          rows=secrets;thead='<tr><th>Secret</th><th>Quyền đọc</th><th>Trạng thái</th><th>Giá trị</th></tr>';
+          content=secrets.map(s=>'<tr><td>'+s[0]+'</td><td>'+s[1]+'</td><td>'+pill(s[1]==='Riêng tư'?'Riêng tư':'Đã chia sẻ',s[1]==='Riêng tư'?'':'ok')+'</td><td>••••••••</td></tr>').join('');
+        }
+        return '<section class="gh-panel"><div class="gh-panelhead"><h2>'+({tools:'Tất cả công cụ',agents:'Agent trong Hub',connections:'Các dịch vụ đã thêm',secrets:'Kho bí mật'})[resourceKind]+'</h2>'+(resourceKind==='tools'?'<label class="gh-filter"><span class="gh-low">Hiển thị</span><select id="gh-inventory-filter" aria-label="Lọc công cụ">'+[['all','Tất cả'],['unused','Chưa dùng hôm nay'],['unpublished','Chưa công bố'],['unavailable','Cần xác thực lại']].map(o=>'<option value="'+o[0]+'" '+(resourceFilter===o[0]?'selected':'')+'>'+o[1]+'</option>').join('')+'</select></label>':'')+'</div><table class="gh-flowtable"><thead>'+thead+'</thead><tbody>'+content+'</tbody></table></section><div class="gh-inventoryfoot"><span>'+rows.length+' mục trong dữ liệu minh họa</span><span>'+ (resourceKind==='tools'?'Lượt gọi tính trong ngày 12.09.2026':'Quyền và trạng thái được hiển thị riêng')+'</span></div>'+toolDetails();
+      }
+      let appPage='overview',monitorView='overview',entityId='github',manageTab='info',chatOpen=false,chatScenario='welcome';
+      const titles={overview:'Tổng quan',mcps:'MCP & kết nối',agents:'Agent & quyền',vault:'Kho bí mật',kanban:'Kanban',audit:'Nhật ký',settings:'Cài đặt'};
+      function overviewTabs(){return '<div class="gh-sectiontabs">'+[['overview','Toàn cảnh'],['flows','Luồng đang xử lý'],['resources','Tồn kho công cụ']].map(t=>'<button class="gh-sectiontab '+(monitorView===t[0]?'active':'')+'" type="button" data-monitor-view="'+t[0]+'" aria-pressed="'+(monitorView===t[0])+'">'+t[1]+'</button>').join('')+'</div>'}
+      function endpoint(){return '<div class="gh-endpoint"><span>'+icon('plug')+' MCP tổng</span><code>https://hub.genos.top/mcp</code><button type="button" class="gh-textbutton" data-app="agents">Quản lý agent →</button></div>'}
+      function focusActions(){if(!selectedAgent&&!selectedService)return '';return '<div class="gh-contextactions"><button type="button" class="gh-textbutton" data-manage-kind="'+(selectedAgent?'agents':'mcps')+'" data-manage-id="'+(selectedAgent||selectedService)+'">Mở '+(selectedAgent?'Agent & quyền':'MCP & kết nối')+' →</button><button type="button" class="gh-textbutton" data-ask="'+'selection'+'">Hỏi trợ lý về lựa chọn này</button></div>'}
+      function workQueue(){
+        const active=flows.filter(f=>f.id==='1048'||f.id==='1049').filter(f=>(!selectedAgent||f.agent===selectedAgent)&&(!selectedService||f.service===selectedService));
+        return '<section class="gh-panel"><div class="gh-panelhead"><h2>Đang xử lý tại Hub</h2>'+pill(active.length+' yêu cầu','wait')+'</div><div class="gh-panelbody">'+active.map(f=>'<button class="gh-queueitem" type="button" data-flow="'+f.id+'"><span><strong>'+esc(f.title)+'</strong><small>'+agentName(f.agent)+' → '+serviceName(f.service)+' · #'+f.id+'</small></span><span>'+pill(f.status,'wait')+'<small>'+(f.id==='1048'?'Đang gọi GitHub':'Đang chờ kết nối')+'</small></span></button>').join('')+(!active.length?'<div class="gh-empty">Không có yêu cầu đang xử lý trong lựa chọn này.</div>':'')+'</div></section><div class="gh-bottomaction"><button type="button" class="gh-textbutton" data-app="audit">Xem lịch sử trong Nhật ký →</button></div>';
+      }
+      function overviewScreen(){
+        if(monitorView==='resources'){resourceKind='tools';return overviewTabs()+resources()}
+        if(monitorView==='flows')return overviewTabs()+focus()+focusActions()+workQueue();
+        return overviewTabs()+endpoint()+counts()+focus()+focusActions()+'<div class="gh-pair">'+map()+activity()+'</div>'+flowTable()+'<div class="gh-bottomaction"><button type="button" class="gh-textbutton" data-app="audit">Mở toàn bộ Nhật ký →</button></div>';
+      }
+      function chooseEntity(kind,id,tab='info'){appPage=kind;entityId=id;manageTab=tab;selectedTool=''}
+      function managerTabs(kind){
+        const tabs=kind==='mcps'?[['info','Thông tin'],['tools','Công cụ'],['activity','Hoạt động']]:[['info','Thông tin'],['rights','Phân quyền'],['activity','Hoạt động']];
+        return '<div class="gh-tabs">'+tabs.map(t=>'<button type="button" class="gh-tab '+(manageTab===t[0]?'active':'')+'" data-manage-tab="'+t[0]+'" aria-pressed="'+(manageTab===t[0])+'">'+t[1]+'</button>').join('')+'</div>'
+      }
+      function management(kind){
+        const isMcp=kind==='mcps',items=isMcp?services:agents;
+        let item=items.find(x=>x.id===entityId)||items[0];entityId=item.id;
+        let detail='';
+        if(manageTab==='activity'){
+          const matching=flows.filter(f=>isMcp?f.service===item.id:f.agent===item.id);
+          detail='<div class="gh-details"><div><span>Lượt gọi hôm nay</span><strong>'+item.calls+'</strong></div><div><span>Đi sâu từ Tổng quan</span><strong><button class="gh-textbutton" type="button" '+(isMcp?'data-service':'data-agent')+'="'+item.id+'">Xem bản đồ quan hệ →</button></strong></div></div><div class="gh-divider"></div>'+matching.map(f=>'<button class="gh-queueitem" type="button" data-flow="'+f.id+'"><span><strong>'+esc(f.title)+'</strong><small>#'+f.id+' · '+esc(f.tool)+'</small></span>'+pill(f.status,f.tone)+'</button>').join('');
+        }else if(isMcp&&manageTab==='tools'){
+          detail='<div class="gh-infofoot">Công bố công cụ · Thay đổi chỉ áp dụng trong bản xem trước.</div>'+toolsList.filter(t=>t.service===item.id).map(t=>'<div class="gh-managementrow"><span><strong>'+esc(t.name)+'</strong><small>'+t.calls+' lượt hôm nay · '+agents.filter(a=>grants[a.id].includes(t.id)).length+' agent được cấp</small></span><button type="button" class="gh-switch '+(t.published?'on':'')+'" role="switch" aria-checked="'+t.published+'" aria-label="Công bố '+esc(t.name)+'" data-publish="'+t.id+'"><span></span></button></div>').join('');
+        }else if(!isMcp&&manageTab==='rights'){
+          detail='<div class="gh-infofoot">Quyền được chọn áp dụng cho từng công cụ.</div>'+services.filter(s=>s.id!=='internal').map(s=>'<details class="gh-permissiongroup" open><summary>'+s.name+' <small>'+grants[item.id].filter(g=>g.startsWith(s.id+':')).length+' đã cấp</small></summary>'+toolsList.filter(t=>t.service===s.id&&t.published).map(t=>'<label class="gh-checkrow"><span>'+esc(t.name)+'</span><input type="checkbox" data-grant="'+t.id+'" '+(grants[item.id].includes(t.id)?'checked':'')+' aria-label="Cấp '+esc(t.name)+' cho '+item.name+'"></label>').join('')+'</details>').join('')+'<div class="gh-bottomaction"><span class="gh-low">Thay đổi chỉ áp dụng trong bản xem trước.</span></div>';
+        }else if(isMcp){
+          const mapped=agents.filter(a=>grants[a.id].some(g=>g.startsWith(item.id+':')));
+          detail='<div class="gh-details"><div><span>Trạng thái kết nối</span><strong>'+pill(item.status,item.tone)+'</strong></div><div><span>Công cụ</span><strong>'+item.count+' có sẵn · '+toolsList.filter(t=>t.service===item.id&&t.published).length+' đã công bố</strong></div><div><span>Agent được sử dụng</span><strong>'+(mapped.map(a=>a.name).join(', ')||'Chưa cấp')+'</strong></div><div><span>Lượt gọi hôm nay</span><strong>'+item.calls+'</strong></div></div>'+(item.id==='figma'?'<div class="gh-notice">Figma cần xác thực lại. Các lượt gọi mới sẽ chờ owner hoàn tất kết nối.</div>':'')+'<div class="gh-bottomaction"><button type="button" class="gh-textbutton" data-manage-tab="tools">Xem và công bố công cụ →</button><button type="button" class="gh-textbutton" data-manage-tab="activity">Xem lịch sử sử dụng →</button></div>';
+        }else{
+          detail='<div class="gh-details"><div><span>Tên agent</span><strong>'+item.name+'</strong></div><div><span>Hoạt động</span><strong>'+pill(item.activity,item.calls?'ok':'')+'</strong></div><div><span>Quyền đã cấp</span><strong>'+grants[item.id].length+' công cụ</strong></div><div><span>Các kết nối được sử dụng</span><strong>'+services.filter(s=>grants[item.id].some(g=>g.startsWith(s.id+':'))).map(s=>s.name).join(', ')+'</strong></div></div><div class="gh-bottomaction"><button type="button" class="gh-textbutton" data-manage-tab="rights">Điều chỉnh quyền của '+item.name+' →</button><button type="button" class="gh-textbutton" data-manage-tab="activity">Xem lịch sử sử dụng →</button></div>';
+        }
+        return '<div class="gh-manager"><div class="gh-entitylist">'+items.map(i=>'<button class="gh-entity '+(i.id===item.id?'selected':'')+'" type="button" data-entity="'+i.id+'"><strong>'+i.name+'</strong><small>'+(isMcp?i.status:i.activity)+'</small></button>').join('')+'</div><section class="gh-panel"><div class="gh-panelhead"><h2>'+item.name+'</h2><button type="button" class="gh-textbutton" '+(isMcp?'data-service':'data-agent')+'="'+item.id+'">Xem trên Tổng quan →</button></div>'+managerTabs(kind)+'<div class="gh-managerdetail">'+detail+'</div></section></div>'
+      }
+      function vaultScreen(){return '<section class="gh-panel"><div class="gh-panelhead"><h2>Secret và quyền đọc</h2>'+pill('8 secret')+'</div><table class="gh-flowtable"><thead><tr><th>Secret</th><th>Được chia sẻ cho</th><th>Giá trị</th></tr></thead><tbody>'+secrets.map(s=>'<tr><td>'+s[0]+'</td><td>'+s[1]+'</td><td>••••••••</td></tr>').join('')+'</tbody></table></section>'}
+      function auditScreen(){
+        const f=flows.find(x=>x.id===selectedFlow);
+        const context=f?'<div class="gh-auditactions"><button type="button" class="gh-textbutton" data-manage-kind="agents" data-manage-id="'+f.agent+'" data-open-tab="rights">Quyền của '+agentName(f.agent)+' →</button><button type="button" class="gh-textbutton" data-manage-kind="mcps" data-manage-id="'+f.service+'">Kết nối '+serviceName(f.service)+' →</button><button type="button" class="gh-textbutton" data-ask="'+(f.id==='1046'?'blocked':f.id==='1044'?'figma':'current')+'">Hỏi trợ lý về yêu cầu này</button></div>':'';
+        return '<div class="gh-bottomaction" style="margin-top:0"><button type="button" class="gh-textbutton" data-return-overview="1">← Quay lại Tổng quan</button><span class="gh-low">'+(selectedAgent?agentName(selectedAgent):selectedService?serviceName(selectedService):'Tất cả agent và kết nối')+'</span></div>'+trace()+context+'<div style="margin-top:20px">'+flowTable()+'</div>'
+      }
+      function kanbanScreen(){
+        const stages=[['Backlog',['So sánh hoạt động theo tuần']],['Ready',['Bổ sung bộ lọc Tổng quan']],['In Progress',['Thiết kế giao diện Monitor']],['Review',['Xác minh số liệu tồn kho']],['Done',[]]];
+        return '<div class="gh-endpoint"><span>'+icon('github')+' Nguồn GitHub</span><code>Genesis-ryan-84-0567536339/Gen-hub</code></div><div class="gh-kanban">'+stages.map(s=>'<section><h3>'+s[0]+' <small>'+s[1].length+'</small></h3>'+s[1].map(t=>'<div class="gh-kanbancard">'+t+'<small>'+(s[0]==='Review'?'Chờ Ryan nghiệm thu':'Issue GitHub · Dữ liệu mẫu')+'</small></div>').join('')+(!s[1].length?'<p class="gh-low">Chưa có việc được nghiệm thu trong mẫu.</p>':'')+'</section>').join('')+'</div>'
+      }
+      function settingsScreen(){return '<section class="gh-panel"><div class="gh-panelhead"><h2>Cài đặt Gen-hub</h2></div><div class="gh-panelbody">'+[['Tài khoản owner','Ryan'],['Bảo mật','Mật khẩu, PIN và phiên đăng nhập'],['Trợ lý AI quản trị','Quản lý agent được cấp quyền quản trị'],['LLM trợ lý','Nhà cung cấp và model của khung chat'],['Cập nhật','Phiên bản, lịch kiểm tra và lịch sử cập nhật']].map(r=>'<div class="gh-managementrow"><strong>'+r[0]+'</strong><span class="gh-low">'+r[1]+'</span></div>').join('')+'</div></section>'}
+      function chat(){
+        const context=appPage==='audit'&&selectedFlow?'Nhật ký / #'+selectedFlow:appPage==='agents'?'Agent / '+agentName(entityId):appPage==='mcps'?'MCP / '+serviceName(entityId):titles[appPage];
+        let answer='Anh có thể hỏi về tài nguyên, quyền và yêu cầu đang xem.';
+        if(chatScenario==='github')answer='GitHub có 480 lượt gọi hôm nay: Claude 240 và Codex 240. Tôi đã mở Tổng quan theo kết nối GitHub.';
+        if(chatScenario==='selection')answer=selectedAgent?agentName(selectedAgent)+' có '+agents.find(a=>a.id===selectedAgent).calls+' lượt gọi hôm nay. Anh có thể mở Agent & quyền để xem từng công cụ được cấp.':selectedService?serviceName(selectedService)+' có '+services.find(s=>s.id===selectedService).calls+' lượt gọi hôm nay. Anh có thể mở MCP & kết nối để xem các công cụ và agent sử dụng.':'Anh đang xem toàn bộ tài nguyên.';
+        if(chatScenario==='blocked')answer='Ở thời điểm yêu cầu #1046, Hub chặn vì Gemini chưa được cấp send_message. Tin nhắn chưa được gửi sang Slack.';
+        if(chatScenario==='figma')answer='Figma có 4 công cụ, 3 đã công bố. Credential đã hết hiệu lực; cần owner xác thực lại. Tôi đã mở đúng kết nối Figma.';
+        if(chatScenario==='current'){const f=flows.find(x=>x.id===selectedFlow);answer=f?agentName(f.agent)+' đang dùng '+f.tool+'. Trạng thái: '+f.status+'. Các bước và dữ liệu nằm trong chi tiết yêu cầu.':'Tôi đã mở thông tin của lựa chọn hiện tại.'}
+        q('#gh-chat').innerHTML='<div class="gh-chathead"><span>'+icon('sparkles')+' Trợ lý Gen-hub</span><button type="button" class="gh-textbutton" data-chat-toggle="1" aria-label="Thu gọn trợ lý">Thu gọn</button></div><div class="gh-chatcontext"><span class="gh-low">ĐANG XEM</span><strong>'+esc(context)+'</strong></div><div class="gh-chatmessage">'+esc(answer)+'</div><div class="gh-chatprompts"><button type="button" data-ask="github">Ai đang dùng GitHub?</button><button type="button" data-ask="blocked">Vì sao Gemini bị chặn?</button><button type="button" data-ask="figma">Kết nối nào cần xử lý?</button></div>'+(chatScenario==='blocked'?'<button type="button" class="gh-chatprimary" data-manage-kind="agents" data-manage-id="gemini" data-open-tab="rights">Mở quyền của Gemini →</button>':'')+'<div class="gh-chatpreview">Hội thoại minh họa</div>';
+      }
+      function render(){
+        page=monitorView;root.classList.toggle('gh-chat-open',chatOpen);
+        q('#gh-heading').textContent=titles[appPage];
+        q('#gh-subheading').textContent=({overview:'Tài nguyên, hoạt động và lưu trình của Gen-hub.',mcps:'Thông tin kết nối, công cụ và lịch sử sử dụng.',agents:'Thông tin, quyền và hoạt động của từng agent.',vault:'Theo dõi secret và những agent được đọc.',kanban:'Công việc từ repo GitHub của anh.',audit:'Từng bước xử lý, đầu vào, đầu ra và quyền sử dụng.',settings:'Tài khoản, bảo mật, trợ lý và cập nhật.'})[appPage];
+        root.querySelectorAll('[data-app]').forEach(b=>{b.classList.toggle('active',b.dataset.app===appPage);if(b.classList.contains('gh-nav'))b.setAttribute('aria-current',b.dataset.app===appPage?'page':'false')});
+        q('#gh-content').innerHTML=appPage==='overview'?overviewScreen():appPage==='mcps'||appPage==='agents'?management(appPage):appPage==='vault'?vaultScreen():appPage==='audit'?auditScreen():appPage==='kanban'?kanbanScreen():settingsScreen();
+        chat();if(typeof lucide!=='undefined')lucide.createIcons({attrs:{width:16,height:16}});requestAnimationFrame(drawWires);
+      }
+      function drawWires(){
+        const graph=q('#gh-graph');if(!graph)return;const svg=graph.querySelector('svg'),box=graph.getBoundingClientRect();svg.setAttribute('viewBox','0 0 '+box.width+' '+box.height);
+        svg.innerHTML=links.map(l=>{const a=q('#gh-node-'+l[0]).getBoundingClientRect(),b=q('#gh-node-'+l[1]).getBoundingClientRect(),x1=a.right-box.left,y1=a.top+a.height/2-box.top,x2=b.left-box.left,y2=b.top+b.height/2-box.top,mid=(x1+x2)/2,active=selectedAgent?l[0]===selectedAgent:selectedService?l[1]===selectedService:false;return '<path class="gh-wire '+(active?'on':'')+'" style="opacity:'+((selectedAgent||selectedService)&&!active ? 0.15 : 1)+'" d="M '+x1+' '+y1+' C '+mid+' '+y1+', '+mid+' '+y2+', '+x2+' '+y2+'"></path>'}).join('');
+      }
+      root.addEventListener('click',function(e){
+        const b=e.target.closest('button');if(!b||!root.contains(b))return;const d=b.dataset;
+        if(d.chatToggle){chatOpen=!chatOpen}
+        else if(d.app){appPage=d.app;selectedTool='';if(appPage==='agents')entityId='claude';if(appPage==='mcps')entityId='github';manageTab='info'}
+        else if(d.monitorView){monitorView=d.monitorView;appPage='overview'}
+        else if(d.resource){selectedTool='';resourceFilter=d.filter||'all';if(d.resource==='agents')chooseEntity('agents','claude');else if(d.resource==='connections')chooseEntity('mcps','github');else if(d.resource==='secrets')appPage='vault';else{appPage='overview';monitorView='resources';resourceKind='tools'}}
+        else if(d.agent){selectedAgent=selectedAgent===d.agent?'':d.agent;selectedService='';appPage='overview';monitorView='overview';selectedFlow=(filteredFlows()[0]||{}).id||''}
+        else if(d.service){selectedService=selectedService===d.service?'':d.service;selectedAgent='';appPage='overview';monitorView='overview';selectedFlow=(filteredFlows()[0]||{}).id||''}
+        else if(d.clear){selectedAgent='';selectedService='';selectedFlow='1048'}
+        else if(d.flow){selectedFlow=d.flow;detailTab='summary';appPage='audit'}
+        else if(d.detailTab){detailTab=d.detailTab}
+        else if(d.tool){selectedTool=d.tool}
+        else if(d.closeTool){selectedTool=''}
+        else if(d.manageKind){chooseEntity(d.manageKind,d.manageId,d.openTab||'info')}
+        else if(d.manageTab){manageTab=d.manageTab}
+        else if(d.entity){entityId=d.entity}
+        else if(d.returnOverview){appPage='overview'}
+        else if(d.publish){const t=toolsList.find(t=>t.id===d.publish);t.published=!t.published;services.find(s=>s.id===t.service).published=toolsList.filter(x=>x.service===t.service&&x.published).length}
+        else if(d.ask){
+          chatOpen=true;chatScenario=d.ask;
+          if(d.ask==='github'){selectedService='github';selectedAgent='';appPage='overview';monitorView='overview';selectedFlow='1048'}
+          if(d.ask==='blocked'){selectedService='';selectedAgent='';selectedFlow='1046';detailTab='rights';appPage='audit'}
+          if(d.ask==='figma')chooseEntity('mcps','figma');
+        }
+        render();
+      });
+      root.addEventListener('change',function(e){
+        if(e.target.id==='gh-inventory-filter'){resourceFilter=e.target.value;selectedTool='';render()}
+        else if(e.target.dataset.grant){const a=agents.find(a=>a.id===entityId),list=grants[a.id],t=e.target.dataset.grant;if(e.target.checked&&!list.includes(t))list.push(t);if(!e.target.checked)grants[a.id]=list.filter(g=>g!==t);a.grants=grants[a.id].length;render()}
+      });
+      new ResizeObserver(()=>requestAnimationFrame(drawWires)).observe(root);
+      render();
+    })();
+  </script>
+</div>
