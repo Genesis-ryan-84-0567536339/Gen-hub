@@ -90,3 +90,37 @@ test('Skills viewer: reads tree from GitHub, requires connector + brainRepo, rej
   const traversal = await x.call('/api/skills/leaf?path=' + encodeURIComponent('../../etc/passwd'));
   assert.equal(traversal.status, 400);
 });
+
+test('Skills viewer: works with provider github-mcp (shape captured from real production get_file_contents)', async t => {
+  const connector = {
+    call: async (m, name, a) => {
+      if (name !== 'get_file_contents') throw new Error('unexpected tool ' + name);
+      // Shape thật của remote MCP chính thức: item đầu là thông báo trạng thái,
+      // nội dung thật nằm ở item type 'resource'.resource.text (plain text).
+      const bodies = {
+        'skills/index.yaml': GLOBAL_INDEX,
+        'skills/work-style/index.yaml': CATEGORY_INDEX
+      };
+      return {
+        content: [
+          { type: 'text', text: 'successfully downloaded text file (SHA: abc)' },
+          { type: 'resource', resource: { uri: 'x', mimeType: 'text/plain', text: bodies[a.path] || '' } }
+        ]
+      };
+    }
+  };
+  const x = await fixture(t, connector);
+  x.hub.store.put('mcp', 'mcp-gh-mcp-test', {
+    id: 'mcp-gh-mcp-test',
+    provider: 'github-mcp',
+    name: 'GitHub MCP',
+    on: true,
+    status: 'connected',
+    secret: x.hub.store.seal({ token: 'test-token' }),
+    tools: []
+  });
+  const tree = await x.call('/api/skills?repo=' + encodeURIComponent('acme/brain'));
+  assert.equal(tree.status, 200);
+  assert.equal(tree.data.categories[0].ten, 'work-style');
+  assert.equal(tree.data.categories[0].leaves[0].ten, 'scope-control');
+});
