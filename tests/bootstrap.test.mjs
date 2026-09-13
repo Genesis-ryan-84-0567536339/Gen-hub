@@ -66,3 +66,58 @@ test('Bootstrap API: get defaults, update groups, validate and expose in state',
   assert.ok(auditLog, 'Audit log must record bootstrap.update');
   assert.equal(auditLog.mcp, 'hub');
 });
+
+test('Bootstrap: create-brain requires a connected GitHub connector and seeds a minimal repo', async t => {
+  const calls = [];
+  // Envelope khớp đúng thật sự trả về bởi connectorService().call() cho các
+  // provider REST thường: {content:[{type:'text', text: JSON}], isError}.
+  const envelope = data => ({ content: [{ type: 'text', text: JSON.stringify(data) }], isError: false });
+  const connector = {
+    call: async (m, name, a) => {
+      calls.push({ mcpId: m.id, name, args: a });
+      if (name === 'create_repository')
+        return envelope({
+          name: a.name,
+          full_name: 'owner-test/' + a.name,
+          html_url: 'https://github.com/owner-test/' + a.name,
+          owner: { login: 'owner-test' }
+        });
+      if (name === 'create_or_update_file') return envelope({ content: { path: a.path } });
+      throw new Error('unexpected tool ' + name);
+    }
+  };
+  const x = await fixture(t, connector);
+
+  // 1. No GitHub connector connected yet -> clear error, no calls made
+  const noConnRes = await x.call('/api/bootstrap/create-brain', 'POST', { name: 'Brain' });
+  assert.equal(noConnRes.status, 400);
+  assert.equal(calls.length, 0);
+
+  // 2. Seed a connected GitHub connector
+  x.hub.store.put('mcp', 'mcp-gh-test', {
+    id: 'mcp-gh-test',
+    provider: 'github',
+    name: 'GitHub',
+    on: true,
+    status: 'connected',
+    secret: x.hub.store.seal({ token: 'test-token' }),
+    tools: []
+  });
+
+  const res = await x.call('/api/bootstrap/create-brain', 'POST', { name: 'Brain' });
+  assert.equal(res.status, 200);
+  assert.equal(res.data.url, 'https://github.com/owner-test/Brain');
+  assert.equal(res.data.full_name, 'owner-test/Brain');
+
+  // 3. Exact call order: create_repository once, then create_or_update_file for each seed file
+  assert.equal(calls[0].name, 'create_repository');
+  assert.equal(calls[0].args.name, 'Brain');
+  const fileCalls = calls.slice(1);
+  assert.equal(fileCalls.length, 3);
+  assert(fileCalls.every(c => c.name === 'create_or_update_file'));
+  assert.deepEqual(
+    fileCalls.map(c => c.args.path).sort(),
+    ['BOOTSTRAP.md', 'README.md', 'skills/index.yaml'].sort()
+  );
+  assert(fileCalls.every(c => c.args.owner === 'owner-test' && c.args.repo === 'Brain'));
+});

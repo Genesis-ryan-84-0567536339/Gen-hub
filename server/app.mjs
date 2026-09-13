@@ -101,9 +101,9 @@ export function createHub({
   origin = base.origin;
   const store = openStore(dir),
     vault = vaultService(store),
-    bootstrap = bootstrapService(store),
     auth = authService(store, origin),
     up = connector || connectorService(store),
+    bootstrap = bootstrapService(store, up),
     logger = createLogger(store),
     limits = new Map();
   const chatService = createChatService(store, origin);
@@ -821,6 +821,8 @@ export function createHub({
       throw new HubError('Không tìm thấy API', 404);
     }
     if (resource === 'bootstrap') {
+      if (mid === 'create-brain' && method === 'POST')
+        return respond(200, await bootstrap.createBrainRepo(b));
       if (!write) return respond(200, bootstrap.get());
       if (method === 'PATCH') return respond(200, bootstrap.update(b.groups, actor));
       throw new HubError('Không tìm thấy API', 404);

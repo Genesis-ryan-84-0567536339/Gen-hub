@@ -298,6 +298,7 @@ async function loadToolInventory() {
   }
 }
 let bootstrapState = null;
+let brainRepoResult = null;
 function getBootstrapGroups() {
   if (!bootstrapState) {
     if (state?.bootstrap) {
@@ -387,6 +388,19 @@ async function saveBootstrap() {
   bootstrapState = JSON.parse(JSON.stringify(res));
   if (state) state.bootstrap = res;
   toast('Đã lưu thay đổi hướng dẫn Bootstrap');
+  render();
+}
+async function createBrainRepo() {
+  const name = ($('#brain-repo-name')?.value || 'Brain').trim();
+  const org = ($('#brain-repo-org')?.value || '').trim();
+  brainRepoResult = null;
+  try {
+    brainRepoResult = { ok: true, ...(await api('bootstrap/create-brain', 'POST', { name, org })) };
+    toast('Đã tạo repo Brain: ' + brainRepoResult.full_name);
+  } catch (e) {
+    brainRepoResult = { ok: false, error: e.message };
+    toast(e.message);
+  }
   render();
 }
 async function refresh() {
@@ -1511,6 +1525,22 @@ function bootstrapPage() {
           <pre id="bootstrap-preview" class="json" style="white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;background:#17251e;color:#d9e6d9;padding:16px;border-radius:8px;max-height:calc(100vh - 200px);overflow:auto">${esc(previewText) || '(Chưa có nội dung hướng dẫn)'}</pre>
           ${lastUpdated ? `<p class="footnote" style="margin-top:12px">Cập nhật lần gần nhất: ${esc(lastUpdated)}</p>` : ''}
         </section>
+        <section class="card cardpad" style="margin-top:20px">
+          <h2>Tạo Brain repo</h2>
+          <p class="footnote" style="margin-top:4px;margin-bottom:16px">Tuỳ chọn — tạo 1 repository GitHub private, rút gọn, làm trí nhớ chung ban đầu. Cần đã kết nối connector "GitHub" (Connectors) trước.</p>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input id="brain-repo-name" class="input" placeholder="Tên repo (mặc định: Brain)" maxlength="100">
+            <input id="brain-repo-org" class="input" placeholder="Tổ chức GitHub (bỏ trống = tài khoản cá nhân)" maxlength="100">
+            <button type="button" class="btn primary" data-action="bootstrap-create-brain">${I('plus')} Tạo Brain repo</button>
+          </div>
+          ${
+            brainRepoResult
+              ? brainRepoResult.ok
+                ? `<p class="footnote" style="margin-top:12px">Đã tạo: <a href="${esc(brainRepoResult.url)}" target="_blank" rel="noopener">${esc(brainRepoResult.full_name)}</a></p>`
+                : `<p class="footnote" style="margin-top:12px;color:var(--danger,#c0392b)">${esc(brainRepoResult.error)}</p>`
+              : ''
+          }
+        </section>
       </div>
     </div>
     `
@@ -2071,6 +2101,9 @@ async function act(action, args, el = null) {
   if (action === 'bootstrap-save') {
     syncBootstrapFromDom();
     return saveBootstrap();
+  }
+  if (action === 'bootstrap-create-brain') {
+    return createBrainRepo();
   }
   if (action === 'close') return close();
   if (action === 'menu') {

@@ -233,6 +233,14 @@ const routes = [
     ['groups']
   ),
   tool(
+    'bootstrap_create_brain',
+    'Tạo repository Brain mới (private, seed tối thiểu) qua connector GitHub đã kết nối; tuỳ chọn, không bắt buộc.',
+    'POST',
+    () => 'bootstrap/create-brain',
+    { name: string, org: string, description: string },
+    []
+  ),
+  tool(
     'owner_password_change',
     'Đổi mật khẩu như web UI: phải cung cấp mật khẩu hiện tại. Thu hồi mọi session web.',
     'POST',
