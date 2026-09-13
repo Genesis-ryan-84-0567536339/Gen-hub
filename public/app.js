@@ -58,6 +58,7 @@ const names = {
   agents: 'Agent & quyền',
   vault: 'Kho bí mật',
   bootstrap: 'Bootstrap',
+  skills: 'Skills',
   audit: 'Nhật ký',
   kanban: 'Kanban',
   settings: 'Cài đặt'
@@ -331,6 +332,7 @@ async function loadMonitor(background = false) {
   }
 }
 let bootstrapState = null;
+let brainRepoResult = null;
 function getBootstrapGroups() {
   if (!bootstrapState) {
     if (state?.bootstrap) {
@@ -528,6 +530,19 @@ function monitorAuditPanel() {
     )}</div>${content}<div class="actions">${state.agents.some(a => a.id === l.actor) ? btn('Quyền của agent', 'monitor-manage:agents:' + l.actor + ':grants', 'small') : ''}${state.mcps.some(m => m.id === l.mcp) ? btn('Mở kết nối', 'monitor-manage:mcps:' + l.mcp, 'small') : ''}${btn('Hỏi trợ lý', 'monitor-ask', 'small')}${btn('Quay lại Tổng quan', 'go:overview', 'small')}</div></div></section>`;
 }
 
+async function createBrainRepo() {
+  const name = ($('#brain-repo-name')?.value || 'Brain').trim();
+  const org = ($('#brain-repo-org')?.value || '').trim();
+  brainRepoResult = null;
+  try {
+    brainRepoResult = { ok: true, ...(await api('bootstrap/create-brain', 'POST', { name, org })) };
+    toast('Đã tạo repo Brain: ' + brainRepoResult.full_name);
+  } catch (e) {
+    brainRepoResult = { ok: false, error: e.message };
+    toast(e.message);
+  }
+  render();
+}
 async function refresh() {
   state = await api('state');
   if (state?.settings) state.settings = normalizeSettings(state.settings);
@@ -541,6 +556,7 @@ async function refresh() {
     await fetchAuditLogs();
     await loadMonitorDetail();
   }
+  if (route === 'skills' && !skillsData && !skillsLoading && state.settings.brainRepo) loadSkills();
   activity = new Map();
   render();
   renderChat();
@@ -862,6 +878,7 @@ function render() {
     agents: 'bot',
     vault: 'lock',
     bootstrap: 'file',
+    skills: 'grid',
     audit: 'activity',
     kanban: 'grid',
     settings: 'settings'
@@ -876,7 +893,7 @@ function render() {
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'skills' ? skillsPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
   layoutMonitorMap(monitorData, monitorView);
@@ -1564,8 +1581,104 @@ function bootstrapPage() {
           <pre id="bootstrap-preview" class="json" style="white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;background:#17251e;color:#d9e6d9;padding:16px;border-radius:8px;max-height:calc(100vh - 200px);overflow:auto">${esc(previewText) || '(Chưa có nội dung hướng dẫn)'}</pre>
           ${lastUpdated ? `<p class="footnote" style="margin-top:12px">Cập nhật lần gần nhất: ${esc(lastUpdated)}</p>` : ''}
         </section>
+        <section class="card cardpad" style="margin-top:20px">
+          <h2>Tạo Brain repo</h2>
+          <p class="footnote" style="margin-top:4px;margin-bottom:16px">Tuỳ chọn — tạo 1 repository GitHub private, rút gọn, làm trí nhớ chung ban đầu. Cần đã kết nối connector "GitHub" (Connectors) trước.</p>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <input id="brain-repo-name" class="input" placeholder="Tên repo (mặc định: Brain)" maxlength="100">
+            <input id="brain-repo-org" class="input" placeholder="Tổ chức GitHub (bỏ trống = tài khoản cá nhân)" maxlength="100">
+            <button type="button" class="btn primary" data-action="bootstrap-create-brain">${I('plus')} Tạo Brain repo</button>
+          </div>
+          ${
+            brainRepoResult
+              ? brainRepoResult.ok
+                ? `<p class="footnote" style="margin-top:12px">Đã tạo: <a href="${esc(brainRepoResult.url)}" target="_blank" rel="noopener">${esc(brainRepoResult.full_name)}</a></p>`
+                : `<p class="footnote" style="margin-top:12px;color:var(--danger,#c0392b)">${esc(brainRepoResult.error)}</p>`
+              : ''
+          }
+        </section>
       </div>
     </div>
+    `
+  );
+}
+let skillsData = null,
+  skillsLoading = false,
+  skillsError = null,
+  skillsExpanded = {};
+async function loadSkills() {
+  const repo = ($('#skills-repo')?.value || state.settings.brainRepo || '').trim();
+  skillsLoading = true;
+  skillsError = null;
+  render();
+  try {
+    if (repo !== state.settings.brainRepo) {
+      state.settings = await api('settings', 'PATCH', { brainRepo: repo });
+    }
+    skillsData = await api('skills' + (repo ? '?repo=' + encodeURIComponent(repo) : ''));
+  } catch (e) {
+    skillsData = null;
+    skillsError = e.message;
+  }
+  skillsLoading = false;
+  render();
+}
+async function openSkillLeaf(path) {
+  const repo = state.settings.brainRepo || '';
+  show('Skill', path, '<p class="footnote">Đang tải...</p>');
+  try {
+    const res = await api('skills/leaf?repo=' + encodeURIComponent(repo) + '&path=' + encodeURIComponent(path));
+    show(
+      path.split('/').slice(-2, -1)[0] || 'Skill',
+      path,
+      `<pre class="json" style="white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6">${esc(res.content)}</pre>`
+    );
+  } catch (e) {
+    show('Lỗi', path, `<p class="footnote" style="color:var(--danger,#c0392b)">${esc(e.message)}</p>`);
+  }
+}
+function skillsPage() {
+  const repo = state.settings.brainRepo || '';
+  return (
+    head(
+      'Skills',
+      'Xem cây skill (chỉ đọc) trực tiếp từ skills/index.yaml của repo Brain — sửa/thêm skill vẫn phải qua Issue → PR trên Brain.',
+      btn(skillsLoading ? 'Đang tải...' : 'Tải cây skill', 'skills-load', 'primary', 'refresh')
+    ) +
+    `
+    <section class="card cardpad" style="margin-bottom:20px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <input id="skills-repo" class="input" style="flex:1;min-width:240px" placeholder="Repo Brain (owner/repo)" value="${esc(repo)}" maxlength="200">
+      </div>
+    </section>
+    ${
+      skillsError
+        ? `<div class="empty card cardpad"><h3>Không tải được</h3><p>${esc(skillsError)}</p></div>`
+        : !skillsData
+          ? `<div class="empty card cardpad"><h3>Chưa tải cây skill</h3><p>Nhập repo Brain (nếu chưa cấu hình) rồi bấm "Tải cây skill".</p></div>`
+          : skillsData.categories
+              .map(
+                (c, ci) => `
+      <section class="card cardpad" style="margin-bottom:16px">
+        <div data-action="skills-toggle:${ci}" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between">
+          <b>${esc(c.ten)}</b>
+          <span class="badge">${c.leaves.length} skill</span>
+        </div>
+        ${
+          skillsExpanded[ci]
+            ? `<div class="divider" style="margin:12px 0"></div><div style="display:flex;flex-direction:column;gap:8px">${c.leaves
+                .map(
+                  l =>
+                    `<div class="listrow" style="cursor:pointer" data-action="skills-leaf:${esc(l.path)}"><div><b>${esc(l.ten)}</b><p class="footnote">${esc((l.trigger || []).join(' · '))}</p></div></div>`
+                )
+                .join('')}</div>`
+            : ''
+        }
+      </section>
+    `
+              )
+              .join('')
+    }
     `
   );
 }
@@ -1748,7 +1861,7 @@ function grantRows(selected, toolsOnly = false) {
               .join('')
           : '<p class="footnote" style="padding:15px">Chưa công bố tool.</p>';
 
-      return `<details class="toolgroup" data-mcp="${esc(m.id)}"><summary class="toolgrouphead"><div class="inline">${logo(m)}<div><h3>${esc(m.name)}</h3><p class="sub">${m.on ? '' : 'MCP tạm dừng · '}${m.status === 'connected' ? 'Đã kết nối' : 'Kết nối chưa sẵn sàng'}</p></div></div><div class="inline"><span class="badge gray grant-count" data-mcp="${esc(m.id)}">${grantedCount}/${totalCount} tool đã cấp</span><span class="chevron" aria-hidden="true">${I('chevron')}</span></div></summary><div class="toolgroupbody">${actionsHtml}${toolRowsHtml}</div></details>`;
+      return `<details class="toolgroup" data-mcp="${esc(m.id)}" ${toolsOnly && grantedCount ? 'open' : ''}><summary class="toolgrouphead"><div class="inline">${logo(m)}<div><h3>${esc(m.name)}</h3><p class="sub">${m.on ? '' : 'MCP tạm dừng · '}${m.status === 'connected' ? 'Đã kết nối' : 'Kết nối chưa sẵn sàng'}</p></div></div><div class="inline"><span class="badge gray grant-count" data-mcp="${esc(m.id)}">${grantedCount}/${totalCount} tool đã cấp</span><span class="chevron" aria-hidden="true">${I('chevron')}</span></div></summary><div class="toolgroupbody">${actionsHtml}${toolRowsHtml}</div></details>`;
     })
     .join('');
 
@@ -2244,6 +2357,16 @@ async function act(action, args, el = null) {
     syncBootstrapFromDom();
     return saveBootstrap();
   }
+  if (action === 'bootstrap-create-brain') {
+    return createBrainRepo();
+  }
+  if (action === 'skills-load') return loadSkills();
+  if (action === 'skills-toggle') {
+    const ci = args[0];
+    skillsExpanded = { ...skillsExpanded, [ci]: !skillsExpanded[ci] };
+    return render();
+  }
+  if (action === 'skills-leaf') return openSkillLeaf(args.join(':'));
   if (action === 'close') return close();
   if (action === 'menu') {
     document.querySelector('.sidebar').classList.toggle('open');
@@ -2860,6 +2983,7 @@ window.addEventListener('hashchange', async () => {
   route = hashRoute;
   kanbanGeneration++;
   if (state && route === 'kanban') loadKanban();
+  if (state && route === 'skills' && !skillsData && !skillsLoading && state.settings.brainRepo) loadSkills();
   if (route === 'audit') {
     parseAuditHash();
   } else {

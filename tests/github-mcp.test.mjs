@@ -310,7 +310,7 @@ test('PAT admin flow, owner publication, separate grants, resync, errors and aud
 });
 
 test('catalog and connection guide distinguish REST and token-only MCP pilot', () => {
-  assert.equal(provider('github').tools.length, 5);
+  assert.equal(provider('github').tools.length, 7);
   assert.equal(provider('github-mcp').oauth, undefined);
   assert.deepEqual(provider('github-mcp').tools, []);
   const guide = connectionGuide('github-mcp');

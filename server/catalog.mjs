@@ -84,6 +84,33 @@ export const catalog = [
         ['owner', 'repo', 'title', 'head', 'base'],
         true,
         ['repo', 'public_repo']
+      ),
+      tool(
+        'create_repository',
+        'Tạo repository private mới (dùng cho Bootstrap tạo Brain)',
+        {
+          name: s('Tên repo'),
+          description: s('Mô tả'),
+          org: s('Tổ chức GitHub (bỏ trống = tài khoản cá nhân)')
+        },
+        ['name'],
+        true,
+        ['repo']
+      ),
+      tool(
+        'create_or_update_file',
+        'Tạo hoặc ghi đè 1 file trong repo qua Contents API',
+        {
+          owner: s('Chủ repo'),
+          repo: s('Tên repo'),
+          path: s('Đường dẫn file'),
+          content: s('Nội dung'),
+          message: s('Commit message'),
+          branch: s('Nhánh')
+        },
+        ['owner', 'repo', 'path', 'content', 'message'],
+        true,
+        ['repo']
       )
     ]
   },

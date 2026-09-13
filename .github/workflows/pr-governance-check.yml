@@ -3,7 +3,12 @@ name: "PR Governance Check"
 # Bản sao độc lập của .github/workflows/pr-governance-check.yml trong repo
 # Brain — không gọi lại được (GitHub không cho repo public gọi reusable
 # workflow từ repo private khác dưới tài khoản cá nhân, đã kiểm chứng thật).
-# Sửa quy tắc thì phải sửa cả 2 nơi.
+#
+# Không đồng bộ 1-1 với bản gốc: job "Check trùng SSOT" đã bị bỏ ở đây vì
+# vô nghĩa ở lớp repo — Brain mới là trí nhớ chung/nơi giữ SSOT (skills/
+# rules), Gen-hub chỉ là chi tiết công việc của 1 repo, không có cấu trúc
+# skills/ để so trùng. Sửa 3 job còn lại (process/rules/confirmation) thì
+# vẫn phải sửa cả 2 nơi.
 
 on:
   pull_request:
@@ -89,122 +94,6 @@ jobs:
               sys.exit(1)
 
           print("✓ Check lưu trình thành công: PR body có Refs issue hợp lệ và đã có comment [BÀN GIAO].")
-          PYEOF
-
-  check-ssot:
-    name: "Check trùng SSOT (Uniqueness)"
-    runs-on: ubuntu-latest
-    steps:
-      - name: "Checkout mã nguồn"
-        uses: actions/checkout@v4
-
-      - name: "Kiểm tra trùng lặp trường 'ten' trong SSOT"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          python3 - << 'PYEOF'
-          import os, sys, glob, json, subprocess
-
-          try:
-              import yaml
-          except ImportError:
-              subprocess.run([sys.executable, "-m", "pip", "install", "pyyaml"], check=True)
-              import yaml
-
-          pr_number = os.environ.get("PR_NUMBER")
-          repo = os.environ.get("REPO")
-
-          if not pr_number:
-              print("Không tìm thấy PR_NUMBER, bỏ qua bước kiểm tra.")
-              sys.exit(0)
-
-          def run_cmd(args):
-              return subprocess.run(args, capture_output=True, text=True)
-
-          res = run_cmd(["gh", "api", f"repos/{repo}/pulls/{pr_number}/files", "--paginate"])
-          if res.returncode != 0:
-              print(f"Lỗi khi lấy danh sách files của PR: {res.stderr}", file=sys.stderr)
-              sys.exit(1)
-
-          files_data = json.loads(res.stdout)
-
-          added_ssot_files = []
-          for f in files_data:
-              fn = f.get("filename", "")
-              st = f.get("status", "")
-              if st == "added" and (fn.endswith("SKILL.md") or fn == "index.yaml" or fn.endswith("/index.yaml")):
-                  added_ssot_files.append(fn)
-
-          print(f"Các file SSOT mới được thêm trong PR: {added_ssot_files}")
-          if not added_ssot_files:
-              print("✓ PR không thêm file SKILL.md hoặc index.yaml mới nào. Pass check trùng SSOT.")
-              sys.exit(0)
-
-          def extract_ten(filepath):
-              names = set()
-              if not os.path.exists(filepath):
-                  return names
-              try:
-                  with open(filepath, "r", encoding="utf-8") as fp:
-                      content = fp.read()
-                  stripped = content.lstrip()
-                  if stripped.startswith("---"):
-                      parts = stripped.split("---", 2)
-                      if len(parts) >= 3:
-                          d = yaml.safe_load(parts[1])
-                          if isinstance(d, dict) and d.get("ten"):
-                              names.add(str(d["ten"]).strip())
-                  elif filepath.endswith(".yaml") or filepath.endswith(".yml"):
-                      d = yaml.safe_load(content)
-                      if isinstance(d, dict):
-                          if d.get("ten"):
-                              names.add(str(d["ten"]).strip())
-                          for key in ("categories", "leaves"):
-                              if key in d and isinstance(d[key], list):
-                                  for item in d[key]:
-                                      if isinstance(item, dict) and item.get("ten"):
-                                          names.add(str(item["ten"]).strip())
-              except Exception as e:
-                  print(f"Cảnh báo khi đọc {filepath}: {e}", file=sys.stderr)
-              return names
-
-          all_ssot_files = set(glob.glob("**/SKILL.md", recursive=True) + glob.glob("**/index.yaml", recursive=True))
-          for extra in ("SKILL.md", "index.yaml"):
-              if os.path.exists(extra):
-                  all_ssot_files.add(extra)
-          existing_files = [f for f in all_ssot_files if f not in added_ssot_files]
-
-          existing_ten_map = {}
-          for ef in existing_files:
-              for name in extract_ten(ef):
-                  existing_ten_map.setdefault(name, []).append(ef)
-
-          conflicts = []
-          for af in added_ssot_files:
-              new_names = extract_ten(af)
-              for name in new_names:
-                  if name in existing_ten_map:
-                      conflicts.append((af, name, existing_ten_map[name]))
-
-          if conflicts:
-              items = "\n".join(f"- File mới `{af}` khai báo `ten: '{name}'` bị trùng với file đã có từ trước: `{', '.join(exs)}`" for af, name, exs in conflicts)
-              comment_body = (
-                  f"🔍 Kỷ luật viên: Phát hiện vi phạm trùng lặp SSOT:\n\n"
-                  f"{items}\n\n"
-                  f"> *Nguyên tắc SSOT: mỗi tài liệu chuẩn phải có định danh `ten` duy nhất. Vui lòng đặt tên phân biệt hoặc cập nhật file có sẵn thay vì tạo mới trùng tên.*"
-              )
-              print("SSOT CONFLICTS DETECTED:\n" + comment_body)
-
-              pres = run_cmd(["gh", "pr", "view", str(pr_number), "--repo", repo, "--json", "comments"])
-              comments = json.loads(pres.stdout).get("comments", []) if pres.returncode == 0 else []
-              already_posted = any("🔍 Kỷ luật viên: Phát hiện vi phạm trùng lặp SSOT:" in (c.get("body") or "") for c in comments)
-              if not already_posted:
-                  run_cmd(["gh", "pr", "comment", str(pr_number), "--repo", repo, "--body", comment_body])
-              sys.exit(1)
-
-          print("✓ Check trùng SSOT thành công: không có trường 'ten' mới nào bị trùng lặp.")
           PYEOF
 
   check-rules:

@@ -1,5 +1,6 @@
 import { id } from './store.mjs';
 import { HubError } from './net.mjs';
+import { unwrap } from './connector-envelope.mjs';
 
 const MAX_GROUPS = 50;
 const MAX_STEPS_PER_GROUP = 50;
@@ -109,7 +110,77 @@ export const DEFAULT_BOOTSTRAP_GROUPS = [
   }
 ];
 
-export function bootstrapService(store) {
+const BRAIN_SEED = name => [
+  [
+    'README.md',
+    `# ${name}\n\n${name} là trí nhớ chung: quy tắc, skill và tài liệu chuẩn dùng lại qua nhiều ` +
+      `dự án. Đọc \`BOOTSTRAP.md\` trước khi thao tác.\n`
+  ],
+  [
+    'BOOTSTRAP.md',
+    `# Bootstrap\n\n1. Đọc \`skills/index.yaml\` trước khi làm việc.\n` +
+      `2. Mỗi chủ đề chỉ có đúng 1 tài liệu chuẩn — luôn cập nhật tại chỗ, không tạo bản sao.\n` +
+      `3. Việc mới: tạo Issue trước, làm trên branch riêng, mở PR, chờ xác nhận rồi mới merge.\n`
+  ],
+  [
+    'skills/index.yaml',
+    `phien_ban_schema: "1.0"\n` +
+      `mo_ta: "Registry rỗng — thêm category khi có skill dùng chung đầu tiên."\n` +
+      `categories: []\n`
+  ]
+];
+
+// create_repository trả shape khác nhau tuỳ provider: 'github' (REST thô) trả
+// đủ object repo GitHub thật (owner.login, full_name, html_url); 'github-mcp'
+// (remote MCP chính thức) chỉ trả {id, url} — phải suy owner/tên repo từ URL.
+function normalizeRepo(data, fallbackName) {
+  const url = data?.html_url || data?.url;
+  if (!url) throw new HubError('Không xác định được URL repo vừa tạo.');
+  const match = url.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/?$/);
+  const owner = data?.owner?.login || match?.[1];
+  const name = data?.name || match?.[2] || fallbackName;
+  if (!owner) throw new HubError('Không xác định được chủ sở hữu repo vừa tạo.');
+  return { owner, name, url, full_name: data?.full_name || `${owner}/${name}` };
+}
+
+export function bootstrapService(store, connectors) {
+  async function createBrainRepo({ name, org, description } = {}) {
+    const repoName = text(name || 'Brain', 100, 'Tên repo');
+    const m = store
+      .list('mcp')
+      .find(x => (x.provider === 'github' || x.provider === 'github-mcp') && x.on && x.status === 'connected');
+    if (!m)
+      throw new HubError(
+        'Cần kết nối GitHub (connector "GitHub", đủ quyền repo) ở trang Connectors trước khi tạo Brain.'
+      );
+    const repo = normalizeRepo(
+      unwrap(
+        await connectors.call(m, 'create_repository', {
+          name: repoName,
+          org: org || undefined,
+          description:
+            description || 'Trí nhớ chung — SSOT cho hệ sinh thái, tạo bởi Gen-hub Bootstrap.'
+        }),
+        'Tạo repo'
+      ),
+      repoName
+    );
+    const owner = repo.owner;
+    for (const [path, content] of BRAIN_SEED(repoName))
+      unwrap(
+        await connectors.call(m, 'create_or_update_file', {
+          owner,
+          repo: repo.name,
+          path,
+          content,
+          message: `chore: seed ${path}`
+        }),
+        `Ghi file ${path}`
+      );
+    return { url: repo.url, full_name: repo.full_name };
+  }
+
+
   function get() {
     const stored = store.get('bootstrap', 'main');
     if (stored) return stored;
@@ -137,5 +208,5 @@ export function bootstrapService(store) {
       .join('\n\n');
   }
 
-  return { get, update, render };
+  return { get, update, render, createBrainRepo };
 }

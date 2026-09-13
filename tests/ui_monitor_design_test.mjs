@@ -84,7 +84,7 @@ test('Approved Monitor layout, inline tool details and bulk grants across viewpo
   assert.equal(await page.locator('#bulk-grants [name=permissions][value^="vault:"]').count(), 0);
   await page.check('#bulk-grants [name=agentIds][value="agent-one"]');
   await page.check('#bulk-grants [name=agentIds][value="agent-two"]');
-  await page.locator('#bulk-grants .toolgroup').first().evaluate(el => el.open = true);
+  assert.equal(await page.locator('#bulk-grants .toolgroup[data-mcp="mcp-one"]').getAttribute('open'), '', 'Prefilled tool group opens automatically');
   await page.check('#bulk-grants [name=permissions][value="mcp-one:unused"]');
   const beforeOne = [...s.get('agent', 'agent-one').permissions];
   const beforeTwo = [...s.get('agent', 'agent-two').permissions];
