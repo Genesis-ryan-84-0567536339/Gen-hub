@@ -28,8 +28,21 @@ test('Approved Monitor layout, inline tool details and bulk grants across viewpo
   const folder = process.env.UI_SCREENSHOT_DIR;
   if (folder) mkdirSync(folder, { recursive: true });
   const screenshot = async name => {
-    if (folder) await page.screenshot({ path: join(folder, name + '.png'), fullPage: true });
+    if (folder) {
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({ path: join(folder, name + '.png'), fullPage: true, animations: 'disabled' });
+    }
   };
+  // Capture the approved immutable reference using the same browser/viewports.
+  if (folder) {
+    const reference = await browser.newPage();
+    await reference.setContent(readFileSync('docs/design/gen-hub-integrated-monitor.html', 'utf8'));
+    for (const width of [1440, 1024, 390]) {
+      await reference.setViewportSize({ width, height: width === 1440 ? 1000 : width === 390 ? 844 : 900 });
+      await reference.screenshot({ path: join(folder, 'approved-' + width + '.png'), fullPage: true, animations: 'disabled' });
+    }
+    await reference.close();
+  }
   await page.goto(x.origin);
   await page.fill('#login [name=username]', 'owner');
   await page.fill('#login [name=password]', 'owner-password-123');
@@ -62,7 +75,7 @@ test('Approved Monitor layout, inline tool details and bulk grants across viewpo
   await page.click('[data-action="monitor-clear"]');
   await page.waitForSelector('.monitor-donut');
   await page.click('[data-action="monitor-tab:tools"]');
-  await page.locator('.monitor-tool [data-action^="monitor-tool:"]').first().click();
+  await page.locator('[data-action="monitor-tool:mcp-one%3Aunused"]').click();
   await page.waitForSelector('.monitor-tool-detail');
   await screenshot('monitor-tool-detail');
   await page.locator('.monitor-tool-detail [data-action^="bulk-grants:"]').click();
@@ -92,15 +105,5 @@ test('Approved Monitor layout, inline tool details and bulk grants across viewpo
   assert.deepEqual(s.get('agent', 'agent-two').permissions, [...beforeTwo, 'mcp-one:unused']);
   await screenshot('bulk-grants-complete');
   await page.locator('#modal [data-action="close"]').first().click();
-  // Capture the approved immutable reference using the same browser/viewports.
-  if (folder) {
-    const reference = await browser.newPage();
-    await reference.setContent(readFileSync('docs/design/gen-hub-integrated-monitor.html', 'utf8'));
-    for (const width of [1440, 1024, 390]) {
-      await reference.setViewportSize({ width, height: width === 1440 ? 1000 : width === 390 ? 844 : 900 });
-      await reference.screenshot({ path: join(folder, 'approved-' + width + '.png'), fullPage: true });
-    }
-    await reference.close();
-  }
   assert.deepEqual(errors, []);
 });
