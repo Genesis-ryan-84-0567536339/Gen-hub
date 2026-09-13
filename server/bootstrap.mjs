@@ -1,5 +1,6 @@
 import { id } from './store.mjs';
 import { HubError } from './net.mjs';
+import { unwrap } from './connector-envelope.mjs';
 
 const MAX_GROUPS = 50;
 const MAX_STEPS_PER_GROUP = 50;
@@ -128,21 +129,6 @@ const BRAIN_SEED = name => [
       `categories: []\n`
   ]
 ];
-
-// connectors.call() trả kết quả bọc trong envelope kiểu MCP tools/call
-// ({content:[{type:'text', text: JSON}], isError}) cho mọi provider REST
-// thường (không phải remote MCP thật) — phải bóc ra mới lấy được dữ liệu.
-function unwrap(envelope, action) {
-  const text = envelope?.content?.[0]?.text;
-  let data;
-  try {
-    data = text !== undefined ? JSON.parse(text) : envelope;
-  } catch {
-    data = envelope;
-  }
-  if (envelope?.isError) throw new HubError(`${action} thất bại: ${data?.message || text || ''}`);
-  return data;
-}
 
 export function bootstrapService(store, connectors) {
   async function createBrainRepo({ name, org, description } = {}) {
