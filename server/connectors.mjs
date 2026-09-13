@@ -322,6 +322,20 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
         method = 'POST';
         body = { title: a.title, head: a.head, base: a.base, body: a.body };
       }
+      if (name === 'create_repository') {
+        url = a.org ? root + '/orgs/' + enc(a.org) + '/repos' : root + '/user/repos';
+        method = 'POST';
+        body = { name: a.name, private: true, description: a.description || '', auto_init: false };
+      }
+      if (name === 'create_or_update_file') {
+        url = repo + '/contents/' + a.path.split('/').map(enc).join('/');
+        method = 'PUT';
+        body = {
+          message: a.message,
+          content: Buffer.from(a.content, 'utf8').toString('base64'),
+          ...(a.branch ? { branch: a.branch } : {})
+        };
+      }
     }
     if (m.provider === 'drive') {
       const root = 'https://www.googleapis.com/drive/v3/files';

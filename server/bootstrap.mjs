@@ -109,7 +109,74 @@ export const DEFAULT_BOOTSTRAP_GROUPS = [
   }
 ];
 
-export function bootstrapService(store) {
+const BRAIN_SEED = name => [
+  [
+    'README.md',
+    `# ${name}\n\n${name} là trí nhớ chung: quy tắc, skill và tài liệu chuẩn dùng lại qua nhiều ` +
+      `dự án. Đọc \`BOOTSTRAP.md\` trước khi thao tác.\n`
+  ],
+  [
+    'BOOTSTRAP.md',
+    `# Bootstrap\n\n1. Đọc \`skills/index.yaml\` trước khi làm việc.\n` +
+      `2. Mỗi chủ đề chỉ có đúng 1 tài liệu chuẩn — luôn cập nhật tại chỗ, không tạo bản sao.\n` +
+      `3. Việc mới: tạo Issue trước, làm trên branch riêng, mở PR, chờ xác nhận rồi mới merge.\n`
+  ],
+  [
+    'skills/index.yaml',
+    `phien_ban_schema: "1.0"\n` +
+      `mo_ta: "Registry rỗng — thêm category khi có skill dùng chung đầu tiên."\n` +
+      `categories: []\n`
+  ]
+];
+
+// connectors.call() trả kết quả bọc trong envelope kiểu MCP tools/call
+// ({content:[{type:'text', text: JSON}], isError}) cho mọi provider REST
+// thường (không phải remote MCP thật) — phải bóc ra mới lấy được dữ liệu.
+function unwrap(envelope, action) {
+  const text = envelope?.content?.[0]?.text;
+  let data;
+  try {
+    data = text !== undefined ? JSON.parse(text) : envelope;
+  } catch {
+    data = envelope;
+  }
+  if (envelope?.isError) throw new HubError(`${action} thất bại: ${data?.message || text || ''}`);
+  return data;
+}
+
+export function bootstrapService(store, connectors) {
+  async function createBrainRepo({ name, org, description } = {}) {
+    const repoName = text(name || 'Brain', 100, 'Tên repo');
+    const m = store.list('mcp').find(x => x.provider === 'github' && x.on && x.status === 'connected');
+    if (!m)
+      throw new HubError(
+        'Cần kết nối GitHub (connector "GitHub", đủ quyền repo) ở trang Connectors trước khi tạo Brain.'
+      );
+    const repo = unwrap(
+      await connectors.call(m, 'create_repository', {
+        name: repoName,
+        org: org || undefined,
+        description:
+          description || 'Trí nhớ chung — SSOT cho hệ sinh thái, tạo bởi Gen-hub Bootstrap.'
+      }),
+      'Tạo repo'
+    );
+    const owner = repo.owner.login;
+    for (const [path, content] of BRAIN_SEED(repoName))
+      unwrap(
+        await connectors.call(m, 'create_or_update_file', {
+          owner,
+          repo: repo.name,
+          path,
+          content,
+          message: `chore: seed ${path}`
+        }),
+        `Ghi file ${path}`
+      );
+    return { url: repo.html_url, full_name: repo.full_name };
+  }
+
+
   function get() {
     const stored = store.get('bootstrap', 'main');
     if (stored) return stored;
@@ -137,5 +204,5 @@ export function bootstrapService(store) {
       .join('\n\n');
   }
 
-  return { get, update, render };
+  return { get, update, render, createBrainRepo };
 }
