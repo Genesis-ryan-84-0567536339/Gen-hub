@@ -121,3 +121,48 @@ test('Bootstrap: create-brain requires a connected GitHub connector and seeds a 
   );
   assert(fileCalls.every(c => c.args.owner === 'owner-test' && c.args.repo === 'Brain'));
 });
+
+test('Bootstrap: create-brain works with provider github-mcp (shapes captured from real production call)', async t => {
+  const calls = [];
+  const connector = {
+    call: async (m, name, a) => {
+      calls.push({ mcpId: m.id, name, args: a });
+      // Shape thật đã xác nhận qua production: create_repository chỉ trả
+      // {id, url} (không có owner/full_name như provider 'github' REST).
+      if (name === 'create_repository')
+        return {
+          content: [
+            { type: 'text', text: JSON.stringify({ id: '123', url: 'https://github.com/real-owner/' + a.name }) }
+          ]
+        };
+      // create_or_update_file trả đúng object GitHub REST thật, không bọc gì thêm.
+      if (name === 'create_or_update_file')
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ content: { name: a.path, path: a.path }, commit: { sha: 'abc' } })
+            }
+          ]
+        };
+      throw new Error('unexpected tool ' + name);
+    }
+  };
+  const x = await fixture(t, connector);
+  x.hub.store.put('mcp', 'mcp-gh-mcp-test', {
+    id: 'mcp-gh-mcp-test',
+    provider: 'github-mcp',
+    name: 'GitHub MCP',
+    on: true,
+    status: 'connected',
+    secret: x.hub.store.seal({ token: 'test-token' }),
+    tools: []
+  });
+
+  const res = await x.call('/api/bootstrap/create-brain', 'POST', { name: 'Brain' });
+  assert.equal(res.status, 200);
+  assert.equal(res.data.url, 'https://github.com/real-owner/Brain');
+  assert.equal(res.data.full_name, 'real-owner/Brain');
+  const fileCalls = calls.slice(1);
+  assert(fileCalls.every(c => c.args.owner === 'real-owner' && c.args.repo === 'Brain'));
+});

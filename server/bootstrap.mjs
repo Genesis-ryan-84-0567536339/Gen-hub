@@ -130,24 +130,42 @@ const BRAIN_SEED = name => [
   ]
 ];
 
+// create_repository trả shape khác nhau tuỳ provider: 'github' (REST thô) trả
+// đủ object repo GitHub thật (owner.login, full_name, html_url); 'github-mcp'
+// (remote MCP chính thức) chỉ trả {id, url} — phải suy owner/tên repo từ URL.
+function normalizeRepo(data, fallbackName) {
+  const url = data?.html_url || data?.url;
+  if (!url) throw new HubError('Không xác định được URL repo vừa tạo.');
+  const match = url.match(/^https?:\/\/github\.com\/([^\/]+)\/([^\/]+)\/?$/);
+  const owner = data?.owner?.login || match?.[1];
+  const name = data?.name || match?.[2] || fallbackName;
+  if (!owner) throw new HubError('Không xác định được chủ sở hữu repo vừa tạo.');
+  return { owner, name, url, full_name: data?.full_name || `${owner}/${name}` };
+}
+
 export function bootstrapService(store, connectors) {
   async function createBrainRepo({ name, org, description } = {}) {
     const repoName = text(name || 'Brain', 100, 'Tên repo');
-    const m = store.list('mcp').find(x => x.provider === 'github' && x.on && x.status === 'connected');
+    const m = store
+      .list('mcp')
+      .find(x => (x.provider === 'github' || x.provider === 'github-mcp') && x.on && x.status === 'connected');
     if (!m)
       throw new HubError(
         'Cần kết nối GitHub (connector "GitHub", đủ quyền repo) ở trang Connectors trước khi tạo Brain.'
       );
-    const repo = unwrap(
-      await connectors.call(m, 'create_repository', {
-        name: repoName,
-        org: org || undefined,
-        description:
-          description || 'Trí nhớ chung — SSOT cho hệ sinh thái, tạo bởi Gen-hub Bootstrap.'
-      }),
-      'Tạo repo'
+    const repo = normalizeRepo(
+      unwrap(
+        await connectors.call(m, 'create_repository', {
+          name: repoName,
+          org: org || undefined,
+          description:
+            description || 'Trí nhớ chung — SSOT cho hệ sinh thái, tạo bởi Gen-hub Bootstrap.'
+        }),
+        'Tạo repo'
+      ),
+      repoName
     );
-    const owner = repo.owner.login;
+    const owner = repo.owner;
     for (const [path, content] of BRAIN_SEED(repoName))
       unwrap(
         await connectors.call(m, 'create_or_update_file', {
@@ -159,7 +177,7 @@ export function bootstrapService(store, connectors) {
         }),
         `Ghi file ${path}`
       );
-    return { url: repo.html_url, full_name: repo.full_name };
+    return { url: repo.url, full_name: repo.full_name };
   }
 
 
