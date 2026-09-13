@@ -6,6 +6,8 @@ import { fixture } from './helpers.mjs';
 
 test('Overview #75: Agent pie + Tool inventory UI', async t => {
   const x = await fixture(t);
+  // This test exercises inventory after onboarding; leave the onboarding flow to its own test.
+  x.hub.store.put('settings', 'main', { name: 'Gen-hub', retention: 30, onboarded: true });
 
   // Set up two MCPs with published tools
   const mcp1 = {

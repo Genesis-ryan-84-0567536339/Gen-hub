@@ -912,6 +912,7 @@ function overview() {
     head(
       'Tổng quan',
       'Tài nguyên, hoạt động và lưu trình của Gen-hub.',
+      btn('Kiểm tra cập nhật', 'check-update', '', 'refresh') +
       btn('Kết nối agent', 'connect', '', 'link') + btn('Thêm MCP', 'add', 'primary', 'plus')
     ) +
     renderUpdateBanner() +
