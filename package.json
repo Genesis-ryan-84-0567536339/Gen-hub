@@ -14,5 +14,8 @@
   },
   "devDependencies": {
     "playwright-core": "^1.63.0"
+  },
+  "dependencies": {
+    "js-yaml": "^5.4.2"
   }
 }

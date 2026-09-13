@@ -1,7 +1,8 @@
 export const DEFAULT_SETTINGS = Object.freeze({
   name: 'Gen-hub',
   retention: 30,
-  onboarded: false
+  onboarded: false,
+  brainRepo: ''
 });
 
 export const VALID_RETENTIONS = Object.freeze([7, 30, 90]);
@@ -20,12 +21,14 @@ export function normalizeSettings(raw) {
     typeof s.onboarded === 'boolean'
       ? s.onboarded
       : DEFAULT_SETTINGS.onboarded;
+  const brainRepo = typeof s.brainRepo === 'string' ? s.brainRepo.trim() : DEFAULT_SETTINGS.brainRepo;
 
   return {
     ...s,
     name,
     retention,
     onboarded,
+    brainRepo,
     effectiveRetentionDays: retention
   };
 }

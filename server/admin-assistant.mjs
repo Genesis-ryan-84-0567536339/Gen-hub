@@ -151,10 +151,19 @@ const routes = [
   ),
   tool(
     'settings_update',
-    'Đổi tên Hub, thời gian giữ log hoặc trạng thái hướng dẫn.',
+    'Đổi tên Hub, thời gian giữ log, trạng thái hướng dẫn hoặc repo Brain đang xem ở trang Skills.',
     'PATCH',
     () => 'settings',
-    { name: string, retention: { type: 'integer' }, onboarded: { type: 'boolean' } }
+    { name: string, retention: { type: 'integer' }, onboarded: { type: 'boolean' }, brainRepo: string }
+  ),
+  tool(
+    'skills_tree',
+    'Xem cây category/skill từ skills/index.yaml của repo Brain đã cấu hình (hoặc repo truyền vào).',
+    'GET',
+    () => 'skills',
+    { repo: string },
+    [],
+    true
   ),
   tool(
     'policy_check',

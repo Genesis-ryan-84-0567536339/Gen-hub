@@ -36,6 +36,7 @@ import { authService } from './auth.mjs';
 import { adminAssistant } from './admin-assistant.mjs';
 import { vaultService } from './vault.mjs';
 import { bootstrapService } from './bootstrap.mjs';
+import { skillsViewerService } from './skills-viewer.mjs';
 import { kanbanService } from './kanban.mjs';
 import { githubRetryAt } from './github-rate.mjs';
 import { createChatService } from './llm.mjs';
@@ -104,6 +105,7 @@ export function createHub({
     auth = authService(store, origin),
     up = connector || connectorService(store),
     bootstrap = bootstrapService(store, up),
+    skillsViewer = skillsViewerService(store, up),
     logger = createLogger(store),
     limits = new Map();
   const chatService = createChatService(store, origin);
@@ -827,6 +829,11 @@ export function createHub({
       if (method === 'PATCH') return respond(200, bootstrap.update(b.groups, actor));
       throw new HubError('Không tìm thấy API', 404);
     }
+    if (resource === 'skills' && method === 'GET') {
+      const brainRepo = b.repo || (store.get('settings', 'main') || {}).brainRepo;
+      if (mid === 'leaf') return respond(200, await skillsViewer.leafContent(brainRepo, b.path));
+      return respond(200, await skillsViewer.tree(brainRepo));
+    }
     if (resource === 'settings' && method === 'PATCH') {
       const old = store.get('settings', 'main') || {};
       if (b.name !== undefined) old.name = text(b.name, 60);
@@ -836,6 +843,7 @@ export function createHub({
         old.retention = b.retention;
       }
       if (b.onboarded !== undefined) old.onboarded = !!b.onboarded;
+      if (b.brainRepo !== undefined) old.brainRepo = b.brainRepo === '' ? '' : text(b.brainRepo, 200);
       store.put('settings', 'main', old);
       audit('settings.update', b);
       return respond(200, normalizeSettings(old));
