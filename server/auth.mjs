@@ -70,6 +70,29 @@ export function authService(store, origin) {
       scope: 'mcp'
     };
   }
+  // Hub: connect một lần, luôn kết nối được. Một số MCP client không lưu lại
+  // refresh_token mới sau mỗi lần refresh, nên không xoay vòng refresh_token —
+  // chỉ phát access_token mới và gia hạn (sliding window) đúng refresh_token
+  // đang dùng.
+  function issueFromRefresh(refreshKey, t) {
+    const access = secret('token') + secret();
+    store.put('token', digest(access), {
+      id: digest(access),
+      agent: t.agent,
+      client: t.client,
+      resource: t.resource,
+      expires: Date.now() + 3600000,
+      type: 'access'
+    });
+    store.put('token', refreshKey, { ...t, expires: Date.now() + 30 * 86400000 });
+    return {
+      access_token: access,
+      refresh_token: undefined,
+      token_type: 'Bearer',
+      expires_in: 3600,
+      scope: 'mcp'
+    };
+  }
   function bearer(req) {
     const raw = req.headers.authorization?.match(/^Bearer (\S+)$/i)?.[1];
     const t = raw ? store.get('token', digest(raw)) : null;
@@ -235,8 +258,7 @@ export function authService(store, origin) {
           a?.status !== 'active'
         )
           throw new HubError('invalid_grant');
-        store.del('token', key);
-        const issued = issue(t.agent, t.client, t.resource);
+        const issued = issueFromRefresh(key, t);
         store.audit(
           t.agent,
           'hub',

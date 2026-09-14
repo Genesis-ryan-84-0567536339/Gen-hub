@@ -276,19 +276,19 @@ test('O10 Telemetry: Auth failure pre-dispatcher, token refresh, revoke, and act
   assert.equal(refreshLog.eventKind, 'auth');
   assert.equal(refreshLog.actorType, 'agent');
 
-  // Failed refresh (replaying used refresh_token)
+  // Hub: connect once, stay connected — refresh_token is not rotated, so
+  // reusing the same refresh_token again must keep succeeding (some MCP
+  // clients never persist a newly-issued refresh_token).
   const replayRes = await x.call('/oauth/token', 'POST', {
     grant_type: 'refresh_token',
     client_id: client.id,
     resource: `${x.origin}/mcp`,
     refresh_token: tokenPair.refresh_token
   });
-  assert.equal(replayRes.status, 400);
+  assert.equal(replayRes.status, 200);
 
-  const failRefreshLog = x.hub.store.logs(5).find(l => l.tool === 'auth.token_refresh' && l.status === 'error');
-  assert.ok(failRefreshLog, 'auth.token_refresh error log must exist');
-  assert.equal(failRefreshLog.eventKind, 'auth');
-  assert.equal(failRefreshLog.errorCategory, 'authentication');
+  const secondRefreshLogs = x.hub.store.logs(5).filter(l => l.tool === 'auth.token_refresh' && l.status === 'success');
+  assert.ok(secondRefreshLogs.length >= 2, 'reused refresh_token must keep logging auth.token_refresh success');
 
   // 4. Agent revoke lifecycle
   const revokeRes = await x.call(
