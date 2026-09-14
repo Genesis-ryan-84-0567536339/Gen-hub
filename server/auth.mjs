@@ -4,12 +4,13 @@ import { HubError } from './net.mjs';
 // Hub's own owner session stays short-lived; Gitea's independent 30-day session (owner-oidc.mjs)
 // is a separate, deliberately longer-lived tradeoff scoped to that system only.
 const HUB_SESSION_SECONDS = 12 * 3600;
-// Một số MCP client (vd Codex) không áp dụng đúng access_token mới ngay sau
-// khi refresh, gây một chuỗi lỗi auth.mcp ngắn mỗi lần access_token hết hạn.
-// Access-token vẫn có thể thu hồi tức thì qua agent.status (xem bearer()),
-// nên kéo dài thời hạn không làm mất khả năng thu hồi — chỉ giảm tần suất
-// gặp phải bug phía client đó, đúng tinh thần "connect một lần, luôn kết nối".
-const ACCESS_TOKEN_MS = 30 * 86400000;
+// Hub: connect một lần, luôn kết nối được — vô thời hạn theo đúng chỉ đạo
+// trực tiếp của chủ hệ thống. Access-token vẫn có thể thu hồi tức thì qua
+// agent.status (xem bearer()), nên không hết hạn không làm mất khả năng
+// thu hồi — chỉ bỏ hẳn khái niệm "hết hạn" gây lỗi phía client (vd Codex
+// không áp dụng đúng access_token mới ngay sau khi refresh).
+const ACCESS_TOKEN_MS = 100 * 365 * 86400000;
+const REFRESH_TOKEN_MS = 100 * 365 * 86400000;
 export function authService(store, origin) {
   const cookieName = origin.startsWith('https:') ? '__Host-genhub' : 'genhub';
   function session(req) {
@@ -66,7 +67,7 @@ export function authService(store, origin) {
       ...t,
       id: digest(refresh),
       type: 'refresh',
-      expires: Date.now() + 30 * 86400000
+      expires: Date.now() + REFRESH_TOKEN_MS
     });
     return {
       access_token: access,
@@ -90,7 +91,7 @@ export function authService(store, origin) {
       expires: Date.now() + ACCESS_TOKEN_MS,
       type: 'access'
     });
-    store.put('token', refreshKey, { ...t, expires: Date.now() + 30 * 86400000 });
+    store.put('token', refreshKey, { ...t, expires: Date.now() + REFRESH_TOKEN_MS });
     return {
       access_token: access,
       refresh_token: undefined,
