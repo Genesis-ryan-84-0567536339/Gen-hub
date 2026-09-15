@@ -88,6 +88,9 @@ let auditExact = {};
 const logDetailCache = new Map();
 let notifOpen = false,
   notifSnapshotTime = 0;
+let agyOpsPanel = null,
+  agyOpsGeneration = 0,
+  agyOpsLoading = false;
 const notifStorageKey = () => 'genhub_notifs_read_' + (state?.owner || 'owner');
 const getNotifLastRead = () => {
   try {
@@ -434,6 +437,9 @@ setInterval(() => {
   )
     loadMonitor(true);
 }, 15000);
+setInterval(() => {
+  if (state && !document.hidden && modalContext.kind === 'agy-ops') loadAgyOps(true);
+}, 10000);
 let monitorActiveBusy = false;
 setInterval(async () => {
   if (
@@ -1696,6 +1702,7 @@ function show(title, sub, body, footer = '', sheet = false) {
 }
 function close() {
   modalVersion++;
+  agyOpsGeneration++;
   clearTimeout(window.vaultRevealTimer);
   modal.close();
   modal.innerHTML = '';
@@ -1746,7 +1753,96 @@ function mcp(id) {
 }
 function connectorInfo(m) {
   const id = m.id;
-  return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(m.created)}</dd></div></dl><form id="connector-info" data-id="${esc(id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(m.name)}" maxlength="60" required></label><button class="btn primary" type="submit">Lưu thông tin</button></form><div class="divider"></div><div class="mcpdetailtop">${logo(m)}<div><h3>${esc(m.name)}</h3><p>${esc(m.description)}</p></div><span class="spacer"></span>${badge(m.status)}</div><div class="actions">${btn('Kết nối / xác thực', 'credential:' + id, 'small', 'link')}${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}${m.hasCredential ? btn('Ngắt kết nối', 'disconnect:' + id, 'danger small') : ''}</div>${m.lastError ? `<p class="errorline" style="margin-top:15px">${esc(m.lastError)}</p>` : ''}<div class="settingsrow"><div><h3>Cung cấp MCP</h3><p>${m.on ? 'MCP đang được bật' : 'Tạm dừng cho tất cả agent'}</p></div>${sw(m.on, 'toggle:' + id, 'Cung cấp MCP')}</div><p class="footnote">Đồng bộ lần gần nhất: ${date(m.syncedAt)}</p><div class="divider"></div>${btn('Gỡ MCP khỏi Hub', 'remove:' + id, 'danger small')}`;
+  const actions =
+    m.provider === 'agy-ops'
+      ? btn('Gọi Agy Ops', 'agy-ops-open:' + id, 'primary', 'activity')
+      : btn('Kết nối / xác thực', 'credential:' + id, 'small', 'link') +
+        btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh') +
+        (m.hasCredential ? btn('Ngắt kết nối', 'disconnect:' + id, 'danger small') : '');
+  return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(m.created)}</dd></div></dl><form id="connector-info" data-id="${esc(id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(m.name)}" maxlength="60" required></label><button class="btn primary" type="submit">Lưu thông tin</button></form><div class="divider"></div><div class="mcpdetailtop">${logo(m)}<div><h3>${esc(m.name)}</h3><p>${esc(m.description)}</p></div><span class="spacer"></span>${badge(m.status)}</div><div class="actions">${actions}</div>${m.lastError ? `<p class="errorline" style="margin-top:15px">${esc(m.lastError)}</p>` : ''}<div class="settingsrow"><div><h3>Cung cấp MCP</h3><p>${m.on ? 'MCP đang được bật' : 'Tạm dừng cho tất cả agent'}</p></div>${sw(m.on, 'toggle:' + id, 'Cung cấp MCP')}</div><p class="footnote">Đồng bộ lần gần nhất: ${date(m.syncedAt)}</p><div class="divider"></div>${btn('Gỡ MCP khỏi Hub', 'remove:' + id, 'danger small')}`;
+}
+
+const AGY_OPS_SESSIONS = [
+  ['agy-colamacbook', 'Cola MacBook'],
+  ['agy-colabotmac', 'Cola Bot Mac'],
+  ['agy-genesiscorpos', 'Genesis Corpos'],
+  ['codex-astra', 'Codex Astra']
+];
+const AGY_OPS_GROUPS = [
+  ['queued', 'Hàng đợi'],
+  ['running', 'Đang chạy'],
+  ['done', 'Xong'],
+  ['failed', 'Lỗi']
+];
+
+function agyOpsTasksFor(group, tasks) {
+  return tasks.filter(task =>
+    group === 'running' ? ['dispatched', 'in_progress'].includes(task.status) : task.status === group
+  );
+}
+
+function agyOpsPanelHtml() {
+  const data = agyOpsPanel || { sessions: [], tasks: [] };
+  if (data.error && !data.sessions?.length) {
+    return `<p class="errorline" role="alert">${esc(data.error)}</p>${btn('Thử lại', 'agy-ops-refresh', 'small', 'refresh')}`;
+  }
+  if (!data.sessions) return '<p role="status">Đang đọc trạng thái Agy Ops…</p>';
+  const sessions = AGY_OPS_SESSIONS.map(([id, label]) => {
+    const row = data.sessions.find(item => item.session === id) || { session: id, alive: false, idle: false, snippet: '' };
+    const stateClass = !row.alive ? 'offline' : row.idle ? 'idle' : 'busy';
+    const stateLabel = !row.alive ? 'Ngoại tuyến' : row.idle ? 'Sẵn sàng' : 'Đang bận';
+    const snippet = String(row.snippet || '').split(/\r?\n/).filter(Boolean).slice(-3);
+    return `<article class="agy-session ${stateClass}"><div class="agy-session-head"><strong>${esc(label)}</strong><span><i></i>${stateLabel}</span></div><code>${snippet.length ? snippet.map(esc).join('\n') : 'Chưa có nội dung pane'}</code></article>`;
+  }).join('');
+  const tasks = data.tasks || [];
+  const groups = AGY_OPS_GROUPS.map(([group, label]) => {
+    const rows = agyOpsTasksFor(group, tasks);
+    return `<section class="agy-task-group"><h3>${label} <span class="tinycount">${rows.length}</span></h3>${rows.length ? rows.map(task => `<div class="agy-task"><span class="agy-order">#${esc(task.order)}</span><div><strong>${esc(task.title)}</strong><p>${esc(AGY_OPS_SESSIONS.find(([id]) => id === task.session)?.[1] || task.session)}${task.note ? ' · ' + esc(task.note) : ''}</p></div><div class="actions">${task.status === 'done' ? '' : btn('Đánh dấu xong', 'agy-ops-done:' + task.id, 'small', 'check')}${btn('Xoá', 'agy-ops-delete:' + task.id, 'danger small')}</div></div>`).join('') : '<p class="agy-empty">Không có task.</p>'}</section>`;
+  }).join('');
+  return `${data.error ? `<p class="errorline" role="alert">${esc(data.error)}</p>` : ''}<div class="agy-panel-toolbar"><p class="footnote">Tự làm mới mỗi 10 giây khi panel mở.</p>${btn(agyOpsLoading ? 'Đang làm mới…' : 'Làm mới', 'agy-ops-refresh', 'small', 'refresh')}</div><div class="agy-session-grid">${sessions}</div><div class="divider"></div><h2>Checklist tuần tự</h2><form id="agy-ops-task" class="agy-task-form"><label class="field">Phiên<select name="session" required>${options(AGY_OPS_SESSIONS, 'agy-colamacbook')}</select></label><label class="field">Tiêu đề<input class="input" name="title" maxlength="200" required></label><label class="field agy-brief">Brief<textarea class="input" name="brief" rows="5" maxlength="16000" required></textarea></label><button class="btn primary" type="submit">Thêm vào hàng đợi</button></form><div class="agy-task-groups">${groups}</div>`;
+}
+
+function renderAgyOpsPanel() {
+  const target = $('#agy-ops-panel');
+  if (target && modalContext.kind === 'agy-ops') target.innerHTML = agyOpsPanelHtml();
+}
+
+async function loadAgyOps(background = false) {
+  if (agyOpsLoading || modalContext.kind !== 'agy-ops') return;
+  const generation = ++agyOpsGeneration;
+  const mcpId = modalContext.id;
+  agyOpsLoading = true;
+  if (!background) renderAgyOpsPanel();
+  try {
+    const [sessions, tasks] = await Promise.all([
+      api(`agy-ops/${mcpId}/list_sessions`, 'POST', {}),
+      api(`agy-ops/${mcpId}/list_tasks`, 'POST', {})
+    ]);
+    if (generation !== agyOpsGeneration || modalContext.kind !== 'agy-ops') return;
+    agyOpsPanel = { sessions, tasks, error: '' };
+  } catch (error) {
+    if (generation !== agyOpsGeneration || modalContext.kind !== 'agy-ops') return;
+    agyOpsPanel = { ...(agyOpsPanel || {}), error: error.message };
+  } finally {
+    if (generation === agyOpsGeneration) {
+      agyOpsLoading = false;
+      renderAgyOpsPanel();
+    }
+  }
+}
+
+function openAgyOps(id) {
+  agyOpsPanel = { sessions: null, tasks: [], error: '' };
+  show(
+    'Agy Ops',
+    'Theo dõi 4 phiên local và xếp task theo thứ tự.',
+    '<div id="agy-ops-panel"></div>',
+    btn('Đóng', 'close'),
+    true
+  );
+  modalContext = { kind: 'agy-ops', id };
+  renderAgyOpsPanel();
+  loadAgyOps();
 }
 function toolPermissionBadge(p) {
   if (!p || p.status === 'ok') {
@@ -2413,11 +2509,22 @@ async function act(action, args, el = null) {
   if (action === 'install') {
     const m = await api('mcps', 'POST', { provider: id });
     await refresh();
-    credential(m.id);
+    if (m.provider === 'agy-ops') openAgyOps(m.id);
+    else credential(m.id);
     return;
   }
   if (action === 'mcp') return mcp(id);
   if (action === 'credential') return credential(id);
+  if (action === 'agy-ops-open') return openAgyOps(id);
+  if (action === 'agy-ops-refresh') return loadAgyOps();
+  if (action === 'agy-ops-done' || action === 'agy-ops-delete') {
+    if (modalContext.kind !== 'agy-ops') return;
+    const tool = action === 'agy-ops-done' ? 'set_task_status' : 'delete_task';
+    const payload = action === 'agy-ops-done' ? { id, status: 'done' } : { id };
+    await api(`agy-ops/${modalContext.id}/${tool}`, 'POST', payload);
+    await loadAgyOps();
+    return toast(action === 'agy-ops-done' ? 'Đã đánh dấu task hoàn tất' : 'Đã xoá task');
+  }
   if (action === 'toggle') {
     const m = state.mcps.find(m => m.id === id);
     await api('mcps/' + id, 'PATCH', { on: !m.on });
@@ -2752,6 +2859,17 @@ document.addEventListener('submit', async e => {
       await refresh();
       mcp(id);
       toast('Kết nối thành công');
+    }
+    if (f.id === 'agy-ops-task') {
+      if (modalContext.kind !== 'agy-ops') return;
+      await api(`agy-ops/${modalContext.id}/queue_task`, 'POST', {
+        session: b.session,
+        title: b.title,
+        brief: b.brief
+      });
+      f.reset();
+      await loadAgyOps();
+      toast('Đã thêm task vào hàng đợi');
     }
     if (f.id === 'oauth') {
       const r = await api('mcps/' + modalContext.id + '/oauth', 'POST', b);

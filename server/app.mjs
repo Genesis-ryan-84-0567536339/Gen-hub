@@ -25,6 +25,11 @@ import { createLogger } from './logger.mjs';
 import { HubError, assertSchema, jsonRequest, request } from './net.mjs';
 import { catalog, provider } from './catalog.mjs';
 import { connectorService } from './connectors.mjs';
+import {
+  AGY_OPS_BOOTSTRAP_INSTRUCTIONS,
+  agyOpsCall,
+  autoDispatchTick
+} from './agy-ops.mjs';
 import { GITHUB_MCP_URL, githubEndpoint, githubPublished } from './github-mcp.mjs';
 import { ownerOidcService, OWNER_OIDC_CLIENT } from './owner-oidc.mjs';
 import {
@@ -307,6 +312,20 @@ export function createHub({
     checkRemoteUpdate(false).catch(() => {});
   }, UPDATE_CHECK_TTL);
   updateTimer.unref();
+  let agyOpsTickRunning = false;
+  const agyOpsTimer = setInterval(async () => {
+    if (agyOpsTickRunning) return;
+    if (!store.list('mcp').some(m => m.provider === 'agy-ops' && m.on)) return;
+    agyOpsTickRunning = true;
+    try {
+      await autoDispatchTick(store);
+    } catch (error) {
+      logger.warn('Agy Ops auto-dispatch tick thất bại', { code: error?.code || error?.name });
+    } finally {
+      agyOpsTickRunning = false;
+    }
+  }, 20000);
+  agyOpsTimer.unref();
   let inFlight = 0;
   const rate = (key, max, period = 60000) => {
     const now = Date.now(),
@@ -517,6 +536,7 @@ export function createHub({
         serverInfo: { name: 'gen-hub', version: '0.1.0' },
         instructions: [
           bootstrap.render(),
+          AGY_OPS_BOOTSTRAP_INSTRUCTIONS,
           a.instructions?.trim() || 'Chỉ sử dụng các công cụ được owner cấp quyền.'
         ]
           .filter(Boolean)
@@ -802,6 +822,24 @@ export function createHub({
       if (mid) throw new HubError('Không tìm thấy trang Monitor', 404);
       return respond(200, monitor.snapshot(b));
     }
+    if (resource === 'agy-ops') {
+      if (!mid || !action || method !== 'POST') throw new HubError('Không tìm thấy API', 404);
+      const connector = store.get('mcp', mid);
+      if (!connector || connector.provider !== 'agy-ops') {
+        throw new HubError('Không tìm thấy connector Agy Ops', 404);
+      }
+      if (!connector.on || connector.status !== 'connected') {
+        throw new HubError('Connector Agy Ops chưa sẵn sàng', 409);
+      }
+      const started = performance.now();
+      const output = await agyOpsCall(action, b, store);
+      store.audit(actor, mid, action, 'success', redact(b), redact(output), performance.now() - started, '', {
+        eventKind: 'tool_call',
+        actorType: actor === 'owner' ? 'owner' : 'admin',
+        policyDecision: 'allow'
+      });
+      return respond(200, output);
+    }
     if (resource === 'tool-inventory' && !write) {
       // Collect all published tools from all connected MCPs.
       const mcps = store.list('mcp').map(cleanMcp);
@@ -929,7 +967,7 @@ export function createHub({
           on: true,
           status: 'disconnected',
           tools: template ? template.tools : [],
-          auth: b.auth === 'none' ? 'none' : 'token',
+          auth: template?.auth === 'none' || b.auth === 'none' ? 'none' : 'token',
           url: b.url || '',
           allowPrivate: !!b.allowPrivate,
           created: new Date().toISOString()
@@ -951,6 +989,7 @@ export function createHub({
       }
       store.put('mcp', mid, m);
       audit('mcp.add', { name: m.name, provider: m.provider }, { id: mid }, mid);
+      if (m.provider === 'agy-ops') return respond(201, await syncMcp(m));
       return respond(201, cleanMcp(m));
     }
     if (resource === 'mcps' && m) {
@@ -1762,6 +1801,7 @@ export function createHub({
     close: () => {
       clearInterval(timer);
       clearInterval(updateTimer);
+      clearInterval(agyOpsTimer);
       server.close();
       store.close();
     }

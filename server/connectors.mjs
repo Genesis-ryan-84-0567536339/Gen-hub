@@ -3,6 +3,7 @@ import { jsonRequest, request, HubError } from './net.mjs';
 import { provider } from './catalog.mjs';
 import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs';
 import { giteaTools, giteaCall, giteaBaseUrl, isDefaultGiteaUrl } from './gitea-mcp.mjs';
+import { agyOpsCall } from './agy-ops.mjs';
 const enc = encodeURIComponent;
 const query = o => {
   const q = new URLSearchParams();
@@ -11,6 +12,13 @@ const query = o => {
 };
 export function checkToolPermissions(m, tools = [], { headers = {}, credential = {} } = {}) {
   const providerId = m?.provider || m?.id;
+
+  if (providerId === 'agy-ops') {
+    return tools.map(t => ({
+      ...t,
+      permission: { status: 'ok', reason: 'Khả dụng (local)' }
+    }));
+  }
 
   if (providerId === 'github') {
     const scopeHeader = headers['x-oauth-scopes'];
@@ -589,6 +597,18 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
     credential,
     sync,
     call: async (m, t, a) => {
+      if (m.provider === 'agy-ops') {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                await measurePhase('upstreamCall', () => agyOpsCall(t, a, store))
+              )
+            }
+          ]
+        };
+      }
       if (isMcp(m)) {
         if (m.provider === 'github-mcp') {
           const c = await credential(m);

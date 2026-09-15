@@ -1,4 +1,5 @@
 import { giteaTools } from './gitea-mcp.mjs';
+import { agyOpsTools } from './agy-ops.mjs';
 
 const s = description => ({ type: 'string', description });
 const n = (description, maximum = 100) => ({ type: 'integer', description, minimum: 1, maximum });
@@ -135,6 +136,14 @@ export const catalog = [
     guide: 'https://docs.gitea.com/development/api-usage',
     tokenGuide: 'https://docs.gitea.com/development/api-usage',
     tools: giteaTools()
+  },
+  {
+    id: 'agy-ops',
+    name: 'Agy Ops (Local Team)',
+    description: 'Điều phối 3 phiên Antigravity CLI + Codex CLI chạy local trên máy Ryan.',
+    category: 'Vận hành nội bộ',
+    auth: 'none',
+    tools: agyOpsTools(tool)
   },
   {
     id: 'drive',
