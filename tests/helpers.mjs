@@ -18,9 +18,11 @@ export async function fixture(t, connector, options = {}) {
     password: passwordHash('owner-password-123')
   });
   await new Promise(resolve => hub.server.listen(port, '127.0.0.1', resolve));
-  t.after(async () => {
-    await new Promise(resolve => hub.server.close(resolve));
-    hub.store.close();
+  t.after(() => {
+    // Always use the Hub lifecycle close so background timers are cleared before
+    // the SQLite store is closed. Closing server/store separately leaves timers
+    // alive and lets them touch a closed database after the test has ended.
+    hub.close();
     rmSync(dir, { recursive: true, force: true });
   });
   let cookie = '',
