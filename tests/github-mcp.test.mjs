@@ -241,7 +241,7 @@ test('PAT admin flow, owner publication, separate grants, resync, errors and aud
   const call = (name, input) => rpc('tools/call', { name: mid + '__' + name, arguments: input });
   assert.deepEqual(
     (await rpc('tools/list')).data.result.tools.map(t => t.name),
-    [mid + '__github_issue_create']
+    ['feedback__list_groups', 'feedback__list_reports', 'feedback__update_group', mid + '__github_issue_create']
   );
   for (const name of [
     'github_issue_close',
@@ -291,7 +291,7 @@ test('PAT admin flow, owner publication, separate grants, resync, errors and aud
   wire.tools = wire.tools.filter(t => t.name !== 'issue_write');
   synced = await adminCall('connector_sync', { id: mid });
   assert(!synced.tools.some(t => t.name.startsWith('github_issue_')));
-  assert.equal((await rpc('tools/list')).data.result.tools.length, 0);
+  assert.equal((await rpc('tools/list')).data.result.tools.length, 3);
   wire.tools = upstream();
   synced = await adminCall('connector_sync', { id: mid });
   assert.equal(synced.tools.find(t => t.name === 'github_issue_create').published, false);
@@ -300,7 +300,7 @@ test('PAT admin flow, owner publication, separate grants, resync, errors and aud
   wire.status = 401;
   assert((await call('github_issue_create', { ...args, title: 'expired' })).data.result.isError);
   assert.equal(x.hub.store.get('mcp', mid).status, 'expired');
-  assert.equal((await rpc('tools/list')).data.result.tools.length, 0);
+  assert.equal((await rpc('tools/list')).data.result.tools.length, 3);
   assert.deepEqual(x.hub.store.get('mcp', rest.id), restBefore);
   const logs = (await x.call('/api/logs')).data;
   assert(logs.some(l => l.tool === 'github_issue_create' && l.status === 'success'));
@@ -526,7 +526,7 @@ test('github_check_status: validates input, calls GitHub REST, reduces check-run
   const toolsList = (await agentRpc('tools/list')).data.result.tools;
   assert.deepEqual(
     toolsList.map(t => t.name),
-    [ghMcp.id + '__github_check_status']
+    ['feedback__list_groups', 'feedback__list_reports', 'feedback__update_group', ghMcp.id + '__github_check_status']
   );
 
   const callRes = await agentRpc('tools/call', {

@@ -40,7 +40,7 @@ import { vaultService } from './vault.mjs';
 import { bootstrapService } from './bootstrap.mjs';
 import { skillsViewerService } from './skills-viewer.mjs';
 import { kanbanService } from './kanban.mjs';
-import { feedbackService } from './feedback.mjs';
+import { feedbackService, readLlmConfig } from './feedback.mjs';
 import { githubRetryAt } from './github-rate.mjs';
 import { createChatService } from './llm.mjs';
 import {
@@ -309,6 +309,13 @@ export function createHub({
     checkRemoteUpdate(false).catch(() => {});
   }, UPDATE_CHECK_TTL);
   updateTimer.unref();
+  // Checks every 30 min which projects are due (>=24h since last run) rather
+  // than a single 24h-period timer, so a restart never pushes a project's
+  // classification out by a full extra cycle. See Issue #121.
+  const feedbackClassifyTimer = setInterval(() => {
+    feedback.runClassificationCycle(readLlmConfig(store)).catch(() => {});
+  }, 30 * 60000);
+  feedbackClassifyTimer.unref();
   let inFlight = 0;
   const rate = (key, max, period = 60000) => {
     const now = Date.now(),
@@ -534,6 +541,7 @@ export function createHub({
             .map(({ published, ...t }) => ({ ...t, name: m.id + '__' + t.name }))
         )
         .concat(vault.tools(a))
+        .concat(feedback.mcpTools())
         .sort((x, y) => x.name.localeCompare(y.name));
       return result({ tools });
     }
@@ -630,6 +638,40 @@ export function createHub({
           );
           return result({
             content: [{ type: 'text', text: 'Không thể đọc secret; kiểm tra tham số và nhật ký.' }],
+            isError: true
+          });
+        }
+      }
+      if (name.startsWith('feedback__')) {
+        let phase = 'validation';
+        try {
+          const tool = feedback.mcpTools().find(t => t.name === name);
+          if (!tool) return rpcError(-32602, 'Tool không khả dụng');
+          assertSchema(tool.inputSchema, args);
+          phase = 'internal';
+          observation.phase('dispatch');
+          const output = feedback.callMcpTool(name, args, a.id);
+          observation.phase('response');
+          store.put('agent', a.id, { ...a, last: new Date().toISOString() });
+          observation.audit(a.id, 'feedback', name.slice(10), 'success', args, {}, performance.now() - start, '', {
+            policyDecision: 'allow',
+            phase: 'internal'
+          });
+          return result({ content: [{ type: 'text', text: JSON.stringify(output) }], isError: false });
+        } catch (e) {
+          observation.audit(
+            a.id,
+            'feedback',
+            name.slice(10),
+            'error',
+            args,
+            {},
+            performance.now() - start,
+            sanitizeText(e.message),
+            { policyDecision: 'allow', errorCategory: classifyError(e, phase), phase }
+          );
+          return result({
+            content: [{ type: 'text', text: sanitizeText(e.message) || 'Không thể thực hiện; kiểm tra tham số và nhật ký.' }],
             isError: true
           });
         }
@@ -1441,6 +1483,24 @@ export function createHub({
         const { reports, nextCursor } = feedback.listReports(mid, { limit: b.limit, cursor: b.cursor });
         return respond(200, { reports, nextCursor });
       }
+      if (mid && action === 'classify-now' && method === 'POST') {
+        rate('feedback-classify:' + actor, 10, 15 * 60000);
+        const result = await feedback.classifyProjectNow(mid, readLlmConfig(store));
+        audit('feedback.classify_now', { project_id: mid }, result);
+        return respond(200, result);
+      }
+    }
+    if (resource === 'feedback-groups') {
+      if (!mid && !write) return respond(200, { groups: feedback.listGroups(b.project_id) });
+      if (mid && method === 'PATCH') {
+        // Owner-only lane: only the interest flag. Engineer status/notes are
+        // set by agents through the MCP tool, never through this route.
+        if (!Object.keys(b).every(k => k === 'owner_flagged'))
+          throw new HubError('Chỉ owner_flagged được sửa qua API này');
+        const group = feedback.setOwnerFlag(mid, b.owner_flagged);
+        audit('feedback.group_flagged', { id: mid }, { owner_flagged: group.owner_flagged });
+        return respond(200, group);
+      }
     }
     throw new HubError('Không tìm thấy API', 404);
   }
@@ -1818,6 +1878,7 @@ export function createHub({
     close: () => {
       clearInterval(timer);
       clearInterval(updateTimer);
+      clearInterval(feedbackClassifyTimer);
       server.close();
       store.close();
     }

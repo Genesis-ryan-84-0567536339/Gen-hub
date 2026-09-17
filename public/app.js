@@ -311,15 +311,16 @@ async function loadFeedbackDetail(id) {
   render();
   if (!id) return;
   try {
-    const [keys, reportsRes] = await Promise.all([
+    const [keys, reportsRes, groupsRes] = await Promise.all([
       api('feedback-projects/' + id + '/keys'),
-      api('feedback-projects/' + id + '/reports')
+      api('feedback-projects/' + id + '/reports'),
+      api('feedback-groups?project_id=' + id)
     ]);
     if (feedbackSelected !== id) return;
-    feedbackDetail = { keys: keys.keys, reports: reportsRes.reports };
+    feedbackDetail = { keys: keys.keys, reports: reportsRes.reports, groups: groupsRes.groups };
   } catch (e) {
     if (feedbackSelected !== id) return;
-    feedbackDetail = { keys: [], reports: [], error: e.message };
+    feedbackDetail = { keys: [], reports: [], groups: [], error: e.message };
   }
   render();
 }
@@ -2567,6 +2568,21 @@ async function act(action, args, el = null) {
     await api('feedback-projects/' + id + '/keys/' + args[1], 'DELETE');
     close();
     return loadFeedbackDetail(id);
+  }
+  if (action === 'feedback-classify-now') {
+    const r = await api('feedback-projects/' + id + '/classify-now', 'POST');
+    toast(
+      r.reason === 'llm_not_configured'
+        ? 'Chưa cấu hình model AI trong Cài đặt, không tự phân loại được'
+        : r.reason === 'error'
+          ? 'Tổng hợp lỗi: ' + r.error
+          : `Đã tổng hợp ${r.classified} report mới`
+    );
+    return loadFeedbackDetail(id);
+  }
+  if (action === 'feedback-toggle-flag') {
+    await api('feedback-groups/' + id, 'PATCH', { owner_flagged: args[1] === '1' });
+    return loadFeedbackDetail(feedbackSelected);
   }
   if (action === 'log') return log(id);
   if (action === 'logtab') return log(modalContext.id, id);
