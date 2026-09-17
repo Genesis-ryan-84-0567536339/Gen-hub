@@ -40,6 +40,7 @@ import { vaultService } from './vault.mjs';
 import { bootstrapService } from './bootstrap.mjs';
 import { skillsViewerService } from './skills-viewer.mjs';
 import { kanbanService } from './kanban.mjs';
+import { feedbackService } from './feedback.mjs';
 import { githubRetryAt } from './github-rate.mjs';
 import { createChatService } from './llm.mjs';
 import {
@@ -108,6 +109,7 @@ export function createHub({
     up = connector || connectorService(store),
     bootstrap = bootstrapService(store, up),
     skillsViewer = skillsViewerService(store, up),
+    feedback = feedbackService(store),
     logger = createLogger(store),
     limits = new Map();
   const monitor = createMonitor(store);
@@ -1411,6 +1413,35 @@ export function createHub({
         return respond(200, await kanban.archiveDone(actor));
       }
     }
+    if (resource === 'feedback-projects') {
+      if (!mid && method === 'GET') return respond(200, { projects: feedback.listProjects() });
+      if (!mid && method === 'POST') {
+        const project = feedback.createProject(b.name);
+        audit('feedback.project_created', { name: b.name }, { id: project.id });
+        return respond(201, project);
+      }
+      if (mid && !action && method === 'DELETE') {
+        feedback.deleteProject(mid);
+        audit('feedback.project_deleted', { id: mid });
+        return respond(200, { ok: true });
+      }
+      if (mid && action === 'keys' && method === 'POST') {
+        rate('feedback-key-create:' + actor, 20, 15 * 60000);
+        const created = feedback.createKey(mid);
+        audit('feedback.key_created', { project_id: mid }, { id: created.id });
+        return respond(201, created);
+      }
+      if (mid && action === 'keys' && !write) return respond(200, { keys: feedback.listKeys(mid) });
+      if (mid && action === 'keys' && parts[3] && method === 'DELETE') {
+        const revoked = feedback.revokeKey(mid, parts[3]);
+        audit('feedback.key_revoked', { project_id: mid, id: parts[3] });
+        return respond(200, revoked);
+      }
+      if (mid && action === 'reports' && !write) {
+        const { reports, nextCursor } = feedback.listReports(mid, { limit: b.limit, cursor: b.cursor });
+        return respond(200, { reports, nextCursor });
+      }
+    }
     throw new HubError('Không tìm thấy API', 404);
   }
   const assistant = adminAssistant(store, origin, ({ path, ...context }) =>
@@ -1661,6 +1692,30 @@ export function createHub({
         );
         return send(res, response.status, response.data, response.headers);
       }
+      // Public feedback ingest — deliberately outside /api/ and auth.owner():
+      // callers are apps in the wild identified by a project-scoped write-only
+      // key, never the Gen-hub owner. See Issue #119.
+      if (p === '/feedback/ingest' && req.method === 'POST') {
+        const keyRecord = feedback.authenticateKey(req);
+        try {
+          rate('feedback-key:' + keyRecord.id, 30, 60000);
+          rate('feedback-ip:' + req.socket.remoteAddress, 60, 60000);
+        } catch (e) {
+          store.audit('unauthenticated', 'hub', 'feedback.rate_limit', 'error', {}, { error: e.message }, undefined, '', {
+            eventKind: 'auth',
+            actorType: 'unauthenticated',
+            errorCategory: 'rate_limit'
+          });
+          throw e;
+        }
+        const b = await body(req);
+        const result = feedback.submitReport(keyRecord, b, req.socket.remoteAddress);
+        store.audit('unauthenticated', 'hub', 'feedback.report_submitted', 'success', {}, { id: result.id, project_id: keyRecord.project_id }, undefined, '', {
+          eventKind: 'ingest',
+          actorType: 'unauthenticated'
+        });
+        return send(res, 201, { ok: true });
+      }
       if (p.startsWith('/api/')) {
         const write = !['GET', 'HEAD'].includes(req.method),
           s = auth.owner(req, write);
@@ -1708,6 +1763,7 @@ export function createHub({
         '/monitor.css': 'monitor.css',
         '/connection-guides.js': 'connection-guides.js',
         '/kanban.js': 'kanban.js',
+        '/feedback.js': 'feedback.js',
         '/audit-stats.js': 'audit-stats.js',
         '/notifications.js': 'notifications.js',
         '/settings.js': 'settings.js',
