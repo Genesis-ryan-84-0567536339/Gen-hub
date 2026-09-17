@@ -210,10 +210,14 @@ test('Issue #21: Admin agent calling /mcp is strictly isolated from admin tools'
     })
   ).data;
 
-  // Normal /mcp endpoint: tools/list returns NO admin tools
+  // Normal /mcp endpoint: tools/list returns NO admin tools — only the
+  // native hub tools every agent gets regardless of granted permissions.
   const mcpTools = await rpc(x, '/mcp', token.access_token, 'tools/list');
   assert.equal(mcpTools.status, 200);
-  assert.deepEqual(mcpTools.data.result.tools, []);
+  assert.deepEqual(
+    mcpTools.data.result.tools.map(t => t.name),
+    ['feedback__list_groups', 'feedback__list_reports', 'feedback__update_group']
+  );
 
   // Calling an admin tool on /mcp fails (rpcError -32602)
   const fakeCall = await rpc(x, '/mcp', token.access_token, 'tools/call', {

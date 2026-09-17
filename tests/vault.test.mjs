@@ -35,7 +35,11 @@ test('Vault is private, individually granted, encrypted, auditable, and cannot b
   const a = await agent(x, 'reader');
   const s = await secret(x, 'Script key', value);
   const other = await secret(x, 'Other key', 'unshared-key');
-  assert.deepEqual((await rpc(x, a.token, 'tools/list')).data.result.tools, []);
+  assert.deepEqual((await rpc(x, a.token, 'tools/list')).data.result.tools.map(t => t.name), [
+    'feedback__list_groups',
+    'feedback__list_reports',
+    'feedback__update_group'
+  ]);
   assert((await invoke(x, a.token, 'vault__' + s.id)).data.error);
   for (const permission of ['vault:*', 'vault', 'vault:' + s.id + ':extra', 'vault:missing'])
     assert.equal(
@@ -45,7 +49,7 @@ test('Vault is private, individually granted, encrypted, auditable, and cannot b
   await x.call('/api/agents/' + a.id, 'PATCH', { permissions: ['vault:' + s.id] });
   assert.deepEqual(
     (await rpc(x, a.token, 'tools/list')).data.result.tools.map(t => t.name),
-    ['vault__' + s.id]
+    ['feedback__list_groups', 'feedback__list_reports', 'feedback__update_group', 'vault__' + s.id]
   );
   assert.equal(output(await invoke(x, a.token, 'vault__' + s.id)).secret, value);
   assert((await invoke(x, a.token, 'vault__' + other.id)).data.error);
@@ -188,7 +192,7 @@ test('OAuth consent can grant one Vault secret without exposing the rest of the 
   assert.equal(exchanged.status, 200);
   assert.deepEqual(
     (await rpc(x, exchanged.data.access_token, 'tools/list')).data.result.tools.map(t => t.name),
-    ['vault__' + s.id]
+    ['feedback__list_groups', 'feedback__list_reports', 'feedback__update_group', 'vault__' + s.id]
   );
   assert.equal(
     output(await invoke(x, exchanged.data.access_token, 'vault__' + s.id)).secret,
