@@ -954,6 +954,32 @@ function empty(title, desc) {
 function searchInput(placeholder) {
   return `<label class="search">${I('search')}<input id="search" value="${esc(filter)}" placeholder="${placeholder}" aria-label="${placeholder}"></label>`;
 }
+function internalMcpFeatures() {
+  const vaultCount = state.vault.length;
+  const rows = [
+    {
+      icon: 'lock',
+      name: 'Kho bí mật (Vault)',
+      note:
+        vaultCount === 0
+          ? 'Chưa có secret nào — tool chỉ xuất hiện khi tạo secret và cấp cho agent.'
+          : `${vaultCount} secret · mỗi secret là 1 tool riêng, chỉ agent được cấp mới thấy`,
+      route: 'vault'
+    },
+    {
+      icon: 'bell',
+      name: 'Feedback Inbox',
+      note: '3 tool cố định (list_groups, list_reports, update_group) · cấp cho MỌI agent, không cần cấp quyền riêng',
+      route: 'feedback'
+    }
+  ];
+  return `<div class="card" style="margin-bottom:22px"><div class="cardhead"><div><h2>Tính năng nội bộ</h2><p>Tool do chính Gen-hub cung cấp — không phải connector, nên không "Thêm MCP" hay xóa được ở đây. Quản lý tại trang riêng của từng tính năng.</p></div></div><div style="padding:6px 23px 18px">${rows
+    .map(
+      r =>
+        `<div class="listrow"><div class="inline"><span class="serviceicon" style="width:36px;height:36px">${I(r.icon)}</span><div><b>${esc(r.name)}</b><p class="footnote">${esc(r.note)}</p></div></div><a class="btn small" href="#${esc(r.route)}">Quản lý</a></div>`
+    )
+    .join('')}</div></div>`;
+}
 function mcps() {
   return (
     head(
@@ -961,6 +987,7 @@ function mcps() {
       'Thêm dịch vụ, kết nối tài khoản và công bố tool cho agent.',
       btn('Thêm MCP', 'add', 'primary', 'plus')
     ) +
+    internalMcpFeatures() +
     `<div class="toolbar">${searchInput('Tìm MCP…')}</div><div id="results">${mcpResults()}</div>`
   );
 }
