@@ -324,6 +324,25 @@ async function loadFeedbackDetail(id) {
   }
   render();
 }
+function showFeedbackKeySnippet(title, key) {
+  const snippet = [
+    'Gen-hub Feedback ingest key: ' + key,
+    'Endpoint: POST ' + state.origin + '/feedback/ingest',
+    'Header: Authorization: Bearer ' + key,
+    '',
+    'curl -X POST ' + state.origin + "/feedback/ingest \\",
+    '  -H "Authorization: Bearer ' + key + '" \\',
+    '  -H "Content-Type: application/json" \\',
+    '  -d \'{"message":"..."}\''
+  ].join('\n');
+  modalContext = { kind: 'token', token: snippet };
+  show(
+    title,
+    'Sao chép cả khối này — đủ endpoint + key + ví dụ để đưa cho app hoặc agent khác dùng ngay. Xem lại được bất cứ lúc nào qua nút "Xem lại" ở bảng key.',
+    `<div style="display:flex;gap:8px;align-items:flex-start"><textarea class="input mono" readonly rows="8" style="flex:1;white-space:pre">${esc(snippet)}</textarea><button type="button" class="iconbutton" data-action="copytoken" aria-label="Sao chép">${I('copy')}</button></div>`,
+    btn('Đóng', 'close')
+  );
+}
 const monitorView = { tab: 'overview', actor: '', mcp: '', toolFilter: 'all', period: '12' };
 let monitorData = null,
   monitorGeneration = 0,
@@ -2576,14 +2595,13 @@ async function act(action, args, el = null) {
   }
   if (action === 'feedback-create-key') {
     const r = await api('feedback-projects/' + id + '/keys', 'POST');
-    modalContext = { kind: 'token', token: r.key };
-    show(
-      'Ingest key đã được tạo',
-      'Sao chép ngay; key sẽ không được hiển thị lại. Nhúng thẳng vào app — key chỉ tạo được report cho đúng project này.',
-      `<label class="field">Ingest key</label><div style="display:flex;gap:8px;align-items:flex-start"><textarea class="input mono" readonly rows="2" style="flex:1">${esc(r.key)}</textarea><button type="button" class="iconbutton" data-action="copytoken" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Endpoint: POST ${esc(state.origin)}/feedback/ingest<br>Header: Authorization: Bearer &lt;key&gt;</p>`,
-      btn('Đã lưu key', 'close')
-    );
+    showFeedbackKeySnippet('Ingest key đã được tạo', r.key);
     return loadFeedbackDetail(id);
+  }
+  if (action === 'feedback-reveal-key') {
+    const r = await api('feedback-projects/' + id + '/keys/' + args[1] + '/reveal');
+    showFeedbackKeySnippet('Ingest key', r.key);
+    return;
   }
   if (action === 'feedback-revoke-key')
     return confirmation(

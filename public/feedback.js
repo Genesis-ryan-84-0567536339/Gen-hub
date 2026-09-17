@@ -131,7 +131,11 @@ export function feedbackPage(data, detail, selectedId) {
               <td>${fmt(k.created_at)}</td>
               <td>${fmt(k.last_used_at)}</td>
               <td>${k.revoked_at ? `<span class="badge gray">Đã thu hồi ${fmt(k.revoked_at)}</span>` : '<span class="badge">Hoạt động</span>'}</td>
-              <td style="text-align:right">${k.revoked_at ? '' : `<button type="button" class="btn small danger" data-action="feedback-revoke-key:${esc(selectedId)}:${esc(k.id)}">Thu hồi</button>`}</td>
+              <td style="text-align:right;display:flex;gap:6px;justify-content:flex-end">${
+                k.revoked_at
+                  ? ''
+                  : `<button type="button" class="btn small" data-action="feedback-reveal-key:${esc(selectedId)}:${esc(k.id)}">Xem lại</button><button type="button" class="btn small danger" data-action="feedback-revoke-key:${esc(selectedId)}:${esc(k.id)}">Thu hồi</button>`
+              }</td>
             </tr>`
           )
           .join('')}</tbody></table>`

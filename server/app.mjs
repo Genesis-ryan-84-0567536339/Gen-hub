@@ -1473,6 +1473,12 @@ export function createHub({
         audit('feedback.key_created', { project_id: mid }, { id: created.id });
         return respond(201, created);
       }
+      if (mid && action === 'keys' && parts[3] && parts[4] === 'reveal' && !write) {
+        rate('feedback-reveal:' + actor, 30, 15 * 60000);
+        const revealed = feedback.revealKey(mid, parts[3]);
+        audit('feedback.key_revealed', { project_id: mid, id: parts[3] });
+        return respond(200, revealed);
+      }
       if (mid && action === 'keys' && !write) return respond(200, { keys: feedback.listKeys(mid) });
       if (mid && action === 'keys' && parts[3] && method === 'DELETE') {
         const revoked = feedback.revokeKey(mid, parts[3]);

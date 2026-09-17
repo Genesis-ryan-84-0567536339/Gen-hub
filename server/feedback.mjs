@@ -65,10 +65,28 @@ export function feedbackService(store) {
       project_id: projectId,
       created_at: new Date().toISOString(),
       revoked_at: null,
-      last_used_at: null
+      last_used_at: null,
+      // Reversibly encrypted (owner can view again — this is an integration
+      // key the owner needs to hand off, not a password), separate from the
+      // `id`/lookup hash above which stays one-way for the ingest auth path.
+      sealed: store.seal(raw)
     };
     store.put('feedback_key', keyId, record);
     return { key: raw, id: keyId, project_id: projectId, created_at: record.created_at };
+  }
+
+  // Owner forgot to copy the key at creation time — decrypt it again rather
+  // than force revoke-and-recreate (which would break the app already
+  // shipped with the old key).
+  function revealKey(projectId, keyId) {
+    getProject(projectId);
+    const k = store.get('feedback_key', keyId);
+    if (!k || k.project_id !== projectId) throw new HubError('Không tìm thấy key', 404);
+    try {
+      return { id: keyId, key: store.unseal(k.sealed) };
+    } catch {
+      throw new HubError('Không thể mở lại key này (tạo trước khi có tính năng này)', 404);
+    }
   }
 
   function listKeys(projectId) {
@@ -375,6 +393,7 @@ export function feedbackService(store) {
     createProject,
     deleteProject,
     createKey,
+    revealKey,
     listKeys,
     revokeKey,
     authenticateKey,
