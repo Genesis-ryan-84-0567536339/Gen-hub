@@ -1,5 +1,6 @@
 import { renderMonitor, monitorTimeline, layoutMonitorMap } from './monitor.js';
 import { kanbanPage, kanbanCards } from './kanban.js';
+import { feedbackPage } from './feedback.js';
 import {
   auditStats,
   isToolCall,
@@ -61,6 +62,7 @@ const names = {
   skills: 'Skills',
   audit: 'Nhật ký',
   kanban: 'Kanban',
+  feedback: 'Feedback',
   settings: 'Cài đặt'
 };
 let state = null,
@@ -292,6 +294,35 @@ setInterval(() => {
   )
     loadKanban();
 }, 120000);
+let feedbackData = null,
+  feedbackDetail = null,
+  feedbackSelected = null;
+async function loadFeedback() {
+  try {
+    feedbackData = await api('feedback-projects');
+  } catch (e) {
+    feedbackData = { projects: [], error: e.message };
+  }
+  render();
+}
+async function loadFeedbackDetail(id) {
+  feedbackSelected = id;
+  feedbackDetail = null;
+  render();
+  if (!id) return;
+  try {
+    const [keys, reportsRes] = await Promise.all([
+      api('feedback-projects/' + id + '/keys'),
+      api('feedback-projects/' + id + '/reports')
+    ]);
+    if (feedbackSelected !== id) return;
+    feedbackDetail = { keys: keys.keys, reports: reportsRes.reports };
+  } catch (e) {
+    if (feedbackSelected !== id) return;
+    feedbackDetail = { keys: [], reports: [], error: e.message };
+  }
+  render();
+}
 const monitorView = { tab: 'overview', actor: '', mcp: '', toolFilter: 'all', period: '12' };
 let monitorData = null,
   monitorGeneration = 0,
@@ -548,6 +579,7 @@ async function refresh() {
   if (state?.settings) state.settings = normalizeSettings(state.settings);
   if (state?.bootstrap) bootstrapState = JSON.parse(JSON.stringify(state.bootstrap));
   if (route === 'kanban') await loadKanban();
+  if (route === 'feedback') await loadFeedback();
   if (route === 'overview') {
     loadMonitor();
   }
@@ -881,6 +913,7 @@ function render() {
     skills: 'grid',
     audit: 'activity',
     kanban: 'grid',
+    feedback: 'bell',
     settings: 'settings'
   };
   $('#app').innerHTML =
@@ -893,7 +926,7 @@ function render() {
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'skills' ? skillsPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'skills' ? skillsPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : r === 'feedback' ? feedbackPage(feedbackData, feedbackDetail, feedbackSelected) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
   layoutMonitorMap(monitorData, monitorView);
@@ -2489,6 +2522,52 @@ async function act(action, args, el = null) {
     close();
     return refresh();
   }
+  if (action === 'feedback-new-project')
+    return show(
+      'Tạo project mới',
+      'Mỗi project ứng với 1 app cần nhận report.',
+      `<form id="feedback-new-project-form"><label class="field">Tên project<input class="input" name="name" required maxlength="200" autofocus placeholder="Ví dụ: my-cli-tool"></label></form>`,
+      btn('Hủy', 'close') +
+        `<button type="submit" form="feedback-new-project-form" class="btn primary">Tạo project</button>`
+    );
+  if (action === 'feedback-select') return loadFeedbackDetail(id || null);
+  if (action === 'feedback-delete-project')
+    return confirmation(
+      'Xóa project này?',
+      'Xóa toàn bộ key và report của project — không thể hoàn tác.',
+      'do-feedback-delete-project:' + id
+    );
+  if (action === 'do-feedback-delete-project') {
+    await api('feedback-projects/' + id, 'DELETE');
+    if (feedbackSelected === id) {
+      feedbackSelected = null;
+      feedbackDetail = null;
+    }
+    close();
+    return loadFeedback();
+  }
+  if (action === 'feedback-create-key') {
+    const r = await api('feedback-projects/' + id + '/keys', 'POST');
+    modalContext = { kind: 'token', token: r.key };
+    show(
+      'Ingest key đã được tạo',
+      'Sao chép ngay; key sẽ không được hiển thị lại. Nhúng thẳng vào app — key chỉ tạo được report cho đúng project này.',
+      `<label class="field">Ingest key</label><div style="display:flex;gap:8px;align-items:flex-start"><textarea class="input mono" readonly rows="2" style="flex:1">${esc(r.key)}</textarea><button type="button" class="iconbutton" data-action="copytoken" aria-label="Sao chép">${I('copy')}</button></div><p class="footnote">Endpoint: POST ${esc(state.origin)}/feedback/ingest<br>Header: Authorization: Bearer &lt;key&gt;</p>`,
+      btn('Đã lưu key', 'close')
+    );
+    return loadFeedbackDetail(id);
+  }
+  if (action === 'feedback-revoke-key')
+    return confirmation(
+      'Thu hồi key này?',
+      'App đang dùng key này sẽ nhận lỗi xác thực ngay khi gửi report.',
+      'do-feedback-revoke-key:' + id + ':' + args[1]
+    );
+  if (action === 'do-feedback-revoke-key') {
+    await api('feedback-projects/' + id + '/keys/' + args[1], 'DELETE');
+    close();
+    return loadFeedbackDetail(id);
+  }
   if (action === 'log') return log(id);
   if (action === 'logtab') return log(modalContext.id, id);
   if (action === 'load-more-logs') return fetchAuditLogs(auditCursor, true);
@@ -2789,6 +2868,12 @@ document.addEventListener('submit', async e => {
         btn('Đã lưu token', 'close')
       );
     }
+    if (f.id === 'feedback-new-project-form') {
+      await api('feedback-projects', 'POST', { name: b.name });
+      close();
+      await loadFeedback();
+      toast('Đã tạo project');
+    }
     if (f.id === 'consent') {
       const formData = new FormData(f);
       const isAdmin = formData.get('is_admin') === 'true';
@@ -2985,6 +3070,7 @@ window.addEventListener('hashchange', async () => {
   route = hashRoute;
   kanbanGeneration++;
   if (state && route === 'kanban') loadKanban();
+  if (state && route === 'feedback') loadFeedback();
   if (state && route === 'skills' && !skillsData && !skillsLoading && state.settings.brainRepo) loadSkills();
   if (route === 'audit') {
     parseAuditHash();
