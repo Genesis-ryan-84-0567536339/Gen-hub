@@ -116,7 +116,11 @@ def main():
             rpc = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list', 'params': {}}
             headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/json, text/event-stream', 'MCP-Protocol-Version': '2025-06-18'}
             status, result = request('/mcp', 'POST', rpc, headers)
-            assert status == 200 and result['result']['tools'] == []
+            # feedback__* are native hub tools available to every agent regardless
+            # of granted permissions (see Issue #121) — not admin/connector tools.
+            assert status == 200 and [t['name'] for t in result['result']['tools']] == [
+                'feedback__list_groups', 'feedback__list_reports', 'feedback__update_group'
+            ]
             key_before = hashlib.sha256((data / 'master.key').read_bytes()).hexdigest()
             # Remove/recreate every container and network, keep only bind-mounted persistent data.
             rt.compose(path, 'down')
