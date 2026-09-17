@@ -48,6 +48,24 @@ test('an unauthenticated caller with no key and no session gets 401, never treat
   assert.equal(submit.status, 401);
 });
 
+test('the owner can view a key again later if they forgot to copy it, without recreating it', async t => {
+  const x = await fixture(t);
+  const { project, key } = await makeProjectWithKey(x);
+
+  const revealed = await x.call(`/api/feedback-projects/${project.id}/keys/${key.id}/reveal`);
+  assert.equal(revealed.status, 200);
+  assert.equal(revealed.data.key, key.key, 'reveal must return the exact same key that was issued');
+
+  // Reveal keeps working even after the key is revoked (reference only — the
+  // key itself no longer authenticates anything).
+  await x.call(`/api/feedback-projects/${project.id}/keys/${key.id}`, 'DELETE');
+  const revealedAfterRevoke = await x.call(`/api/feedback-projects/${project.id}/keys/${key.id}/reveal`);
+  assert.equal(revealedAfterRevoke.data.key, key.key);
+
+  const wrongKey = await x.call(`/api/feedback-projects/${project.id}/keys/not-a-real-key/reveal`);
+  assert.equal(wrongKey.status, 404);
+});
+
 test('a revoked key is rejected immediately, without any action from the reporting app', async t => {
   const x = await fixture(t);
   const { project, key } = await makeProjectWithKey(x);
