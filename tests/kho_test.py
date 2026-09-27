@@ -39,6 +39,7 @@ class KhoTest(unittest.TestCase):
             self.assertFalse(service['read_only'])
             self.assertEqual(service['cap_drop'], ['ALL'])
             self.assertEqual(service['cap_add'], ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETUID', 'SETGID', 'KILL', 'NET_BIND_SERVICE'])
+            self.assertEqual(service['healthcheck']['start_period'], '240s')
             self.assertEqual(service['environment']['BASEROW_EXTRA_PUBLIC_URLS'], 'http://127.0.0.1,http://localhost,http://kho')
             for forbidden in ['ports', 'secrets', 'env_file', 'privileged']:
                 self.assertNotIn(forbidden, service)
@@ -157,6 +158,58 @@ class KhoTest(unittest.TestCase):
             saved_compose = json.loads(compose_json.read_text())
             self.assertNotIn('kho', saved_compose['services'])
             self.assertEqual(caddy_file.read_text(), 'initial caddy')
+
+    def test_kho_verify_script_checks_text_response(self):
+        with tempfile.TemporaryDirectory() as temp:
+            conf = pathlib.Path(temp)
+            compose_json = conf / 'compose.json'
+            compose_json.write_text(json.dumps({
+                'services': {'kho': {}},
+                'x-gen-hub': {'installation_id': 'owned'}
+            }))
+            with patch('kho.check_volumes', return_value=['kho-data']), \
+                 patch('kho.compose') as mock_compose:
+                kho.verify(compose_json)
+                self.assertEqual(mock_compose.call_count, 2)
+                node_call_args = mock_compose.call_args_list[1][0]
+                self.assertIn('node', node_call_args)
+                script = node_call_args[-1]
+                self.assertIn("const t=(await r.text()).trim()", script)
+                self.assertIn("t!=='OK'&&t!=='pass'", script)
+
+    def test_kho_enable_uses_timeout_300(self):
+        with tempfile.TemporaryDirectory() as temp:
+            conf = pathlib.Path(temp)
+            install_json = conf / 'install.json'
+            compose_json = conf / 'compose.json'
+            caddy_file = conf / 'Caddyfile'
+            state = {**self.state(), 'kho_enabled': False}
+            install_json.write_text(json.dumps(state, indent=2))
+            compose_json.write_text(json.dumps({
+                'services': {'hub': {}, 'caddy': {}},
+                'x-gen-hub': {'installation_id': 'owned'}
+            }))
+            caddy_file.write_text('initial caddy')
+            release_dir = conf / 'releases' / state['revision'] / 'deploy'
+            release_dir.mkdir(parents=True)
+            (release_dir / 'images.json').write_text((SOURCE / 'deploy/images.json').read_text())
+
+            with patch('kho.CONF', conf), \
+                 patch('kho.ROOT', conf), \
+                 patch('runtime.CONF', conf), \
+                 patch('runtime.DATA', conf), \
+                 patch('runtime.backup'), \
+                 patch('kho.run', return_value=result()), \
+                 patch('runtime.admin', return_value=result('yes\n')), \
+                 patch('kho.verify'), \
+                 patch('kho.compose') as mock_compose:
+                kho.enable(state)
+                up_calls = [call[0] for call in mock_compose.call_args_list if 'up' in call[0]]
+                self.assertTrue(len(up_calls) > 0)
+                up_call = up_calls[0]
+                self.assertIn('--wait-timeout', up_call)
+                timeout_idx = up_call.index('--wait-timeout')
+                self.assertEqual(up_call[timeout_idx + 1], '300')
 
     def test_kho_schema_manage_passes_output_and_url(self):
         state = {**self.state(), 'domain': 'mykho.example.com'}

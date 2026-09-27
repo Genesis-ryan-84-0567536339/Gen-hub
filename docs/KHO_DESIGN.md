@@ -76,6 +76,11 @@ Container Baserow 2.3.4 là mô hình all-in-one quản lý đa tiến trình b�
 4. **Khôi phục trạng thái khi thất bại (Atomic Rollback trong `enable()`):**
    - Hàm `enable()` trong `scripts/kho.py` đặt `state['kho_enabled'] = False` và lưu `install.json` trong khối `except BaseException` trước khi re-raise lỗi.
    - Dọn dẹp container `kho` bị lỗi (`compose stop/rm kho`) để tránh loop restart mồ côi làm ảnh hưởng tới các lệnh tiếp theo (`gen-hub update`, `restart`, `backup`).
+5. **Kiểm tra sức khỏe verify() và cấu hình thời gian chờ khởi động (Timeouts):**
+   - Endpoint `/api/_health/` của Baserow trả về phản hồi dạng văn bản thuần (`OK`), không phải JSON như Gitea (`{status: pass}`). Do đó `verify()` trong `scripts/kho.py` sử dụng `(await r.text()).trim()` và chấp nhận cả `OK` lẫn `pass`.
+   - Lần đầu chạy migrations (cold-start) của Baserow 2.3.4 gồm 206 Django migrations mất khoảng 165s. Do đó:
+     - Nâng `--wait-timeout` của Compose lên `300s` trong `enable()` và `snapshot()`.
+     - Nâng `healthcheck.start_period` của service `kho` từ `45s` lên `240s` để ngăn Docker đánh dấu container `unhealthy` trước khi migrations hoàn tất (tránh bị Compose ngắt sớm).
 
 ---
 

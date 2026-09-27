@@ -53,7 +53,7 @@ def service(state, images, common):
             'interval': '5s',
             'timeout': '5s',
             'retries': 30,
-            'start_period': '45s'
+            'start_period': '240s'
         },
     }
 
@@ -87,7 +87,7 @@ def verify(path):
             'test -d /baserow/data; test -w /baserow/data; du -sh /baserow/data')
     compose(path, 'exec', '-T', 'hub', 'node', '--input-type=module', '-e',
             "const r=await fetch('http://kho:80/api/_health/',{signal:AbortSignal.timeout(5000)});"
-            "const b=await r.json();if(!r.ok||b.status!=='pass')process.exit(1)")
+            "const t=(await r.text()).trim();if(!r.ok||(t!=='OK'&&t!=='pass'))process.exit(1)")
 
 
 @contextlib.contextmanager
@@ -114,7 +114,7 @@ def snapshot(path):
             yield archive
         finally:
             if running:
-                compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build', 'kho')
+                compose(path, 'up', '-d', '--wait', '--wait-timeout', '300', '--no-build', 'kho')
 
 
 def enable(state):
@@ -149,7 +149,7 @@ def enable(state):
         atomic(path, json.dumps(config, indent=2))
         atomic(CONF / 'Caddyfile', caddy_config(state), 0o644)
         compose(path, 'config', '--quiet')
-        compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build', '--force-recreate', 'kho', 'caddy')
+        compose(path, 'up', '-d', '--wait', '--wait-timeout', '300', '--no-build', '--force-recreate', 'kho', 'caddy')
         verify(path)
     except BaseException:
         state['kho_enabled'] = False
