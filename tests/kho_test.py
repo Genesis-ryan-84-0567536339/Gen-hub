@@ -1,0 +1,125 @@
+import copy
+import json
+import pathlib
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / 'scripts'))
+import kho
+import runtime
+import manage
+
+SOURCE = pathlib.Path(__file__).resolve().parents[1]
+
+
+def result(stdout=''):
+    return subprocess.CompletedProcess([], 0, stdout=stdout)
+
+
+class KhoTest(unittest.TestCase):
+    def state(self):
+        return {'mode': 'vps', 'domain': 'hub.example.com', 'installation_id': 'owned',
+                'uid': 991, 'gid': 991, 'revision': 'a' * 40, 'engine': 'compose',
+                'gitea_enabled': True, 'kho_enabled': True}
+
+    def test_manifest_and_caddy_include_kho_when_enabled(self):
+        for mode in ['vps', 'personal']:
+            state = {**self.state(), 'mode': mode}
+            config = runtime.manifest(state, SOURCE)
+            service = config['services']['kho']
+            self.assertEqual(service['volumes'], ['kho-data:/baserow/data'])
+            self.assertTrue(service['image'].startswith('baserow/baserow:1.33.2@sha256:'))
+            self.assertEqual(service['environment']['BASEROW_PUBLIC_URL'], 'https://kho.hub.example.com')
+            self.assertEqual(service['environment']['DISABLE_VOLUME_CHECK'], 'no')
+            self.assertEqual(service['mem_limit'], '2g')
+            self.assertEqual(service['pids_limit'], 256)
+            for forbidden in ['ports', 'secrets', 'env_file', 'privileged']:
+                self.assertNotIn(forbidden, service)
+            for forbidden in ['master.key', 'update.env', 'docker.sock', '/var/lib/gen-hub']:
+                self.assertNotIn(forbidden, json.dumps(service))
+            self.assertIn('kho-data', config['volumes'])
+            self.assertEqual(config['volumes']['kho-data']['name'], 'gen-hub-owned-kho-data')
+            self.assertEqual(config['volumes']['kho-data']['labels']['io.gen-hub.installation-id'], 'owned')
+            
+            caddy = runtime.caddy_config(state)
+            self.assertIn('kho.hub.example.com', caddy)
+            self.assertIn('reverse_proxy kho:80', caddy)
+            self.assertIn('redir /kho /kho/ 308', caddy)
+
+    def test_manifest_and_caddy_omit_kho_when_disabled(self):
+        for mode in ['vps', 'personal']:
+            state = {**self.state(), 'mode': mode, 'kho_enabled': False}
+            config = runtime.manifest(state, SOURCE)
+            self.assertNotIn('kho', config['services'])
+            self.assertNotIn('kho-data', config['volumes'])
+            caddy = runtime.caddy_config(state)
+            self.assertNotIn('kho.hub.example.com', caddy)
+            self.assertNotIn('reverse_proxy kho:80', caddy)
+
+    def test_check_volumes_validates_label(self):
+        state = {'installation_id': 'inst1'}
+        vol_name = 'gen-hub-inst1-kho-data'
+        # Volume missing and required -> raises
+        with patch('kho.run', return_value=result('other-vol\n')):
+            with self.assertRaisesRegex(RuntimeError, 'Thiếu volume Kho'):
+                kho.check_volumes(state, required=True)
+
+        # Volume belongs to another installation -> raises
+        inspect_alien = json.dumps([{'Name': vol_name, 'Labels': {'io.gen-hub.installation-id': 'other'}}])
+        with patch('kho.run', side_effect=[result(vol_name + '\n'), result(inspect_alien)]):
+            with self.assertRaisesRegex(RuntimeError, 'Volume Kho không thuộc installation'):
+                kho.check_volumes(state, required=True)
+
+        # Volume belongs to this installation -> succeeds
+        inspect_ok = json.dumps([{'Name': vol_name, 'Labels': {'io.gen-hub.installation-id': 'inst1'}}])
+        with patch('kho.run', side_effect=[result(vol_name + '\n'), result(inspect_ok)]):
+            owned = kho.check_volumes(state, required=True)
+            self.assertEqual(owned, [vol_name])
+
+    def test_kho_snapshot_cold_backup(self):
+        with tempfile.TemporaryDirectory() as temp:
+            compose_path = pathlib.Path(temp) / 'compose.json'
+            compose_path.write_text(json.dumps({
+                'services': {'kho': {'image': 'baserow-image'}},
+                'x-gen-hub': {'installation_id': 'inst1'}
+            }))
+            with patch('kho.check_volumes', return_value=['gen-hub-inst1-kho-data']), \
+                 patch('kho.compose', return_value=result('running-container-id')), \
+                 patch('kho.run', return_value=result()):
+                with kho.snapshot(compose_path) as archive:
+                    self.assertIsNotNone(archive)
+                    self.assertTrue(pathlib.Path(archive).name.endswith('kho.tar'))
+
+    def test_kho_disable_and_purge(self):
+        with tempfile.TemporaryDirectory() as temp:
+            conf = pathlib.Path(temp)
+            install_json = conf / 'install.json'
+            compose_json = conf / 'compose.json'
+            caddy_file = conf / 'Caddyfile'
+            state = {**self.state(), 'kho_enabled': True}
+            install_json.write_text(json.dumps(state))
+            compose_json.write_text(json.dumps({
+                'services': {'hub': {}, 'kho': {}},
+                'volumes': {'kho-data': {}},
+                'x-gen-hub': {'installation_id': 'owned'}
+            }))
+            caddy_file.write_text('old caddy')
+
+            with patch('kho.CONF', conf), \
+                 patch('kho.ROOT', conf), \
+                 patch('runtime.backup'), \
+                 patch('kho.compose'), \
+                 patch('kho.run'), \
+                 patch('kho.check_volumes', return_value=['gen-hub-owned-kho-data']):
+                kho.disable(state, purge=True)
+                self.assertFalse(state['kho_enabled'])
+                cfg = json.loads(compose_json.read_text())
+                self.assertNotIn('kho', cfg['services'])
+                self.assertNotIn('kho-data', cfg.get('volumes', {}))
+
+
+if __name__ == '__main__':
+    unittest.main()

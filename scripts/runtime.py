@@ -43,10 +43,28 @@ def caddy_config(state):
     header_up Host {state['domain']}
     flush_interval -1
   }}'''
+    kho_route = ""
+    kho_vps = ""
+    if state.get('kho_enabled', False):
+        kho_domain = f"kho.{state['domain']}"
+        kho_route = f"""redir /kho /kho/ 308
+  handle_path /kho/* {{
+    redir https://{kho_domain}{{uri}} 308
+  }}"""
+        kho_vps = f"""{kho_domain} {{
+  reverse_proxy kho:80 {{
+    header_up Host {{host}}
+    header_up X-Forwarded-Proto https
+  }}
+}}
+"""
+
     if not state.get('gitea_enabled', True):
-        routes = upstream
+        routes = f"""{kho_route}
+  {upstream}""" if kho_route else upstream
     else:
-        routes = f"""redir /gitea /gitea/ 308
+        routes = f"""{kho_route}
+  redir /gitea /gitea/ 308
   handle_path /gitea/* {{
     reverse_proxy gitea:3000 {{
       header_up Host {state['domain']}
@@ -57,8 +75,19 @@ def caddy_config(state):
     {upstream}
   }}"""
     if state['mode'] == 'vps':
-        return f'{{\n  admin off\n}}\n{state["domain"]} {{\n  {routes}\n}}\n'
-    return f'{{\n  admin off\n  auto_https off\n}}\nhttp://:8080 {{\n  {routes}\n}}\n'
+        return f'{{\n  admin off\n}}\n{kho_vps}{state["domain"]} {{\n  {routes}\n}}\n'
+    kho_tunnel_handler = ""
+    if state.get('kho_enabled', False):
+        kho_domain = f"kho.{state['domain']}"
+        kho_tunnel_handler = f"""  @kho host {kho_domain}
+  handle @kho {{
+    reverse_proxy kho:80 {{
+      header_up Host {{host}}
+      header_up X-Forwarded-Proto https
+    }}
+  }}
+"""
+    return f'{{\n  admin off\n  auto_https off\n}}\nhttp://:8080 {{\n{kho_tunnel_handler}  {routes}\n}}\n'
 
 
 def manifest(state, release, conf=CONF, data=DATA):
@@ -96,8 +125,14 @@ def manifest(state, release, conf=CONF, data=DATA):
     }
     from gitea import service, volumes
     services = {'hub': hub, 'caddy': caddy}
+    vols = {}
     if state.get('gitea_enabled', True):
         services['gitea'] = service(state, images, common)
+        vols.update(volumes(state))
+    if state.get('kho_enabled', False):
+        from kho import service as kho_service, volumes as kho_volumes
+        services['kho'] = kho_service(state, images, common)
+        vols.update(kho_volumes(state))
     if state['mode'] == 'vps':
         caddy['ports'] = ['80:80', '443:443']
     else:
@@ -109,7 +144,7 @@ def manifest(state, release, conf=CONF, data=DATA):
             'secrets': ['tunnel_token'], 'depends_on': {'caddy': {'condition': 'service_started'}},
         }
     result = {'services': services, 'networks': {'hub': {}},
-              'volumes': volumes(state) if state.get('gitea_enabled', True) else {},
+              'volumes': vols,
               'x-gen-hub': {'installation_id': state['installation_id'], 'schema': 1}}
     if state['mode'] == 'personal':
         result['secrets'] = {'tunnel_token': {'file': str(conf / 'tunnel.token')}}
@@ -140,6 +175,9 @@ def verify_local(path, state):
     if state.get('gitea_enabled', True):
         from gitea import verify
         verify(path)
+    if state.get('kho_enabled', False):
+        from kho import verify as kho_verify
+        kho_verify(path)
     print('✓ Container và lưu trữ đã sẵn sàng.')
 
 
@@ -150,10 +188,12 @@ def backup(path, target, conf=CONF, data=DATA):
         raise RuntimeError('Tệp backup đã tồn tại.')
     snapshot = 'backup-' + str(time.time_ns()) + '.db'
     from gitea import snapshot as gitea_snapshot
+    from kho import snapshot as kho_snapshot
     try:
         with gitea_snapshot(path) as gitea_archive:
-            _backup_archive(path, target, conf, data, snapshot, gitea_archive)
-        print('✓ Backup Hub + Gitea, khóa và cấu hình: ' + str(target))
+            with kho_snapshot(path) as kho_archive:
+                _backup_archive(path, target, conf, data, snapshot, gitea_archive, kho_archive)
+        print('✓ Backup Hub + Gitea / Kho, khóa và cấu hình: ' + str(target))
     except BaseException:
         target.unlink(missing_ok=True)
         raise
@@ -161,7 +201,7 @@ def backup(path, target, conf=CONF, data=DATA):
         (data / snapshot).unlink(missing_ok=True)
 
 
-def _backup_archive(path, target, conf, data, snapshot, gitea_archive):
+def _backup_archive(path, target, conf, data, snapshot, gitea_archive, kho_archive=None):
     admin(path, 'backup', extra=['/data/' + snapshot])
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'wb') as stream, tarfile.open(fileobj=stream, mode='w:gz') as archive:
@@ -170,3 +210,5 @@ def _backup_archive(path, target, conf, data, snapshot, gitea_archive):
         archive.add(conf, arcname='config', filter=lambda info: None if info.name.endswith('.lock') else info)
         if gitea_archive:
             archive.add(gitea_archive, arcname='gitea/volumes.tar')
+        if kho_archive:
+            archive.add(kho_archive, arcname='kho/volumes.tar')

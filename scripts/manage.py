@@ -31,6 +31,10 @@ def main():
             print('Gitea: đã tắt (bật lại bằng sudo gen-hub gitea-enable)')
         else:
             print('Gitea: https://' + state['domain'] + '/gitea/' if state.get('gitea_bootstrapped') else PENDING)
+        if state.get('kho_enabled'):
+            print(f"Kho Ryan: https://kho.{state['domain']} (hoặc https://{state['domain']}/kho/)")
+        else:
+            print('Kho Ryan: chưa bật (bật bằng sudo gen-hub kho-enable)')
         from ci_runner import status as ci_status
         ci_status(state)
         compose(path, 'ps', '--all'); return
@@ -45,11 +49,14 @@ def main():
         if state.get('gitea_enabled', True):
             from gitea import require_bootstrap
             require_bootstrap(state, path)
+        if state.get('kho_enabled'):
+            from kho import verify as kho_verify
+            kho_verify(path)
         from ci_runner import status as ci_status
         ci_status(state, doctor=True)
-        print('✓ Owner' + (' và Gitea sẵn sàng.' if state.get('gitea_enabled', True) else ' sẵn sàng (Gitea đã tắt).')); return
-    if command not in ['ci-bootstrap', 'deploy-action-register', 'gitea-enable', 'gitea-disable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
-        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
+        print('✓ Owner' + (' và Gitea' if state.get('gitea_enabled', True) else '') + (' và Kho' if state.get('kho_enabled') else '') + ' sẵn sàng.'); return
+    if command not in ['ci-bootstrap', 'deploy-action-register', 'gitea-enable', 'gitea-disable', 'kho-enable', 'kho-disable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
+        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | kho-enable | kho-disable [--purge] | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
@@ -75,6 +82,19 @@ def main():
             print('Gitea đã tắt sẵn.'); return
         if '--purge' in sys.argv:
             if input('Sẽ xóa vĩnh viễn dữ liệu Gitea (repo, database, LFS, attachments, config/keys). Nhập DELETE GITEA để xác nhận: ') != 'DELETE GITEA':
+                print('Đã hủy.'); return
+        disable(state, purge='--purge' in sys.argv)
+        return
+    if command == 'kho-enable':
+        from kho import enable
+        enable(state)
+        return
+    if command == 'kho-disable':
+        from kho import disable
+        if not state.get('kho_enabled'):
+            print('Kho đã tắt sẵn.'); return
+        if '--purge' in sys.argv:
+            if input('Sẽ xóa vĩnh viễn dữ liệu Kho (database, attachments, config). Nhập DELETE KHO để xác nhận: ') != 'DELETE KHO':
                 print('Đã hủy.'); return
         disable(state, purge='--purge' in sys.argv)
         return
@@ -126,6 +146,9 @@ def main():
         from ci_runner import drained
         if state.get('gitea_enabled', True):
             check_volumes(state, required=True)
+        if state.get('kho_enabled'):
+            from kho import check_volumes as kho_check_volumes
+            kho_check_volumes(state, required=True)
         with drained(state):
             compose(path, 'restart')
             compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
