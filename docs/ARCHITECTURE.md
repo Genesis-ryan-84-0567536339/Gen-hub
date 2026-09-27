@@ -14,6 +14,7 @@
 - `server/export-audit.mjs`: Trích xuất nhật ký audit dạng JSONL (kèm payload) hoặc CSV (7 cột metadata) với phân trang cursor server-side, chống formula injection (`=`, `+`, `-`, `@`, tab, CR) và manifest đối chiếu dữ liệu.
 - `server/admin-assistant.mjs`: Dispatcher MCP quản trị `/mcp/admin` dành riêng cho agent có cờ `isAdmin: true` với ranh giới an toàn, bảo vệ mật khẩu step-up và PIN thao tác phá hủy.
 - `server/vault.mjs`: Quản lý kho bí mật per-agent grant `vault:<id>`, mã hóa bảo vệ bằng master key, trường ghi chú (`notes`), và kiểm soát chia sẻ snapshot.
+- `server/kho-tools.mjs`: Công cụ tra cứu thực thể theo mã tiền tố `kho_find_by_id` (DA, VIEC, PHIEN, QD, BAI, TT, TS, KHOA) bọc tích hợp với REST API của Baserow.
 - `server/migrate-ids.mjs`: Tiện ích CLI chuyển đổi nguyên tử các ID cũ sang chuẩn 5 chữ số `type-NNNNN` mà không làm đứt gãy token hay quan hệ dữ liệu.
 - `server/llm.mjs` & `server/chat-validator.mjs`: Tích hợp mô hình ngôn ngữ (BYOC LLM) và kiểm định giao thức cho trợ lý hỗ trợ trực tiếp trên console.
 - `server/net.mjs`: Lớp mạng outbound giới hạn thời gian/kích thước, DNS pinning, chặn mạng riêng/metadata mặc định, không theo redirect HTTP.
@@ -33,7 +34,8 @@
 - `scripts/docker_setup.py`: Cài đặt Docker Engine chính thức từ repository package manager của OS nếu thiếu.
 - `Dockerfile` / `deploy/images.json`: Dockerfile tối thiểu và bảng digest chuẩn cho các container runtime (Hub, Caddy, cloudflared, Gitea).
 - `scripts/lifecycle.py`: Tự động cập nhật theo CI SHA trên `main`, systemd timer `gen-hub-update.timer`, doctor repair và quy trình gỡ bỏ cài đặt an toàn.
-- `scripts/manage.py`: CLI quản trị (`gen-hub status`, `logs`, `doctor`, `backup`, `rollback`, `gitea-enable`, `gitea-disable`, `migrate-ids`).
+- `scripts/kho.py` & `kho/schema.py`: Quản lý vòng đời container Baserow 1.33+ (Kho Ryan), declarative schema SSOT 8 bảng hạt nhân, idempotent sync, consistent snapshot backup và Caddy routing.
+- `scripts/manage.py`: CLI quản trị (`gen-hub status`, `logs`, `doctor`, `backup`, `rollback`, `gitea-enable`, `gitea-disable`, `kho-enable`, `kho-disable`, `kho-schema`, `migrate-ids`).
 
 ## Giao thức và ranh giới bảo mật
 
