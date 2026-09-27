@@ -978,6 +978,13 @@ export function createHub({
           allowPrivate: !!b.allowPrivate,
           created: new Date().toISOString()
         };
+      if (b.kind) m.kind = text(b.kind, 32);
+      if (b.khoRestUrl) m.khoRestUrl = text(b.khoRestUrl, 2048);
+      if (b.isKho !== undefined) m.isKho = !!b.isKho;
+      if (m.isKho || m.kind === 'kho' || m.name.toLowerCase() === 'kho-ryan' || m.name.toLowerCase() === 'kho ryan') {
+        m.kind = 'kho';
+        m.isKho = true;
+      }
       if (m.provider === 'remote') {
         if (m.url.length > 2048) throw new HubError('URL quá dài');
         const url = new URL(m.url);
@@ -1011,6 +1018,12 @@ export function createHub({
       if (method === 'PATCH' && !action) {
         if (b.on !== undefined) m.on = !!b.on;
         if (b.name) m.name = text(b.name, 60);
+        if (b.kind !== undefined) m.kind = b.kind ? text(b.kind, 32) : undefined;
+        if (b.khoRestUrl !== undefined) m.khoRestUrl = b.khoRestUrl ? text(b.khoRestUrl, 2048) : undefined;
+        if (b.isKho !== undefined) {
+          m.isKho = !!b.isKho;
+          if (m.isKho) m.kind = 'kho';
+        }
         if (b.published) {
           if (
             !Array.isArray(b.published) ||

@@ -104,6 +104,7 @@ def manifest(state, release, conf=CONF, data=DATA):
         'build': {'context': str(release), 'args': {'NODE_IMAGE': images['node']}},
         'user': f"{state['uid']}:{state['gid']}",
         'environment': {'HOST': '0.0.0.0', 'PORT': '3080', 'DATA_DIR': '/data',
+                        'KHO_TABLE_IDS_PATH': '/data/kho_table_ids.json',
                         'PUBLIC_URL': 'https://' + state['domain'], 'INSTALLATION_ID': state['installation_id'],
                         'GENHUB_REVISION': state.get('revision', ''),
                         'GENHUB_UPDATED_AT': str(state.get('updated_at', ''))},

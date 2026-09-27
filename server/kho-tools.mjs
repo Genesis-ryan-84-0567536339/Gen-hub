@@ -41,26 +41,32 @@ export const khoFindByIdTool = {
 let memoryTableIds = null;
 
 export function loadTableIds(customPath) {
-  if (memoryTableIds) return memoryTableIds;
-  const filePath = customPath || process.env.KHO_TABLE_IDS_PATH || DEFAULT_TABLE_IDS_PATH;
-  try {
-    if (fs.existsSync(filePath)) {
-      const raw = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(raw);
+  if (memoryTableIds === false) return null;
+  if (memoryTableIds !== null) return memoryTableIds;
+  const candidates = [
+    customPath,
+    process.env.KHO_TABLE_IDS_PATH,
+    process.env.DATA_DIR ? path.join(process.env.DATA_DIR, 'kho_table_ids.json') : null,
+    './var/kho_table_ids.json',
+    '/data/kho_table_ids.json',
+    '/var/lib/gen-hub/data/kho_table_ids.json',
+    path.resolve(__dirname, '../kho/table_ids.json')
+  ].filter(Boolean);
+
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        const raw = fs.readFileSync(p, 'utf-8');
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // try next candidate
     }
-  } catch {
-    // ignore
   }
-  return {
-    DA: 1,
-    VIEC: 2,
-    PHIEN: 3,
-    QD: 4,
-    BAI: 5,
-    TT: 6,
-    TS: 7,
-    KHOA: 8
-  };
+  return null;
 }
 
 export function setMemoryTableIds(mapping) {
@@ -102,7 +108,14 @@ export async function khoFindById(args, { url, restUrl, token, tableIds, allowPr
     );
   }
 
-  const map = tableIds || loadTableIds();
+  const map = tableIds !== undefined ? tableIds : loadTableIds();
+  if (!map || typeof map !== 'object' || Object.keys(map).length === 0) {
+    throw new HubError(
+      'Chưa có dữ liệu ánh xạ bảng Kho Ryan (thiếu table_ids.json). Vui lòng chạy lệnh "kho-schema" để đồng bộ trước khi tra cứu.',
+      503
+    );
+  }
+
   const tableId = map[prefix];
   if (!tableId) {
     throw new HubError(

@@ -1937,7 +1937,7 @@ function add() {
           `<div class="catalogrow">${logo({ provider: c.id })}<div><h3>${esc(c.name)}</h3><p>${esc(c.description)} · ${esc(c.auth)}</p></div>${btn('Thêm', 'install:' + c.id, 'small')}</div>`
       )
       .join('') +
-      `<div class="divider"></div><h3>MCP HTTP tùy chỉnh</h3><form id="remote" style="margin-top:20px"><label class="field">Tên MCP<input class="input" name="name" required maxlength="60"></label><label class="field">Địa chỉ endpoint<input class="input" type="url" name="url" placeholder="https://mcp.example.com/mcp" required></label><div id="remote-guide" aria-live="polite"></div><label class="field">Xác thực<select name="auth"><option value="token">Bearer token</option><option value="none">Không xác thực</option></select></label><label class="checkboxline"><input type="checkbox" name="allowPrivate">Cho phép truy cập server nội bộ / localhost của máy cài Hub</label><button class="btn primary" type="submit">Thêm MCP tùy chỉnh</button></form>`,
+      `<div class="divider"></div><h3>MCP HTTP tùy chỉnh</h3><form id="remote" style="margin-top:20px"><label class="field">Tên MCP<input class="input" name="name" required maxlength="60"></label><label class="field">Địa chỉ endpoint<input class="input" type="url" name="url" placeholder="https://mcp.example.com/mcp" required></label><div id="remote-guide" aria-live="polite"></div><label class="field">Xác thực<select name="auth"><option value="token">Bearer token</option><option value="none">Không xác thực</option></select></label><label class="checkboxline"><input type="checkbox" name="isKho" value="true">Đây là Kho Ryan (Baserow 1.33+)</label><label class="field">REST URL của Kho (tùy chọn nếu khác endpoint MCP)<input class="input" type="url" name="khoRestUrl" placeholder="http://kho:80 hoặc https://kho.genos.top"></label><label class="checkboxline"><input type="checkbox" name="allowPrivate">Cho phép truy cập server nội bộ / localhost của máy cài Hub</label><button class="btn primary" type="submit">Thêm MCP tùy chỉnh</button></form>`,
     btn('Đóng', 'close')
   );
 }
@@ -3006,9 +3006,13 @@ document.addEventListener('submit', async e => {
       else if (!state.settings.onboarded) onboarding();
     }
     if (f.id === 'remote') {
+      const isKho = !!b.isKho;
       const m = await api('mcps', 'POST', {
         ...b,
         provider: 'remote',
+        kind: isKho ? 'kho' : (b.kind || 'generic'),
+        isKho: isKho,
+        khoRestUrl: (b.khoRestUrl || '').trim() || undefined,
         allowPrivate: !!b.allowPrivate
       });
       await refresh();

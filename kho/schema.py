@@ -190,7 +190,18 @@ def sync_schema(client, schema=None, output_table_ids=None):
         if tname in tables_map and prefix:
             prefix_to_table_id[prefix] = tables_map[tname]['id']
 
-    table_ids_path = output_table_ids or os.environ.get('KHO_TABLE_IDS_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table_ids.json')
+    table_ids_path = output_table_ids or os.environ.get('KHO_TABLE_IDS_PATH')
+    if not table_ids_path:
+        data_dir = os.environ.get('DATA_DIR')
+        if data_dir and os.path.isdir(data_dir):
+            table_ids_path = os.path.join(data_dir, 'kho_table_ids.json')
+        elif os.path.isdir('/data'):
+            table_ids_path = '/data/kho_table_ids.json'
+        elif os.path.isdir('/var/lib/gen-hub/data'):
+            table_ids_path = '/var/lib/gen-hub/data/kho_table_ids.json'
+        else:
+            os.makedirs('./var', exist_ok=True)
+            table_ids_path = './var/kho_table_ids.json'
     try:
         with open(table_ids_path, 'w', encoding='utf-8') as f:
             json.dump(prefix_to_table_id, f, indent=2, ensure_ascii=False)
@@ -209,14 +220,22 @@ def sync_schema(client, schema=None, output_table_ids=None):
 
 
 def main():
-    base_url = os.environ.get('BASEROW_URL', 'http://127.0.0.1:80')
-    jwt_token = os.environ.get('BASEROW_JWT')
-    db_token = os.environ.get('BASEROW_TOKEN')
+    import argparse
+    parser = argparse.ArgumentParser(description="Synchronize Kho Ryan schema to Baserow")
+    parser.add_argument('--url', default=os.environ.get('BASEROW_URL', 'http://127.0.0.1:80'), help='Baserow instance URL')
+    parser.add_argument('--jwt', default=os.environ.get('BASEROW_JWT'), help='Baserow user JWT token')
+    parser.add_argument('--token', default=os.environ.get('BASEROW_TOKEN'), help='Baserow database API token')
+    parser.add_argument('--output', default=os.environ.get('KHO_TABLE_IDS_PATH'), help='Path to output table_ids.json')
+    args, _ = parser.parse_known_args()
+
+    base_url = args.url
+    jwt_token = args.jwt
+    db_token = args.token
     if not jwt_token and not db_token:
-        print("Usage: BASEROW_URL=... BASEROW_TOKEN=... python3 schema.py", file=sys.stderr)
+        print("Usage: python3 kho/schema.py --url <URL> --token <TOKEN> (or set BASEROW_URL / BASEROW_TOKEN)", file=sys.stderr)
         sys.exit(1)
     client = BaserowClient(base_url, jwt_token=jwt_token, database_token=db_token)
-    sync_schema(client)
+    sync_schema(client, output_table_ids=args.output)
 
 
 if __name__ == '__main__':

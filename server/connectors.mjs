@@ -5,7 +5,14 @@ import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs
 import { giteaTools, giteaCall, giteaBaseUrl, isDefaultGiteaUrl } from './gitea-mcp.mjs';
 import { khoFindById, khoFindByIdTool } from './kho-tools.mjs';
 export function isKhoConnector(m) {
-  return m?.provider === 'remote' && (m?.kind === 'kho' || !!m?.khoRestUrl || m?.isKho === true);
+  return (
+    m?.provider === 'remote' &&
+    (m?.kind === 'kho' ||
+      m?.isKho === true ||
+      !!m?.khoRestUrl ||
+      m?.name?.toLowerCase() === 'kho-ryan' ||
+      m?.id === 'kho-ryan')
+  );
 }
 const enc = encodeURIComponent;
 const query = o => {

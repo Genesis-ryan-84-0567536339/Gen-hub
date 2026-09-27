@@ -7,7 +7,7 @@
       "prefix": "DA-",
       "fields": [
         { "name": "Tên", "type": "text", "primary": true },
-        { "name": "Mã ID", "type": "formula", "formula": "concat('DA-', to_string(row_id()))" },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('DA-', totext(row_id()))" },
         { "name": "Mô tả", "type": "long_text" },
         { "name": "Trạng thái", "type": "single_select", "options": ["Đang chạy", "Tạm dừng", "Xong", "Bỏ"] },
         { "name": "Trọng tâm", "type": "boolean" },
@@ -20,7 +20,7 @@
       "prefix": "VIEC-",
       "fields": [
         { "name": "Tiêu đề", "type": "text", "primary": true },
-        { "name": "Mã ID", "type": "formula", "formula": "concat('VIEC-', to_string(row_id()))" },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('VIEC-', totext(row_id()))" },
         { "name": "Trạng thái", "type": "single_select", "options": ["Chờ", "Đang làm", "Chờ duyệt", "Xong"] },
         { "name": "Ưu tiên", "type": "single_select", "options": ["P1", "P2", "P3"] },
         { "name": "Người làm", "type": "text" },
@@ -41,7 +41,7 @@
       "prefix": "PHIEN-",
       "fields": [
         { "name": "Chủ đề", "type": "text", "primary": true },
-        { "name": "Mã ID", "type": "formula", "formula": "concat('PHIEN-', to_string(row_id()))" },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('PHIEN-', totext(row_id()))" },
         { "name": "Ngày", "type": "date" },
         { "name": "Công cụ", "type": "single_select", "options": ["Claude Code", "claude.ai", "ChatGPT", "agy", "Khác"] },
         { "name": "Đã chốt", "type": "long_text" },
@@ -55,7 +55,7 @@
       "prefix": "QD-",
       "fields": [
         { "name": "Nội dung", "type": "text", "primary": true },
-        { "name": "Mã ID", "type": "formula", "formula": "concat('QD-', to_string(row_id()))" },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('QD-', totext(row_id()))" },
         { "name": "Lý do", "type": "long_text" },
         { "name": "Trạng thái", "type": "single_select", "options": ["Hiệu lực", "Thay thế"] },
         { "name": "Ngày", "type": "date" },
@@ -68,7 +68,7 @@
       "prefix": "BAI-",
       "fields": [
         { "name": "Khái niệm", "type": "text", "primary": true },
-        { "name": "Mã ID", "type": "formula", "formula": "concat('BAI-', to_string(row_id()))" },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('BAI-', totext(row_id()))" },
         { "name": "Giải thích đời thường", "type": "long_text" },
         { "name": "Chủ đề", "type": "single_select", "options": ["Git", "Agent", "MCP", "DevOps", "Bảo mật", "Sản phẩm", "Khác"] },
         { "name": "Mức", "type": "single_select", "options": ["Mới", "Đã hiểu", "Thành thạo"] },
@@ -84,7 +84,7 @@
       "prefix": "TT-",
       "fields": [
         { "name": "Tên", "type": "text", "primary": true },
-        { "name": "Mã ID", "type": "formula", "formula": "concat('TT-', to_string(row_id()))" },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('TT-', totext(row_id()))" },
         { "name": "Tóm tắt", "type": "text" },
         { "name": "Nội dung Markdown", "type": "long_text" },
         { "name": "Nguồn gốc", "type": "text" },
@@ -96,7 +96,7 @@
       "prefix": "TS-",
       "fields": [
         { "name": "Tên", "type": "text", "primary": true },
-        { "name": "Mã ID", "type": "formula", "formula": "concat('TS-', to_string(row_id()))" },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('TS-', totext(row_id()))" },
         { "name": "Loại", "type": "single_select", "options": ["Báo cáo", "Tài liệu", "Thiết kế", "Link code", "Khác"] },
         { "name": "File hoặc Link", "type": "text" },
         { "name": "Tạo bởi", "type": "text" },
@@ -109,7 +109,7 @@
       "prefix": "KHOA-",
       "fields": [
         { "name": "Tên", "type": "text", "primary": true },
-        { "name": "Mã ID", "type": "formula", "formula": "concat('KHOA-', to_string(row_id()))" },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('KHOA-', totext(row_id()))" },
         { "name": "Dùng cho", "type": "text" },
         { "name": "ID Vault", "type": "text" },
         { "name": "Link", "type": "url" },

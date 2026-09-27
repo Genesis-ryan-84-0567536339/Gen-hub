@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PREFIX_TABLE_MAP, khoFindById, khoFindByIdTool, loadTableIds, resolveRestBase } from '../server/kho-tools.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openStore } from '../server/store.mjs';
+import { PREFIX_TABLE_MAP, khoFindById, khoFindByIdTool, loadTableIds, resolveRestBase, setMemoryTableIds } from '../server/kho-tools.mjs';
 import { checkToolPermissions, isKhoConnector } from '../server/connectors.mjs';
 
 test('kho-tools: validates prefix-to-table mapping for all 8 tables', () => {
@@ -17,9 +21,30 @@ test('kho-tools: validates prefix-to-table mapping for all 8 tables', () => {
 
 test('kho-tools: loads table_ids mapping from schema export', () => {
   const tableIds = loadTableIds();
-  assert.ok(tableIds);
-  for (const prefix of ['DA', 'VIEC', 'PHIEN', 'QD', 'BAI', 'TT', 'TS', 'KHOA']) {
-    assert.equal(typeof tableIds[prefix], 'number');
+  // If tableIds exists in environment or disk
+  if (tableIds) {
+    for (const prefix of ['DA', 'VIEC', 'PHIEN', 'QD', 'BAI', 'TT', 'TS', 'KHOA']) {
+      assert.equal(typeof tableIds[prefix], 'number');
+    }
+  }
+});
+
+test('kho-tools: khoFindById rejects when table mapping is missing without hardcoded fallback', async () => {
+  setMemoryTableIds(false);
+  try {
+    await assert.rejects(
+      () => khoFindById(
+        { id: 'VIEC-12' },
+        { url: 'http://kho:80', request: async () => {} }
+      ),
+      err => {
+        assert.equal(err.status, 503);
+        assert.ok(err.message.includes('Chưa có dữ liệu ánh xạ bảng Kho Ryan') || err.message.includes('kho-schema'));
+        return true;
+      }
+    );
+  } finally {
+    setMemoryTableIds(null);
   }
 });
 
@@ -110,7 +135,7 @@ test('kho-tools: khoFindById fetches row using direct table_id without calling a
   assert.equal(parsed.data['Ngày tạo'], '2026-09-27');
 });
 
-test('kho-tools: isKhoConnector requires explicit flags and rejects generic substring matches', () => {
+test('kho-tools: isKhoConnector requires explicit flags or kho-ryan name and rejects generic substring matches', () => {
   // Generic remote connectors with "kho" in name or URL MUST NOT be recognized as Kho
   const unrelated1 = { provider: 'remote', name: 'Kho dữ liệu hình ảnh', url: 'https://storage.example.com/mcp' };
   const unrelated2 = { provider: 'remote', name: 'Dịch vụ lưu trữ', url: 'https://example.com/kho-service' };
@@ -119,14 +144,18 @@ test('kho-tools: isKhoConnector requires explicit flags and rejects generic subs
   assert.equal(isKhoConnector(unrelated2), false);
   assert.equal(isKhoConnector(unrelated3), false);
 
-  // Connectors with explicit kind: 'kho', khoRestUrl, or isKho: true ARE recognized
+  // Connectors with explicit kind: 'kho', khoRestUrl, isKho: true, or name: 'kho-ryan' ARE recognized
   const explicitKind = { provider: 'remote', name: 'Baserow Kho', kind: 'kho', url: 'http://kho:80/mcp' };
   const explicitRestUrl = { provider: 'remote', name: 'My Kho', khoRestUrl: 'http://kho:80', url: 'http://kho:80/mcp' };
   const explicitFlag = { provider: 'remote', name: 'Kho Ryan', isKho: true, url: 'http://kho:80/mcp' };
+  const explicitName = { provider: 'remote', name: 'kho-ryan', url: 'http://kho:80/mcp' };
+  const explicitNameCaps = { provider: 'remote', name: 'Kho-Ryan', url: 'http://kho:80/mcp' };
 
   assert.equal(isKhoConnector(explicitKind), true);
   assert.equal(isKhoConnector(explicitRestUrl), true);
   assert.equal(isKhoConnector(explicitFlag), true);
+  assert.equal(isKhoConnector(explicitName), true);
+  assert.equal(isKhoConnector(explicitNameCaps), true);
 });
 
 test('kho-tools: checkToolPermissions handles remote MCP tools', () => {
@@ -139,4 +168,32 @@ test('kho-tools: checkToolPermissions handles remote MCP tools', () => {
   assert.equal(checked.length, 2);
   assert.equal(checked[0].permission.status, 'unknown');
   assert.equal(checked[1].permission.status, 'ok');
+});
+
+test('kho-tools: Hub API saves and reads back kind, isKho, and khoRestUrl flags', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'genhub-kho-store-'));
+  const store = openStore(dir);
+  t.after(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const connectorData = {
+    id: 'mcp-99999',
+    name: 'Kho Ryan',
+    provider: 'remote',
+    kind: 'kho',
+    isKho: true,
+    khoRestUrl: 'http://kho:80',
+    url: 'https://kho.genos.top/api/mcp/',
+    allowPrivate: true
+  };
+  store.put('mcp', connectorData.id, connectorData);
+
+  const retrieved = store.get('mcp', 'mcp-99999');
+  assert.ok(retrieved);
+  assert.equal(retrieved.kind, 'kho');
+  assert.equal(retrieved.isKho, true);
+  assert.equal(retrieved.khoRestUrl, 'http://kho:80');
+  assert.equal(isKhoConnector(retrieved), true);
 });

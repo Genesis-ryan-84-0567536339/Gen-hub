@@ -76,23 +76,42 @@ Lệnh sẽ tự động:
 
 Để Claude, agy hoặc các AI agent khác có thể truy cập Kho Ryan qua Gen-hub:
 
+### 3.1. Tạo MCP Endpoint & Database Token trên Baserow (Thực tế Baserow 1.33+)
+Trong Baserow 1.33+, kiến trúc MCP được thiết kế theo cơ chế Workspace SSE Endpoint:
+1. **Tạo MCP Endpoint:**
+   - Trong Baserow: Vào **Workspace Settings** (hoặc gọi API `POST /api/mcp/endpoints/` với `name` và `workspace_id`).
+   - Nhấn **Create endpoint**, đặt tên `Gen-hub Kho`.
+   - Baserow sinh ra một URL SSE định danh duy nhất:
+     - URL trên production: `https://kho.genos.top/mcp/<key>/sse` (nội bộ Docker: `http://kho/mcp/<key>/sse`).
+     - Giao thức MCP SSE của Baserow tự xác thực qua khóa định tuyến `<key>` trong URL, không đòi hỏi header Authorization khi khởi tạo SSE.
+2. **Tạo Database REST Token (dùng cho `kho_find_by_id`):**
+   - Vào **Settings** → **API tokens** → **Create token**, đặt tên `Gen-hub Kho API Token`.
+   - Cấp quyền đọc/ghi trên workspace. Sao chép token sinh ra và lưu vào Gen-hub Vault với tên `Baserow Kho API Token`.
+
+### 3.2. Cấu hình MCP Connector trên Gen-hub
 1. Mở Gen-hub tại `https://hub.genos.top/#mcps`.
 2. Bấm **Thêm MCP** → Chọn kết nối **MCP HTTP tùy chỉnh (Streamable HTTP)**.
 3. Cấu hình thông số:
-   - Tên kết nối: `kho-ryan`
-   - URL: `http://kho/api/mcp/` (hoặc `https://kho.genos.top/api/mcp/`)
-   - Header Authorization: Chọn liên kết với secret `Baserow Kho API Token` từ Vault.
+   - **Tên kết nối:** `kho-ryan`
+   - **URL MCP:** `http://kho/mcp/<key>/sse` (hoặc `https://kho.genos.top/mcp/<key>/sse`)
+   - Tích chọn: **"Đây là Kho Ryan (Baserow 1.33+)"** (hoặc đặt tên `kho-ryan` để hệ thống tự động gán cờ `kind: 'kho'`, `isKho: true`).
+   - **REST URL của Kho:** `http://kho` (hoặc `https://kho.genos.top`).
+   - **Header Authorization:** Chọn liên kết với secret `Baserow Kho API Token` từ Vault (Token này dùng cho các lệnh REST của `kho_find_by_id`).
 4. Bấm **Lưu kết nối**.
-5. Trong mục **Agent & quyền** (`#agents`), cấp quyền truy cập công cụ của MCP `kho-ryan` và công cụ phụ trợ `kho_find_by_id` cho các agent mong muốn.
 
-### Sử dụng công cụ `kho_find_by_id`:
+Sau khi lưu:
+- Gen-hub kết nối tới MCP của Baserow và đồng bộ **33 công cụ CRUD gốc** (`list_tables`, `list_rows_table_*`, `create_row_table_*`, `update_row_table_*`, `delete_row_table_*`).
+- Gen-hub tự động bổ sung công cụ phụ trợ **`kho_find_by_id`** vào danh sách công cụ khả dụng của connector `kho-ryan`.
+5. Trong mục **Agent & quyền** (`#agents`), cấp quyền truy cập các công cụ này cho các agent mong muốn.
+
+### 3.3. Sử dụng công cụ `kho_find_by_id`:
 Agent có thể tra cứu nhanh bất kỳ bản ghi nào thông qua mã ID tiền tố:
 ```json
 {
   "id": "VIEC-1"
 }
 ```
-Tool sẽ tự động phân tích tiền tố `VIEC`, ánh xạ tới bảng tương ứng trong Kho và trả về đầy đủ các trường dữ liệu của bản ghi.
+Tool sẽ tự động phân tích tiền tố `VIEC`, ánh xạ tới ID bảng tương ứng từ `table_ids.json` (được sinh từ `kho-schema`), gọi REST API lấy thông tin chi tiết và trả về đầy đủ các trường dữ liệu của bản ghi.
 
 ---
 
