@@ -155,3 +155,40 @@ docker stats gen-hub-kho --no-stream
 **Sự cố 2: Agent báo lỗi không tìm thấy bản ghi qua `kho_find_by_id`**
 - Kiểm tra định dạng ID truyền vào: Phải đúng cú pháp tiền tố hợp lệ (`DA`, `VIEC`, `PHIEN`, `QD`, `BAI`, `TT`, `TS`, `KHOA`) kèm dấu gạch nối và số nguyên (VD: `VIEC-12`).
 - Kiểm tra lại xem token trong Vault có còn hiệu lực hoặc đã được cấp quyền đọc trên bảng tương ứng hay chưa.
+
+---
+
+## 6. Lưu ý Vận hành Quan trọng Khi Bật Kho trên Production (Checklist Triển khai)
+
+> [!WARNING]
+> Đọc kỹ các lưu ý dưới đây trước khi thực hiện kích hoạt Kho Ryan trên máy chủ production `hub.genos.top`.
+
+### 6.1. Định tuyến Cloudflare Tunnel (Thứ tự Rule Cực kỳ Quan trọng)
+- Vùng làm việc VPS hiện đang sử dụng quy tắc wildcard `*.genos.top` trỏ về Caddy của workplace.
+- Khi cấu hình Cloudflare Tunnel cho Kho Ryan:
+  1. Thêm một public hostname riêng: `kho.genos.top` trỏ về dịch vụ Caddy của Gen-hub (`http://127.0.0.1:80` hoặc domain của Hub).
+  2. **Bắt buộc phải đặt hostname `kho.genos.top` ĐỨNG TRƯỚC quy tắc wildcard `*.genos.top`** trong bảng điều khiển Cloudflare Tunnel.
+  3. Nếu đặt sau rule wildcard, toàn bộ yêu cầu tới `https://kho.genos.top` sẽ bị định tuyến nhầm vào Caddy của workplace, gây lỗi 502/404 hoặc SSL mismatch.
+  4. Kiểm tra phản hồi bằng lệnh:
+     ```bash
+     curl -I https://kho.genos.top
+     ```
+     Đảm bảo phản hồi HTTP 200 hoặc 302 từ Baserow, không phải phản hồi từ workplace.
+
+### 6.2. Ảnh hưởng khi chạy `kho-enable`
+- Lệnh `kho-enable` sẽ cập nhật file `Caddyfile` và tái tạo (recreate) container `caddy`. Quá trình này gây gián đoạn vài giây cho các kết nối tới `hub.genos.top`.
+- Quá trình tự động sao lưu trước khi enable sẽ tạm dừng container Gitea trong chốc lát để đảm bảo snapshot nhất quán.
+- **Quy tắc bắt buộc:** Luôn thông báo và thống nhất trước với Boss Ryan về khoảng thời gian thực thi trước khi chạy `sudo gen-hub kho-enable` trên production.
+
+### 6.3. Cập nhật Hướng dẫn Bootstrap cho Agent
+- Thay đổi `DEFAULT_BOOTSTRAP_GROUPS` trong mã nguồn chỉ có hiệu lực tự động cho các bản cài đặt mới (fresh install).
+- Bản cài đặt production hiện tại đang lưu cấu hình bootstrap riêng trong cơ sở dữ liệu `data/hub.db`.
+- Do đó, sau khi PR được duyệt và merge, cấu hình bootstrap nhóm mặc định sẽ được cập nhật thủ công thông qua giao diện Web Gen-hub tại mục **Bootstrap** (`/#bootstrap`) để bổ sung Bước 3 "Đọc và ghi Kho Ryan". Claude sẽ hỗ trợ thao tác này khi Boss phê duyệt.
+
+### 6.4. Checklist Nghiệm thu Thực tế SPEC §6 (Thực hiện sau khi bật Kho)
+Sau khi container Kho production đã khởi chạy thành công:
+- [ ] **Mở trên điện thoại di động:** Truy cập `https://kho.genos.top` trên trình duyệt điện thoại, kiểm tra giao diện đăng nhập và thao tác trên bảng Việc (Kanban), Bài học (Gallery).
+- [ ] **Agent gọi qua Gen-hub MCP có Audit:** Cho Claude hoặc agy gọi thử công cụ `kho_find_by_id` và các công cụ CRUD gốc của Baserow; mở trang **Nhật ký** (`#audit`) xác nhận mọi lượt gọi có đầy đủ timestamp, actor, tool name và kết quả.
+- [ ] **Kiểm thử Sao lưu & Phục hồi:** Chạy `sudo gen-hub backup`, kiểm tra dung lượng `kho/volumes.tar`; giải nén thử vào một volume tạm để kiểm tra tính toàn vẹn của PostgreSQL.
+- [ ] **Kiểm tra Dữ liệu Hạt giống (Seed Data):** Kiểm tra bảng Phiên có bản ghi phiên 27/09/2026, bảng Tri thức có TT-1 và TT-2.
+

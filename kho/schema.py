@@ -44,7 +44,7 @@ def load_schema():
     return json.loads(SCHEMA_FILE.read_text(encoding='utf-8'))
 
 
-def sync_schema(client, schema=None):
+def sync_schema(client, schema=None, output_table_ids=None):
     """Synchronize Baserow database with declarative schema in an idempotent way."""
     if schema is None:
         schema = load_schema()
@@ -182,11 +182,29 @@ def sync_schema(client, schema=None):
             except Exception as e:
                 print(f"Warning seeding row in '{table_name}': {e}", file=sys.stderr)
 
+    # 8. Export Prefix -> Table ID Mapping
+    prefix_to_table_id = {}
+    for table_def in schema['tables']:
+        tname = table_def['name']
+        prefix = table_def.get('prefix', '').rstrip('-')
+        if tname in tables_map and prefix:
+            prefix_to_table_id[prefix] = tables_map[tname]['id']
+
+    table_ids_path = output_table_ids or os.environ.get('KHO_TABLE_IDS_PATH') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table_ids.json')
+    try:
+        with open(table_ids_path, 'w', encoding='utf-8') as f:
+            json.dump(prefix_to_table_id, f, indent=2, ensure_ascii=False)
+        print(f"✓ Đã lưu bản đồ tiền tố -> table_id tại {table_ids_path}")
+    except Exception as e:
+        print(f"Cảnh báo lưu table_ids: {e}", file=sys.stderr)
+
     print("✓ Đồng bộ schema Kho Ryan và dữ liệu ban đầu hoàn tất.")
     return {
         'workspace_id': workspace_id,
         'database_id': database_id,
-        'tables': tables_map
+        'tables': tables_map,
+        'prefix_to_table_id': prefix_to_table_id,
+        'table_ids_path': table_ids_path
     }
 
 

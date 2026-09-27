@@ -144,6 +144,13 @@ class KhoSchemaTest(unittest.TestCase):
         self.assertTrue(len(client.rows) > 0)
         rows_counts_1 = {t_id: len(r_list) for t_id, r_list in client.rows.items()}
 
+        # Verify prefix to table_id map exported
+        self.assertIn('prefix_to_table_id', result1)
+        p_map = result1['prefix_to_table_id']
+        for prefix in ['DA', 'VIEC', 'PHIEN', 'QD', 'BAI', 'TT', 'TS', 'KHOA']:
+            self.assertIn(prefix, p_map)
+            self.assertIsInstance(p_map[prefix], int)
+
         # Run 2: Second sync MUST NOT duplicate or error
         result2 = kho_schema.sync_schema(client, schema)
         t_count_2 = len(client.tables[result2['database_id']])

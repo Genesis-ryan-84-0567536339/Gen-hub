@@ -1,4 +1,11 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { HubError } from './net.mjs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DEFAULT_TABLE_IDS_PATH = path.resolve(__dirname, '../kho/table_ids.json');
 
 export const PREFIX_TABLE_MAP = {
   DA: 'Dự án',
@@ -31,61 +38,50 @@ export const khoFindByIdTool = {
   permission: { status: 'ok', reason: 'Khả dụng' }
 };
 
-const tableCache = new Map(); // baseUrl -> { timestamp, tablesByName: Map(name -> tableId) }
+let memoryTableIds = null;
 
-export async function resolveBaserowTable(baseUrl, tableName, { token, allowPrivate, request }) {
-  const cached = tableCache.get(baseUrl);
-  const now = Date.now();
-  if (cached && now - cached.timestamp < 60000 && cached.tablesByName.has(tableName)) {
-    return cached.tablesByName.get(tableName);
-  }
-
-  // Fetch applications to find Baserow database
-  const headers = {
-    Accept: 'application/json',
-    ...(token ? { Authorization: token.startsWith('JWT ') || token.startsWith('Token ') ? token : `Token ${token}` } : {})
-  };
-
-  const appsUrl = `${baseUrl.replace(/\/api\/.*$/, '')}/api/applications/`;
-  let apps;
+export function loadTableIds(customPath) {
+  if (memoryTableIds) return memoryTableIds;
+  const filePath = customPath || process.env.KHO_TABLE_IDS_PATH || DEFAULT_TABLE_IDS_PATH;
   try {
-    const res = await request(appsUrl, { headers, method: 'GET', allowPrivate });
-    apps = typeof res.body === 'string' ? JSON.parse(res.body) : res.body;
-  } catch (err) {
-    throw new HubError(`Không kết nối được tới Baserow API để tra cứu bảng: ${err.message}`, 502);
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      return JSON.parse(raw);
+    }
+  } catch {
+    // ignore
   }
-
-  if (!Array.isArray(apps)) {
-    throw new HubError('Phản hồi danh sách ứng dụng Baserow không hợp lệ', 502);
-  }
-
-  const database = apps.find(a => a.type === 'database') || apps[0];
-  if (!database) {
-    throw new HubError('Không tìm thấy Database nào trong Baserow workspace', 404);
-  }
-
-  const tablesUrl = `${baseUrl.replace(/\/api\/.*$/, '')}/api/database/tables/database/${database.id}/`;
-  const tablesRes = await request(tablesUrl, { headers, method: 'GET', allowPrivate });
-  const tables = typeof tablesRes.body === 'string' ? JSON.parse(tablesRes.body) : tablesRes.body;
-
-  if (!Array.isArray(tables)) {
-    throw new HubError('Phản hồi danh sách bảng Baserow không hợp lệ', 502);
-  }
-
-  const tablesByName = new Map();
-  for (const t of tables) {
-    tablesByName.set(t.name, t.id);
-  }
-  tableCache.set(baseUrl, { timestamp: now, tablesByName });
-
-  const tableId = tablesByName.get(tableName);
-  if (!tableId) {
-    throw new HubError(`Không tìm thấy bảng '${tableName}' trong Kho Ryan`, 404);
-  }
-  return tableId;
+  return {
+    DA: 1,
+    VIEC: 2,
+    PHIEN: 3,
+    QD: 4,
+    BAI: 5,
+    TT: 6,
+    TS: 7,
+    KHOA: 8
+  };
 }
 
-export async function khoFindById(args, { url, token, allowPrivate, request }) {
+export function setMemoryTableIds(mapping) {
+  memoryTableIds = mapping;
+}
+
+export function resolveRestBase(context) {
+  if (context?.restUrl) return context.restUrl.replace(/\/+$/, '');
+  if (process.env.BASEROW_REST_URL) return process.env.BASEROW_REST_URL.replace(/\/+$/, '');
+  if (context?.url) {
+    try {
+      const u = new URL(context.url);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      // ignore
+    }
+  }
+  return 'http://kho:80';
+}
+
+export async function khoFindById(args, { url, restUrl, token, tableIds, allowPrivate, request }) {
   const rawId = String(args?.id || '').trim();
   const match = /^([A-Za-z]+)-(\d+)$/.exec(rawId);
   if (!match) {
@@ -106,9 +102,17 @@ export async function khoFindById(args, { url, token, allowPrivate, request }) {
     );
   }
 
-  const tableId = await resolveBaserowTable(url, tableName, { token, allowPrivate, request });
-  const baseUrl = url.replace(/\/api\/.*$/, '');
-  const rowUrl = `${baseUrl}/api/database/rows/table/${tableId}/${rowId}/?user_field_names=true`;
+  const map = tableIds || loadTableIds();
+  const tableId = map[prefix];
+  if (!tableId) {
+    throw new HubError(
+      `Chưa tìm thấy ID bảng cho tiền tố '${prefix}'. Vui lòng chạy lệnh 'kho-schema' để đồng bộ bảng.`,
+      404
+    );
+  }
+
+  const restBase = resolveRestBase({ restUrl, url });
+  const rowUrl = `${restBase}/api/database/rows/table/${tableId}/${rowId}/?user_field_names=true`;
 
   const headers = {
     Accept: 'application/json',

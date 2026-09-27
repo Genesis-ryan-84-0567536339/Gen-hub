@@ -4,6 +4,9 @@ import { provider } from './catalog.mjs';
 import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs';
 import { giteaTools, giteaCall, giteaBaseUrl, isDefaultGiteaUrl } from './gitea-mcp.mjs';
 import { khoFindById, khoFindByIdTool } from './kho-tools.mjs';
+export function isKhoConnector(m) {
+  return m?.provider === 'remote' && (m?.kind === 'kho' || !!m?.khoRestUrl || m?.isKho === true);
+}
 const enc = encodeURIComponent;
 const query = o => {
   const q = new URLSearchParams();
@@ -578,10 +581,7 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
         cursor = r.result.nextCursor;
         if (!cursor) {
           let list = m.provider === 'github-mcp' ? githubTools(result) : result;
-          if (
-            m.provider === 'remote' &&
-            (m.url?.includes('kho') || m.url?.includes('baserow') || m.name?.toLowerCase().includes('kho'))
-          ) {
+          if (isKhoConnector(m)) {
             list = [...list, khoFindByIdTool];
           }
           const c = await credential(m);
@@ -603,6 +603,7 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
           return await measurePhase('upstreamCall', () =>
             khoFindById(a, {
               url: m.url,
+              restUrl: m.khoRestUrl,
               token,
               allowPrivate: m.allowPrivate,
               request: serviceRequest
