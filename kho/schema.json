@@ -1,0 +1,150 @@
+{
+  "database": "Kho Ryan",
+  "workspace": "Ryan Kho",
+  "tables": [
+    {
+      "name": "Dự án",
+      "prefix": "DA-",
+      "fields": [
+        { "name": "Tên", "type": "text", "primary": true },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('DA-', totext(row_id()))" },
+        { "name": "Mô tả", "type": "long_text" },
+        { "name": "Trạng thái", "type": "single_select", "options": ["Đang chạy", "Tạm dừng", "Xong", "Bỏ"] },
+        { "name": "Trọng tâm", "type": "boolean" },
+        { "name": "Repo", "type": "text" },
+        { "name": "Link", "type": "url" }
+      ]
+    },
+    {
+      "name": "Việc",
+      "prefix": "VIEC-",
+      "fields": [
+        { "name": "Tiêu đề", "type": "text", "primary": true },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('VIEC-', totext(row_id()))" },
+        { "name": "Trạng thái", "type": "single_select", "options": ["Chờ", "Đang làm", "Chờ duyệt", "Xong"] },
+        { "name": "Ưu tiên", "type": "single_select", "options": ["P1", "P2", "P3"] },
+        { "name": "Người làm", "type": "text" },
+        { "name": "Link Issue/PR", "type": "url" },
+        { "name": "Hạn", "type": "date" },
+        { "name": "Ngày tạo", "type": "date" },
+        { "name": "Ngày bắt đầu", "type": "date" },
+        { "name": "Ngày xong", "type": "date" },
+        { "name": "Dự án", "type": "link_row", "target_table": "Dự án" },
+        { "name": "Phiên", "type": "link_row", "target_table": "Phiên" }
+      ],
+      "views": [
+        { "name": "Kanban theo Trạng thái", "type": "kanban", "group_by": "Trạng thái" }
+      ]
+    },
+    {
+      "name": "Phiên",
+      "prefix": "PHIEN-",
+      "fields": [
+        { "name": "Chủ đề", "type": "text", "primary": true },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('PHIEN-', totext(row_id()))" },
+        { "name": "Ngày", "type": "date" },
+        { "name": "Công cụ", "type": "single_select", "options": ["Claude Code", "claude.ai", "ChatGPT", "agy", "Khác"] },
+        { "name": "Đã chốt", "type": "long_text" },
+        { "name": "Đang bàn", "type": "long_text" },
+        { "name": "Việc tiếp", "type": "long_text" },
+        { "name": "Cảnh báo", "type": "long_text" }
+      ]
+    },
+    {
+      "name": "Quyết định",
+      "prefix": "QD-",
+      "fields": [
+        { "name": "Nội dung", "type": "text", "primary": true },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('QD-', totext(row_id()))" },
+        { "name": "Lý do", "type": "long_text" },
+        { "name": "Trạng thái", "type": "single_select", "options": ["Hiệu lực", "Thay thế"] },
+        { "name": "Ngày", "type": "date" },
+        { "name": "Dự án", "type": "link_row", "target_table": "Dự án" },
+        { "name": "Phiên", "type": "link_row", "target_table": "Phiên" }
+      ]
+    },
+    {
+      "name": "Bài học",
+      "prefix": "BAI-",
+      "fields": [
+        { "name": "Khái niệm", "type": "text", "primary": true },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('BAI-', totext(row_id()))" },
+        { "name": "Giải thích đời thường", "type": "long_text" },
+        { "name": "Chủ đề", "type": "single_select", "options": ["Git", "Agent", "MCP", "DevOps", "Bảo mật", "Sản phẩm", "Khác"] },
+        { "name": "Mức", "type": "single_select", "options": ["Mới", "Đã hiểu", "Thành thạo"] },
+        { "name": "Nguồn", "type": "text" },
+        { "name": "Phiên", "type": "link_row", "target_table": "Phiên" }
+      ],
+      "views": [
+        { "name": "Gallery theo Chủ đề", "type": "gallery" }
+      ]
+    },
+    {
+      "name": "Tri thức",
+      "prefix": "TT-",
+      "fields": [
+        { "name": "Tên", "type": "text", "primary": true },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('TT-', totext(row_id()))" },
+        { "name": "Tóm tắt", "type": "text" },
+        { "name": "Nội dung Markdown", "type": "long_text" },
+        { "name": "Nguồn gốc", "type": "text" },
+        { "name": "Phiên bản", "type": "text" }
+      ]
+    },
+    {
+      "name": "Tài sản",
+      "prefix": "TS-",
+      "fields": [
+        { "name": "Tên", "type": "text", "primary": true },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('TS-', totext(row_id()))" },
+        { "name": "Loại", "type": "single_select", "options": ["Báo cáo", "Tài liệu", "Thiết kế", "Link code", "Khác"] },
+        { "name": "File hoặc Link", "type": "text" },
+        { "name": "Tạo bởi", "type": "text" },
+        { "name": "Dự án", "type": "link_row", "target_table": "Dự án" },
+        { "name": "Phiên", "type": "link_row", "target_table": "Phiên" }
+      ]
+    },
+    {
+      "name": "Chỉ mục khóa",
+      "prefix": "KHOA-",
+      "fields": [
+        { "name": "Tên", "type": "text", "primary": true },
+        { "name": "Mã ID", "type": "formula", "formula": "concat('KHOA-', totext(row_id()))" },
+        { "name": "Dùng cho", "type": "text" },
+        { "name": "ID Vault", "type": "text" },
+        { "name": "Link", "type": "url" },
+        { "name": "Ghi chú", "type": "long_text" },
+        { "name": "Dự án", "type": "link_row", "target_table": "Dự án" }
+      ]
+    }
+  ],
+  "seed_data": {
+    "Phiên": [
+      {
+        "Chủ đề": "Khởi động và tích hợp Kho Ryan vào Gen-hub",
+        "Ngày": "2026-09-27",
+        "Công cụ": "Claude Code",
+        "Đã chốt": "Chốt dùng Baserow bản 1.33+ self-host làm second brain, tích hợp qua cổng Gen-hub MCP connector; đặt mem_limit 2g; định tuyến qua subdomain kho.genos.top.",
+        "Đang bàn": "Thiết kế chi tiết 8 bảng dữ liệu, script schema idempotent và seed dữ liệu ban đầu.",
+        "Việc tiếp": "Triển khai schema idempotent, kết nối MCP và cập nhật UI Gen-hub.",
+        "Cảnh báo": "Không commit secrets hay token vào repo; token quản trị lưu trong Vault."
+      }
+    ],
+    "Tri thức": [
+      {
+        "Tên": "ryan-profile",
+        "Tóm tắt": "Hồ sơ Boss Ryan",
+        "Nội dung Markdown": "Hồ sơ tổng quan, nguyên tắc làm việc và định hướng phát triển của Boss Ryan.",
+        "Nguồn gốc": "https://github.com/Genesis-ryan-84-0567536339/Brain/tree/main/skills/owner-profile",
+        "Phiên bản": "1.0"
+      },
+      {
+        "Tên": "ryan-core",
+        "Tóm tắt": "Quy tắc cốt lõi điều hành hệ thống Genesis",
+        "Nội dung Markdown": "Các nguyên tắc cốt lõi: SSOT, làm trong worktree độc lập, không tự merge PR, tự động hóa an toàn.",
+        "Nguồn gốc": "https://github.com/Genesis-ryan-84-0567536339/Brain/blob/main/instructions/ryan-core.md",
+        "Phiên bản": "1.0"
+      }
+    ]
+  }
+}

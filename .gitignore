@@ -7,3 +7,5 @@ var/
 __pycache__/
 *.pyc
 coverage/
+kho/table_ids.json
+*table_ids.json

@@ -31,6 +31,10 @@ def main():
             print('Gitea: đã tắt (bật lại bằng sudo gen-hub gitea-enable)')
         else:
             print('Gitea: https://' + state['domain'] + '/gitea/' if state.get('gitea_bootstrapped') else PENDING)
+        if state.get('kho_enabled'):
+            print(f"Kho Ryan: https://kho.{state['domain']} (hoặc https://{state['domain']}/kho/)")
+        else:
+            print('Kho Ryan: chưa bật (bật bằng sudo gen-hub kho-enable)')
         from ci_runner import status as ci_status
         ci_status(state)
         compose(path, 'ps', '--all'); return
@@ -45,11 +49,14 @@ def main():
         if state.get('gitea_enabled', True):
             from gitea import require_bootstrap
             require_bootstrap(state, path)
+        if state.get('kho_enabled'):
+            from kho import verify as kho_verify
+            kho_verify(path)
         from ci_runner import status as ci_status
         ci_status(state, doctor=True)
-        print('✓ Owner' + (' và Gitea sẵn sàng.' if state.get('gitea_enabled', True) else ' sẵn sàng (Gitea đã tắt).')); return
-    if command not in ['ci-bootstrap', 'deploy-action-register', 'gitea-enable', 'gitea-disable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
-        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
+        print('✓ Owner' + (' và Gitea' if state.get('gitea_enabled', True) else '') + (' và Kho' if state.get('kho_enabled') else '') + ' sẵn sàng.'); return
+    if command not in ['ci-bootstrap', 'deploy-action-register', 'gitea-enable', 'gitea-disable', 'kho-enable', 'kho-disable', 'kho-schema', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
+        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | kho-enable | kho-disable [--purge] | kho-schema | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
@@ -77,6 +84,44 @@ def main():
             if input('Sẽ xóa vĩnh viễn dữ liệu Gitea (repo, database, LFS, attachments, config/keys). Nhập DELETE GITEA để xác nhận: ') != 'DELETE GITEA':
                 print('Đã hủy.'); return
         disable(state, purge='--purge' in sys.argv)
+        return
+    if command == 'kho-enable':
+        from kho import enable
+        enable(state)
+        return
+    if command == 'kho-disable':
+        from kho import disable
+        if not state.get('kho_enabled'):
+            print('Kho đã tắt sẵn.'); return
+        if '--purge' in sys.argv:
+            if input('Sẽ xóa vĩnh viễn dữ liệu Kho (database, attachments, config). Nhập DELETE KHO để xác nhận: ') != 'DELETE KHO':
+                print('Đã hủy.'); return
+        disable(state, purge='--purge' in sys.argv)
+        return
+    if command == 'kho-schema':
+        import importlib.util
+        from runtime import DATA
+        release = ROOT / 'releases' / state.get('revision', '') if (ROOT / 'releases' / state.get('revision', '')).exists() else pathlib.Path(__file__).resolve().parents[1]
+        schema_path = release / 'kho' / 'schema.py'
+        spec = importlib.util.spec_from_file_location("kho_schema", str(schema_path))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        table_ids_output = DATA / 'kho_table_ids.json'
+        default_url = f"https://kho.{state['domain']}" if state.get('domain') else 'http://127.0.0.1:80'
+        extra_args = []
+        if not any(arg.startswith('--output') for arg in sys.argv[2:]):
+            extra_args.extend(['--output', str(table_ids_output)])
+        if not any(arg.startswith('--url') for arg in sys.argv[2:]):
+            extra_args.extend(['--url', default_url])
+        sys.argv = [str(schema_path), *sys.argv[2:], *extra_args]
+        mod.main()
+        if table_ids_output.exists():
+            try:
+                os.chmod(table_ids_output, 0o644)
+                if 'uid' in state and 'gid' in state:
+                    os.chown(table_ids_output, int(state['uid']), int(state['gid']))
+            except (PermissionError, OSError):
+                pass
         return
     if command == 'github-token':
         try:
@@ -126,6 +171,9 @@ def main():
         from ci_runner import drained
         if state.get('gitea_enabled', True):
             check_volumes(state, required=True)
+        if state.get('kho_enabled'):
+            from kho import check_volumes as kho_check_volumes
+            kho_check_volumes(state, required=True)
         with drained(state):
             compose(path, 'restart')
             compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build')
