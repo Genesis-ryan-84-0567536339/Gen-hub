@@ -108,7 +108,7 @@ export const khoCreateTool = {
       },
       fields: {
         type: 'object',
-        description: 'Đối tượng chứa các trường dữ liệu cần tạo (vd: {"Tiêu đề": "Tác vụ mới", "Trạng thái": "Doing"})'
+        description: 'Đối tượng chứa các trường dữ liệu cần tạo (vd: {"Tiêu đề": "Tác vụ mới", "Trạng thái": "Đang làm"}). Trường lựa chọn phải dùng đúng giá trị có sẵn, vd Trạng thái Việc: Chờ | Đang làm | Chờ duyệt | Xong'
       }
     },
     required: ['bang', 'fields'],
@@ -132,7 +132,7 @@ export const khoUpdateTool = {
       },
       fields: {
         type: 'object',
-        description: 'Đối tượng chứa các trường dữ liệu cần cập nhật (vd: {"Trạng thái": "Done", "Ngày xong": "2026-09-27"})'
+        description: 'Đối tượng chứa các trường dữ liệu cần cập nhật (vd: {"Trạng thái": "Xong", "Ngày xong": "2026-09-27"})'
       }
     },
     required: ['id', 'fields'],
