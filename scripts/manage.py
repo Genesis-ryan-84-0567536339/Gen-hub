@@ -55,8 +55,8 @@ def main():
         from ci_runner import status as ci_status
         ci_status(state, doctor=True)
         print('✓ Owner' + (' và Gitea' if state.get('gitea_enabled', True) else '') + (' và Kho' if state.get('kho_enabled') else '') + ' sẵn sàng.'); return
-    if command not in ['ci-bootstrap', 'deploy-action-register', 'gitea-enable', 'gitea-disable', 'kho-enable', 'kho-disable', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
-        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | kho-enable | kho-disable [--purge] | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
+    if command not in ['ci-bootstrap', 'deploy-action-register', 'gitea-enable', 'gitea-disable', 'kho-enable', 'kho-disable', 'kho-schema', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
+        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | kho-enable | kho-disable [--purge] | kho-schema | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
@@ -97,6 +97,15 @@ def main():
             if input('Sẽ xóa vĩnh viễn dữ liệu Kho (database, attachments, config). Nhập DELETE KHO để xác nhận: ') != 'DELETE KHO':
                 print('Đã hủy.'); return
         disable(state, purge='--purge' in sys.argv)
+        return
+    if command == 'kho-schema':
+        import importlib.util
+        release = ROOT / 'releases' / state.get('revision', '') if (ROOT / 'releases' / state.get('revision', '')).exists() else pathlib.Path(__file__).resolve().parents[1]
+        schema_path = release / 'kho' / 'schema.py'
+        spec = importlib.util.spec_from_file_location("kho_schema", str(schema_path))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.main()
         return
     if command == 'github-token':
         try:
