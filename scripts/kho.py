@@ -43,7 +43,7 @@ def service(state, images, common):
         'volumes': ['kho-data:/baserow/data'],
         'environment': {
             'BASEROW_PUBLIC_URL': f'https://{kho_domain}',
-            'BASEROW_EXTRA_PUBLIC_URLS': f'http://127.0.0.1,http://localhost,http://kho,{kho_domain}',
+            'BASEROW_EXTRA_PUBLIC_URLS': 'http://127.0.0.1,http://localhost,http://kho',
             'WEB_FRONTEND_SSL': 'false',
             'BASEROW_CADDY_ADDRESSES': 'http://',
             'DISABLE_VOLUME_CHECK': 'no',

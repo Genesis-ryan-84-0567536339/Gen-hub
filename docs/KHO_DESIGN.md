@@ -72,7 +72,7 @@ Container Baserow 2.3.4 là mô hình all-in-one quản lý đa tiến trình b�
    - Nếu áp dụng `read_only: True`, entrypoint bị dừng ngay tại lệnh `sed: couldn't open temporary file /etc/postgresql/15/main/...: Read-only file system`. Do đó, service `kho` bắt buộc override `read_only: False`.
 3. **Định tuyến Healthcheck (`BASEROW_EXTRA_PUBLIC_URLS`):**
    - Caddy nội bộ của Baserow kiểm tra tiêu đề Host đối với các route `/api/*` thông qua điều kiện `BASEROW_PUBLIC_URL.contains(host) || BASEROW_EXTRA_PUBLIC_URLS.contains(host)`.
-   - Healthcheck container dùng `http://127.0.0.1:80/api/_health/` và `verify()` dùng `http://kho:80/api/_health/`. Để Caddy không chuyển hướng nhầm các request này sang web-frontend (gây lỗi 404 Site not found), cần cấu hình `BASEROW_EXTRA_PUBLIC_URLS: http://127.0.0.1,http://localhost,http://kho,kho.{domain}`.
+   - Healthcheck container dùng `http://127.0.0.1:80/api/_health/` và `verify()` dùng `http://kho:80/api/_health/`. Để Caddy không chuyển hướng nhầm các request này sang web-frontend (gây lỗi 404 Site not found), cần cấu hình `BASEROW_EXTRA_PUBLIC_URLS: http://127.0.0.1,http://localhost,http://kho` (đồng bộ scheme `http://` và loại bỏ mục subdomain trùng lặp với `BASEROW_PUBLIC_URL`).
 4. **Khôi phục trạng thái khi thất bại (Atomic Rollback trong `enable()`):**
    - Hàm `enable()` trong `scripts/kho.py` đặt `state['kho_enabled'] = False` và lưu `install.json` trong khối `except BaseException` trước khi re-raise lỗi.
    - Dọn dẹp container `kho` bị lỗi (`compose stop/rm kho`) để tránh loop restart mồ côi làm ảnh hưởng tới các lệnh tiếp theo (`gen-hub update`, `restart`, `backup`).

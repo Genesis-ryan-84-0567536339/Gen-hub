@@ -39,7 +39,7 @@ class KhoTest(unittest.TestCase):
             self.assertFalse(service['read_only'])
             self.assertEqual(service['cap_drop'], ['ALL'])
             self.assertEqual(service['cap_add'], ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETUID', 'SETGID', 'KILL', 'NET_BIND_SERVICE'])
-            self.assertIn('http://127.0.0.1', service['environment']['BASEROW_EXTRA_PUBLIC_URLS'])
+            self.assertEqual(service['environment']['BASEROW_EXTRA_PUBLIC_URLS'], 'http://127.0.0.1,http://localhost,http://kho')
             for forbidden in ['ports', 'secrets', 'env_file', 'privileged']:
                 self.assertNotIn(forbidden, service)
             for forbidden in ['master.key', 'update.env', 'docker.sock', '/var/lib/gen-hub']:
