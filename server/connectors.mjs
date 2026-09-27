@@ -3,6 +3,7 @@ import { jsonRequest, request, HubError } from './net.mjs';
 import { provider } from './catalog.mjs';
 import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs';
 import { giteaTools, giteaCall, giteaBaseUrl, isDefaultGiteaUrl } from './gitea-mcp.mjs';
+import { khoFindById, khoFindByIdTool } from './kho-tools.mjs';
 const enc = encodeURIComponent;
 const query = o => {
   const q = new URLSearchParams();
@@ -576,7 +577,13 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
         result.push(...r.result.tools);
         cursor = r.result.nextCursor;
         if (!cursor) {
-          const list = m.provider === 'github-mcp' ? githubTools(result) : result;
+          let list = m.provider === 'github-mcp' ? githubTools(result) : result;
+          if (
+            m.provider === 'remote' &&
+            (m.url?.includes('kho') || m.url?.includes('baserow') || m.name?.toLowerCase().includes('kho'))
+          ) {
+            list = [...list, khoFindByIdTool];
+          }
           const c = await credential(m);
           return checkToolPermissions(m, list, { credential: c });
         }
@@ -590,6 +597,18 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
     sync,
     call: async (m, t, a) => {
       if (isMcp(m)) {
+        if (t === 'kho_find_by_id') {
+          const c = await credential(m);
+          const token = c.access_token || c.token;
+          return await measurePhase('upstreamCall', () =>
+            khoFindById(a, {
+              url: m.url,
+              token,
+              allowPrivate: m.allowPrivate,
+              request: serviceRequest
+            })
+          );
+        }
         if (m.provider === 'github-mcp') {
           const c = await credential(m);
           const token = c.access_token || c.token;

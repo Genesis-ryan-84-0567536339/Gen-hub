@@ -53,6 +53,13 @@ export const DEFAULT_BOOTSTRAP_GROUPS = [
         content:
           'Nếu việc thuộc 1 repo cụ thể, đọc thêm file quy trình riêng của repo đó ' +
           '(vd docs/TEAM_WORKFLOW.md của Gen-hub) trước khi thao tác.'
+      },
+      {
+        id: 'step-default-kho',
+        title: 'Đọc và ghi Kho Ryan',
+        content:
+          'Đầu phiên: đọc Kho — Phiên gần nhất, Việc đang mở, Quyết định hiệu lực. ' +
+          'Cuối phiên: ghi Phiên + cập nhật Việc/Quyết định/Bài học.'
       }
     ]
   },
