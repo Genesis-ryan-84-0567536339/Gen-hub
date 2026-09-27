@@ -24,7 +24,7 @@ import {
 import { createLogger } from './logger.mjs';
 import { HubError, assertSchema, jsonRequest, request } from './net.mjs';
 import { catalog, provider } from './catalog.mjs';
-import { connectorService } from './connectors.mjs';
+import { connectorService, isKhoConnector } from './connectors.mjs';
 import { GITHUB_MCP_URL, githubEndpoint, githubPublished } from './github-mcp.mjs';
 import { ownerOidcService, OWNER_OIDC_CLIENT } from './owner-oidc.mjs';
 import {
@@ -458,7 +458,9 @@ export function createHub({
                 t,
                 old.find(x => x.name === t.name)
               )
-            : (old.find(x => x.name === t.name)?.published ?? t.annotations?.readOnlyHint === true)
+            : isKhoConnector(m)
+              ? (old.find(x => x.name === t.name)?.published ?? true)
+              : (old.find(x => x.name === t.name)?.published ?? t.annotations?.readOnlyHint === true)
     }));
     latest.status = 'connected';
     latest.lastError = null;

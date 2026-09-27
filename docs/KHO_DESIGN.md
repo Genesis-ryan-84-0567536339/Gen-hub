@@ -57,9 +57,11 @@ Theo chỉ đạo tại review của Claude (Issue #125):
 
 ---
 
-## 3. Kiến trúc Tích hợp Agent & MCP
+## 3. Kiến trúc Tích hợp Agent & MCP: Lựa chọn Nhánh B (Bộ công cụ REST mỏng)
 
-Tuân thủ nghiêm ngặt nguyên tắc của Claude: **Không phát minh lại bánh xe, không tự viết bộ công cụ CRUD trùng lặp**.
+Sau khi rà soát và thử nghiệm:
+- **Thử nghiệm Nhánh A:** Baserow bản mới nhất (`baserow/baserow:2.3.4`, phát hành 15/09/2026) vẫn chỉ triển khai MCP transport dựa trên Server-Sent Events (SSE) tại `/mcp/<key>/sse`. Khi gửi request POST JSON-RPC `initialize` (Streamable HTTP theo spec MCP mới 2026-07-28), server từ chối vì thiếu SSE session (`405 Method Not Allowed` / session error).
+- **Quyết định kiến trúc (Nhánh B):** Chuẩn MCP (2026-07-28) đã chính thức deprecate transport HTTP+SSE. Việc viết SSE client có trạng thái cho Gen-hub hoặc dựng thêm proxy (mcp-proxy, supergateway) sẽ làm phức tạp vận hành và tăng nguy cơ treo kết nối. Thay vào đó, **Gen-hub cung cấp trực tiếp bộ 5 công cụ MCP REST mỏng, phi trạng thái (stateless)**:
 
 ```mermaid
 flowchart TD
@@ -69,39 +71,35 @@ flowchart TD
 
     subgraph Gen-hub Layer
         Proxy[Gen-hub MCP Proxy]
-        Vault[Gen-hub Vault]
+        Vault[Gen-hub Vault - Database Token]
         Audit[Audit Logger - audit.jsonl]
-        FindTool[kho_find_by_id Tool]
+        KhoTools[Gen-hub Native Kho REST Tools]
     end
 
     subgraph Kho Ryan
-        BaserowMCP[Baserow Native MCP Server]
-        BaserowAPI[Baserow REST API]
+        BaserowAPI[Baserow REST API /api/database/rows/...]
         BaserowDB[(PostgreSQL Internal)]
     end
 
-    Claude -->|Gọi tool CRUD| Proxy
-    Claude -->|Gọi kho_find_by_id| Proxy
-    Proxy -->|Ghi log mọi request| Audit
-    Proxy -->|Lấy Token bảo mật| Vault
-    Proxy -->|Forward Streamable HTTP| BaserowMCP
-    Proxy -->|Tra cứu mã tiền tố DA-1, VIEC-12| FindTool
-    FindTool -->|Query REST| BaserowAPI
-    BaserowMCP --> BaserowDB
+    Claude -->|Gọi kho_list, kho_get, kho_create, kho_update, kho_search| Proxy
+    Proxy -->|Kiểm tra quyền + Ghi log| Audit
+    Proxy -->|Lấy Database Token bảo mật| Vault
+    Proxy --> KhoTools
+    KhoTools -->|REST API - Không trạng thái| BaserowAPI
     BaserowAPI --> BaserowDB
 ```
 
-### 3.1. Kết nối MCP Gốc (Streamable HTTP)
-- Gen-hub sử dụng connector loại `remote` (Streamable HTTP) có sẵn để kết nối trực tiếp vào endpoint MCP của Baserow.
-- Agent tận dụng trọn vẹn bộ công cụ chuẩn do chính Baserow cung cấp: xem danh sách bảng, lấy schema, tạo hàng (row), sửa hàng, xóa hàng, lọc theo view.
-- Mọi lượt gọi của agent đều đi qua Gen-hub MCP Proxy, được kiểm tra quyền hạn (permissions check) và ghi nhật ký kiểm toán đầy đủ (`audit.jsonl`).
+### 3.1. Bộ 5 Công cụ MCP REST của Kho Ryan
+1. `kho_list(bang, filter?, limit?, page?)`: Liệt kê các bản ghi trong một bảng theo tên tiếng Việt hoặc tiền tố, hỗ trợ tìm kiếm và phân trang.
+2. `kho_get(id)` (thay cho `kho_find_by_id`): Tra cứu chi tiết một bản ghi theo mã ID tiền tố ngữ nghĩa (`PHIEN-1`, `VIEC-12`, `DA-1`, `QD-3`, `BAI-5`, `TT-1`, `TS-2`, `KHOA-4`).
+3. `kho_create(bang, fields)`: Tạo mới bản ghi trong bảng chỉ định, tự động gán mã ID tiền tố.
+4. `kho_update(id, fields)`: Cập nhật các trường dữ liệu của bản ghi theo mã ID tiền tố.
+5. `kho_search(text, bang?)`: Tìm kiếm toàn văn bản (full-text search) trên một hoặc toàn bộ 8 bảng của Kho Ryan.
 
-### 3.2. Công cụ bổ trợ `kho_find_by_id`
-- **Vấn đề:** Các bảng trong Kho Ryan định danh bản ghi dạng tiền tố ngữ nghĩa thân thiện với con người: `VIEC-12`, `DA-1`, `QD-3`, `BAI-5`. Tuy nhiên, API gốc của Baserow chỉ chấp nhận `table_id` dạng số và `row_id` dạng số nguyên.
-- **Giải pháp:** Bổ sung duy nhất một tool mỏng `kho_find_by_id` trong `server/kho-tools.mjs`:
-  - Input: `id` (chuỗi dạng `<PREFIX>-<NUMBER>`, ví dụ `VIEC-12`).
-  - Xử lý: Phân tích tiền tố để ánh xạ sang bảng tương ứng, gọi API Baserow lấy chi tiết hàng.
-  - Trả về: Dữ liệu JSON chi tiết của bản ghi.
+### 3.2. Ưu điểm kiến trúc
+- **Không trạng thái (Stateless):** Không cần duy trì kết nối SSE liên tục, không lo rớt session hay rò rỉ bộ nhớ.
+- **Thân thiện với Agent:** Đặt tên công cụ và tham số theo tên bảng tiếng Việt ngữ nghĩa (`bang: 'Việc'`), không buộc agent phải nhớ ID số trừu tượng (`table_243`).
+- **Bảo mật & Kiểm toán tuyệt đối:** Mọi thao tác đều dùng Database Token trong Vault, đi qua ma trận phân quyền của Hub và ghi nhận đầy đủ vào `audit.jsonl`.
 
 ---
 

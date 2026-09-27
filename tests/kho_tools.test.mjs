@@ -197,3 +197,71 @@ test('kho-tools: Hub API saves and reads back kind, isKho, and khoRestUrl flags'
   assert.equal(retrieved.khoRestUrl, 'http://kho:80');
   assert.equal(isKhoConnector(retrieved), true);
 });
+
+test('kho-tools: khoList, khoCreate, khoUpdate, khoSearch handle REST operations', async () => {
+  const mockCalls = [];
+  const fakeRequest = async (url, opts) => {
+    mockCalls.push({ url, opts });
+    if (opts.method === 'GET' && url.includes('/api/database/rows/table/2/?')) {
+      return {
+        body: {
+          count: 1,
+          results: [{ id: 1, 'Tiêu đề': 'Task 1', 'Mã ID': 'VIEC-1' }]
+        }
+      };
+    }
+    if (opts.method === 'POST' && url.includes('/api/database/rows/table/2/')) {
+      return {
+        body: {
+          id: 5,
+          'Tiêu đề': 'New Task',
+          'Mã ID': 'VIEC-5'
+        }
+      };
+    }
+    if (opts.method === 'PATCH' && url.includes('/api/database/rows/table/2/5/')) {
+      return {
+        body: {
+          id: 5,
+          'Tiêu đề': 'Updated Task',
+          'Mã ID': 'VIEC-5'
+        }
+      };
+    }
+    return { body: { count: 0, results: [] } };
+  };
+
+  const { khoList, khoCreate, khoUpdate, khoSearch } = await import('../server/kho-tools.mjs');
+  const ctx = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { VIEC: 2, DA: 1, PHIEN: 3, QD: 4, BAI: 5, TT: 6, TS: 7, KHOA: 8 },
+    request: fakeRequest
+  };
+
+  // 1. khoList
+  const listRes = await khoList({ bang: 'Việc', filter: 'Task' }, ctx);
+  assert.equal(listRes.isError, false);
+  const parsedList = JSON.parse(listRes.content[0].text);
+  assert.equal(parsedList.bang, 'Việc');
+  assert.equal(parsedList.tong_so, 1);
+
+  // 2. khoCreate
+  const createRes = await khoCreate({ bang: 'Việc', fields: { 'Tiêu đề': 'New Task' } }, ctx);
+  assert.equal(createRes.isError, false);
+  const parsedCreate = JSON.parse(createRes.content[0].text);
+  assert.equal(parsedCreate.id, 'VIEC-5');
+
+  // 3. khoUpdate
+  const updateRes = await khoUpdate({ id: 'VIEC-5', fields: { 'Tiêu đề': 'Updated Task' } }, ctx);
+  assert.equal(updateRes.isError, false);
+  const parsedUpdate = JSON.parse(updateRes.content[0].text);
+  assert.equal(parsedUpdate.id, 'VIEC-5');
+
+  // 4. khoSearch
+  const searchRes = await khoSearch({ text: 'Task', bang: 'Việc' }, ctx);
+  assert.equal(searchRes.isError, false);
+  const parsedSearch = JSON.parse(searchRes.content[0].text);
+  assert.equal(parsedSearch.tu_khoa, 'Task');
+});
+

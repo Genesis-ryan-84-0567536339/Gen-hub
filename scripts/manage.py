@@ -100,12 +100,28 @@ def main():
         return
     if command == 'kho-schema':
         import importlib.util
+        from runtime import DATA
         release = ROOT / 'releases' / state.get('revision', '') if (ROOT / 'releases' / state.get('revision', '')).exists() else pathlib.Path(__file__).resolve().parents[1]
         schema_path = release / 'kho' / 'schema.py'
         spec = importlib.util.spec_from_file_location("kho_schema", str(schema_path))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
+        table_ids_output = DATA / 'kho_table_ids.json'
+        default_url = f"https://kho.{state['domain']}" if state.get('domain') else 'http://127.0.0.1:80'
+        extra_args = []
+        if not any(arg.startswith('--output') for arg in sys.argv[2:]):
+            extra_args.extend(['--output', str(table_ids_output)])
+        if not any(arg.startswith('--url') for arg in sys.argv[2:]):
+            extra_args.extend(['--url', default_url])
+        sys.argv = [str(schema_path), *sys.argv[2:], *extra_args]
         mod.main()
+        if table_ids_output.exists():
+            try:
+                os.chmod(table_ids_output, 0o644)
+                if 'uid' in state and 'gid' in state:
+                    os.chown(table_ids_output, int(state['uid']), int(state['gid']))
+            except (PermissionError, OSError):
+                pass
         return
     if command == 'github-token':
         try:

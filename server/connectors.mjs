@@ -3,7 +3,16 @@ import { jsonRequest, request, HubError } from './net.mjs';
 import { provider } from './catalog.mjs';
 import { isMcp, githubTools, githubCall, githubEndpoint } from './github-mcp.mjs';
 import { giteaTools, giteaCall, giteaBaseUrl, isDefaultGiteaUrl } from './gitea-mcp.mjs';
-import { khoFindById, khoFindByIdTool } from './kho-tools.mjs';
+import {
+  KHO_TOOLS,
+  khoList,
+  khoGet,
+  khoCreate,
+  khoUpdate,
+  khoSearch,
+  khoFindById,
+  khoFindByIdTool
+} from './kho-tools.mjs';
 export function isKhoConnector(m) {
   return (
     m?.provider === 'remote' &&
@@ -578,6 +587,10 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
       }
       return checkToolPermissions(m, p.tools, { headers: responseHeaders, credential: c });
     }
+    if (isKhoConnector(m)) {
+      const c = await credential(m);
+      return checkToolPermissions(m, KHO_TOOLS, { credential: c });
+    }
     return withSession(m, async session => {
       const result = [];
       let cursor;
@@ -588,9 +601,6 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
         cursor = r.result.nextCursor;
         if (!cursor) {
           let list = m.provider === 'github-mcp' ? githubTools(result) : result;
-          if (isKhoConnector(m)) {
-            list = [...list, khoFindByIdTool];
-          }
           const c = await credential(m);
           return checkToolPermissions(m, list, { credential: c });
         }
@@ -603,20 +613,35 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
     credential,
     sync,
     call: async (m, t, a) => {
+      if (isKhoConnector(m)) {
+        const c = await credential(m);
+        const token = c.access_token || c.token;
+        const ctx = {
+          url: m.url,
+          restUrl: m.khoRestUrl,
+          token,
+          allowPrivate: m.allowPrivate,
+          request: serviceRequest
+        };
+        return await measurePhase('upstreamCall', () => {
+          switch (t) {
+            case 'kho_list':
+              return khoList(a, ctx);
+            case 'kho_get':
+            case 'kho_find_by_id':
+              return khoGet(a, ctx);
+            case 'kho_create':
+              return khoCreate(a, ctx);
+            case 'kho_update':
+              return khoUpdate(a, ctx);
+            case 'kho_search':
+              return khoSearch(a, ctx);
+            default:
+              throw new HubError(`Không tìm thấy công cụ Kho: ${t}`, 404);
+          }
+        });
+      }
       if (isMcp(m)) {
-        if (t === 'kho_find_by_id') {
-          const c = await credential(m);
-          const token = c.access_token || c.token;
-          return await measurePhase('upstreamCall', () =>
-            khoFindById(a, {
-              url: m.url,
-              restUrl: m.khoRestUrl,
-              token,
-              allowPrivate: m.allowPrivate,
-              request: serviceRequest
-            })
-          );
-        }
         if (m.provider === 'github-mcp') {
           const c = await credential(m);
           const token = c.access_token || c.token;

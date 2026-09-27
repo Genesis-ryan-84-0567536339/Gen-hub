@@ -30,14 +30,19 @@ class BaserowClient:
     def request(self, method, endpoint, data=None):
         url = f'{self.base_url}{endpoint}'
         body = json.dumps(data).encode('utf-8') if data is not None else None
-        req = urllib.request.Request(url, data=body, headers=self._headers(), method=method)
-        try:
-            with urllib.request.urlopen(req) as resp:
-                resp_text = resp.read().decode('utf-8')
-                return json.loads(resp_text) if resp_text else None
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode('utf-8') if e.fp else ''
-            raise RuntimeError(f'Baserow API error {e.code} on {method} {endpoint}: {err_body}') from e
+        import time
+        for attempt in range(6):
+            req = urllib.request.Request(url, data=body, headers=self._headers(), method=method)
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    resp_text = resp.read().decode('utf-8')
+                    return json.loads(resp_text) if resp_text else None
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode('utf-8') if e.fp else ''
+                if e.code == 409 and ('LOCK_TABLE' in err_body or 'CONFLICT' in err_body) and attempt < 5:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise RuntimeError(f'Baserow API error {e.code} on {method} {endpoint}: {err_body}') from e
 
 
 def load_schema():
@@ -79,7 +84,14 @@ def sync_schema(client, schema=None, output_table_ids=None):
         name = table_def['name']
         if name not in tables_map:
             print(f"Creating table '{name}'...")
-            t = client.request('POST', f'/api/database/tables/database/{database_id}/', {'name': name})
+            primary_def = next((f for f in table_def['fields'] if f.get('primary')), None)
+            primary_name = primary_def['name'] if primary_def else 'Tên'
+            payload = {
+                'name': name,
+                'data': [[primary_name]],
+                'first_row_header': True
+            }
+            t = client.request('POST', f'/api/database/tables/database/{database_id}/', payload)
             tables_map[name] = t
 
     # 4. Synchronize Fields for each Table
@@ -99,6 +111,34 @@ def sync_schema(client, schema=None, output_table_ids=None):
                 'name': primary_def['name']
             })
             fields_map[primary_def['name']] = primary_field
+
+        # Remove default unwanted Baserow fields (Notes, Active)
+        for f in fields:
+            if not f.get('primary') and f['name'] in ['Notes', 'Active']:
+                print(f"Removing default Baserow field '{f['name']}' from '{table_name}'...")
+                try:
+                    client.request('DELETE', f"/api/database/fields/{f['id']}/")
+                    fields_map.pop(f['name'], None)
+                except Exception as e:
+                    print(f"Warning removing field '{f['name']}': {e}", file=sys.stderr)
+
+        # Remove default blank rows created by Baserow
+        existing_rows_resp = client.request('GET', f'/api/database/rows/table/{table_id}/?user_field_names=true') or {}
+        existing_rows = existing_rows_resp.get('results', [])
+        primary_name = primary_def['name'] if primary_def else 'Tên'
+        for row in existing_rows:
+            pval = row.get(primary_name)
+            if pval is None or pval == '' or (isinstance(pval, str) and not pval.strip()):
+                has_meaningful_data = any(
+                    bool(v) for k, v in row.items()
+                    if k not in ['id', 'order', 'Mã ID', primary_name]
+                )
+                if not has_meaningful_data:
+                    print(f"Deleting default blank row {row['id']} from '{table_name}'...")
+                    try:
+                        client.request('DELETE', f"/api/database/rows/table/{table_id}/{row['id']}/")
+                    except Exception as e:
+                        print(f"Warning deleting blank row {row['id']}: {e}", file=sys.stderr)
 
         for field_def in table_def['fields']:
             fname = field_def['name']
@@ -171,14 +211,26 @@ def sync_schema(client, schema=None, output_table_ids=None):
         if table_name not in tables_map:
             continue
         table_id = tables_map[table_name]['id']
-        existing_rows = client.request('GET', f'/api/database/rows/table/{table_id}/?size=1') or {}
-        if existing_rows.get('count', 0) > 0:
-            continue
+        table_def = next((t for t in schema['tables'] if t['name'] == table_name), None)
+        primary_def = next((f for f in table_def['fields'] if f.get('primary')), None) if table_def else None
+        primary_name = primary_def['name'] if primary_def else 'Tên'
 
-        print(f"Seeding initial data for '{table_name}'...")
+        existing_resp = client.request('GET', f'/api/database/rows/table/{table_id}/?user_field_names=true') or {}
+        existing_rows = existing_resp.get('results', [])
+        existing_primary_values = {
+            str(r.get(primary_name, '')).strip() for r in existing_rows if r.get(primary_name)
+        }
+
         for row in rows:
+            seed_val = str(row.get(primary_name, '')).strip()
+            if seed_val and seed_val in existing_primary_values:
+                continue
+
+            print(f"Seeding initial data for '{table_name}': {seed_val or row}...")
             try:
                 client.request('POST', f'/api/database/rows/table/{table_id}/?user_field_names=true', row)
+                if seed_val:
+                    existing_primary_values.add(seed_val)
             except Exception as e:
                 print(f"Warning seeding row in '{table_name}': {e}", file=sys.stderr)
 

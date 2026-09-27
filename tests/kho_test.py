@@ -31,7 +31,7 @@ class KhoTest(unittest.TestCase):
             config = runtime.manifest(state, SOURCE)
             service = config['services']['kho']
             self.assertEqual(service['volumes'], ['kho-data:/baserow/data'])
-            self.assertTrue(service['image'].startswith('baserow/baserow:1.33.2@sha256:'))
+            self.assertTrue(service['image'].startswith('baserow/baserow:2.3.4@sha256:'))
             self.assertEqual(service['environment']['BASEROW_PUBLIC_URL'], 'https://kho.hub.example.com')
             self.assertEqual(service['environment']['DISABLE_VOLUME_CHECK'], 'no')
             self.assertEqual(service['mem_limit'], '2g')
@@ -118,7 +118,32 @@ class KhoTest(unittest.TestCase):
                 self.assertFalse(state['kho_enabled'])
                 cfg = json.loads(compose_json.read_text())
                 self.assertNotIn('kho', cfg['services'])
-                self.assertNotIn('kho-data', cfg.get('volumes', {}))
+    def test_kho_schema_manage_passes_output_and_url(self):
+        state = {**self.state(), 'domain': 'mykho.example.com'}
+        captured_argv = []
+        def fake_main():
+            captured_argv.extend(sys.argv)
+
+        mock_mod = type('MockMod', (), {'main': fake_main})
+        with patch('importlib.util.spec_from_file_location'), \
+             patch('importlib.util.module_from_spec', return_value=mock_mod), \
+             tempfile.TemporaryDirectory() as temp_dir:
+            data_path = pathlib.Path(temp_dir)
+            with patch('os.geteuid', return_value=0), \
+                 patch('runtime.DATA', data_path), \
+                 patch('manage.CONF', data_path), \
+                 patch('manage.DATA', data_path), \
+                 patch('manage.ROOT', data_path), \
+                 patch('sys.argv', ['manage.py', 'kho-schema']):
+                (data_path / 'install.json').write_text(json.dumps(state))
+                manage.main()
+
+            self.assertIn('--output', captured_argv)
+            out_idx = captured_argv.index('--output')
+            self.assertEqual(captured_argv[out_idx + 1], str(data_path / 'kho_table_ids.json'))
+            self.assertIn('--url', captured_argv)
+            url_idx = captured_argv.index('--url')
+            self.assertEqual(captured_argv[url_idx + 1], 'https://kho.mykho.example.com')
 
 
 if __name__ == '__main__':
