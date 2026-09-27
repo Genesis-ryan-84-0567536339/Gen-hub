@@ -55,6 +55,28 @@ Theo chỉ đạo tại review của Claude (Issue #125):
   - Thiết lập `pids_limit: 256` để ngăn chặn fork-bomb hoặc tiến trình treo vô hạn.
   - Ngưỡng 2GB đảm bảo container hoạt động ổn định khi xử lý các truy vấn lọc lớn từ Agent hoặc thao tác đồng bộ hàng loạt mà không bị hệ điều hành OOM-killer can thiệp.
 
+### 2.4. Quyết định Bảo mật & Cấu hình Runtime: Linux Capabilities, Read-only Rootfs và Rollback State
+
+Theo chỉ đạo của Claude (`[DUYỆT HOTFIX]` tại Issue #125):
+Container Baserow 2.3.4 là mô hình all-in-one quản lý đa tiến trình bằng Supervisor dưới nhiều UID khác nhau (`root`, `postgres`: 101, `redis`: 100, `baserow_docker_user`: 9999).
+
+1. **Linux Capabilities (`cap_drop: ['ALL']` kết hợp `cap_add` chọn lọc):**
+   - Vẫn giữ nguyên `cap_drop: ['ALL']` kế thừa từ `common` để không cấp thừa các capability nguy hiểm mặc định của Docker (như `NET_RAW`, `MKNOD`, `SYS_ADMIN`).
+   - Bổ sung tối thiểu 7 capability cần thiết qua `cap_add`:
+     - `CHOWN`, `DAC_OVERRIDE`, `FOWNER`: Cần thiết khi entrypoint khởi tạo `/baserow/data` (thuộc user 9999) bằng user root để tạo các file bí mật `.redispass`, `.pgpass`, `.secret`.
+     - `SETUID`, `SETGID`: Supervisor cần để hạ quyền chạy PostgreSQL dưới UID 101, Redis dưới UID 100, backend/celery dưới UID 9999.
+     - `KILL`: Supervisor cần để gửi tín hiệu quản lý tiến trình con khác UID (tránh `PermissionError: [Errno 1] Operation not permitted` khi kill/term tiến trình).
+     - `NET_BIND_SERVICE`: File binary `/usr/bin/caddy` trong container Baserow có file capability gắn sẵn `security.capability` (`cap_net_bind_service=+ep`). Theo cơ chế bảo mật kernel Linux, nếu `CAP_NET_BIND_SERVICE` bị xóa khỏi Bounding Set của container (`cap_drop: ['ALL']`), lệnh `execve` thực thi Caddy sẽ bị kernel từ chối với lỗi `EPERM` (`Operation not permitted`, exit status 126). Bổ sung `NET_BIND_SERVICE` giải quyết lỗi này và cho phép Caddy bind cổng 80.
+2. **Quyền ghi Rootfs (`read_only: False`):**
+   - Baserow 2.3.4 khi khởi tạo embedded postgres tự động cấu hình runtime file trong `/etc/postgresql/15/main/` và ghi logs/pids/sockets ngoài volume `/baserow/data`.
+   - Nếu áp dụng `read_only: True`, entrypoint bị dừng ngay tại lệnh `sed: couldn't open temporary file /etc/postgresql/15/main/...: Read-only file system`. Do đó, service `kho` bắt buộc override `read_only: False`.
+3. **Định tuyến Healthcheck (`BASEROW_EXTRA_PUBLIC_URLS`):**
+   - Caddy nội bộ của Baserow kiểm tra tiêu đề Host đối với các route `/api/*` thông qua điều kiện `BASEROW_PUBLIC_URL.contains(host) || BASEROW_EXTRA_PUBLIC_URLS.contains(host)`.
+   - Healthcheck container dùng `http://127.0.0.1:80/api/_health/` và `verify()` dùng `http://kho:80/api/_health/`. Để Caddy không chuyển hướng nhầm các request này sang web-frontend (gây lỗi 404 Site not found), cần cấu hình `BASEROW_EXTRA_PUBLIC_URLS: http://127.0.0.1,http://localhost,http://kho,kho.{domain}`.
+4. **Khôi phục trạng thái khi thất bại (Atomic Rollback trong `enable()`):**
+   - Hàm `enable()` trong `scripts/kho.py` đặt `state['kho_enabled'] = False` và lưu `install.json` trong khối `except BaseException` trước khi re-raise lỗi.
+   - Dọn dẹp container `kho` bị lỗi (`compose stop/rm kho`) để tránh loop restart mồ côi làm ảnh hưởng tới các lệnh tiếp theo (`gen-hub update`, `restart`, `backup`).
+
 ---
 
 ## 3. Kiến trúc Tích hợp Agent & MCP: Lựa chọn Nhánh B (Bộ công cụ REST mỏng)

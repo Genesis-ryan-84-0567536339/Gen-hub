@@ -36,6 +36,10 @@ class KhoTest(unittest.TestCase):
             self.assertEqual(service['environment']['DISABLE_VOLUME_CHECK'], 'no')
             self.assertEqual(service['mem_limit'], '2g')
             self.assertEqual(service['pids_limit'], 256)
+            self.assertFalse(service['read_only'])
+            self.assertEqual(service['cap_drop'], ['ALL'])
+            self.assertEqual(service['cap_add'], ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETUID', 'SETGID', 'KILL', 'NET_BIND_SERVICE'])
+            self.assertIn('http://127.0.0.1', service['environment']['BASEROW_EXTRA_PUBLIC_URLS'])
             for forbidden in ['ports', 'secrets', 'env_file', 'privileged']:
                 self.assertNotIn(forbidden, service)
             for forbidden in ['master.key', 'update.env', 'docker.sock', '/var/lib/gen-hub']:
@@ -118,6 +122,42 @@ class KhoTest(unittest.TestCase):
                 self.assertFalse(state['kho_enabled'])
                 cfg = json.loads(compose_json.read_text())
                 self.assertNotIn('kho', cfg['services'])
+
+    def test_kho_enable_failure_restores_state(self):
+        with tempfile.TemporaryDirectory() as temp:
+            conf = pathlib.Path(temp)
+            install_json = conf / 'install.json'
+            compose_json = conf / 'compose.json'
+            caddy_file = conf / 'Caddyfile'
+            state = {**self.state(), 'kho_enabled': False}
+            install_json.write_text(json.dumps(state, indent=2))
+            compose_json.write_text(json.dumps({
+                'services': {'hub': {}, 'caddy': {}},
+                'x-gen-hub': {'installation_id': 'owned'}
+            }))
+            caddy_file.write_text('initial caddy')
+            release_dir = conf / 'releases' / state['revision'] / 'deploy'
+            release_dir.mkdir(parents=True)
+            (release_dir / 'images.json').write_text((SOURCE / 'deploy/images.json').read_text())
+
+            with patch('kho.CONF', conf), \
+                 patch('kho.ROOT', conf), \
+                 patch('runtime.CONF', conf), \
+                 patch('runtime.DATA', conf), \
+                 patch('runtime.backup'), \
+                 patch('kho.run', return_value=result()), \
+                 patch('runtime.admin', return_value=result('yes\n')), \
+                 patch('kho.compose', side_effect=[result(), RuntimeError('compose up failed'), result(), result(), result()]):
+                with self.assertRaisesRegex(RuntimeError, 'compose up failed'):
+                    kho.enable(state)
+
+            self.assertFalse(state['kho_enabled'])
+            saved_state = json.loads(install_json.read_text())
+            self.assertFalse(saved_state['kho_enabled'])
+            saved_compose = json.loads(compose_json.read_text())
+            self.assertNotIn('kho', saved_compose['services'])
+            self.assertEqual(caddy_file.read_text(), 'initial caddy')
+
     def test_kho_schema_manage_passes_output_and_url(self):
         state = {**self.state(), 'domain': 'mykho.example.com'}
         captured_argv = []

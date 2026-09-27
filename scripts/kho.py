@@ -33,6 +33,9 @@ def service(state, images, common):
     return {
         **copy.deepcopy(common),
         'image': state.get('kho_image', images['baserow']),
+        'read_only': False,
+        'cap_drop': ['ALL'],
+        'cap_add': ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'SETUID', 'SETGID', 'KILL', 'NET_BIND_SERVICE'],
         'pids_limit': 256,
         'mem_limit': '2g',
         'stop_grace_period': '60s',
@@ -40,6 +43,7 @@ def service(state, images, common):
         'volumes': ['kho-data:/baserow/data'],
         'environment': {
             'BASEROW_PUBLIC_URL': f'https://{kho_domain}',
+            'BASEROW_EXTRA_PUBLIC_URLS': f'http://127.0.0.1,http://localhost,http://kho,{kho_domain}',
             'WEB_FRONTEND_SSL': 'false',
             'BASEROW_CADDY_ADDRESSES': 'http://',
             'DISABLE_VOLUME_CHECK': 'no',
@@ -148,6 +152,11 @@ def enable(state):
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build', '--force-recreate', 'kho', 'caddy')
         verify(path)
     except BaseException:
+        state['kho_enabled'] = False
+        save()
+        with contextlib.suppress(Exception):
+            compose(path, 'stop', 'kho')
+            compose(path, 'rm', '-f', 'kho')
         atomic(path, before)
         atomic(CONF / 'Caddyfile', before_caddy, 0o644)
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build', '--force-recreate', 'caddy')
