@@ -45,6 +45,7 @@ const paths = {
   logout: 'M9 4H4v16h5m5-14 6 6-6 6m-6-6h12',
   file: 'M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6',
   bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
+  database: 'M4 6c0 1.66 3.58 3 8 3s8-1.34 8-3-3.58-3-8-3-8 1.34-8 3zm0 5c0 1.66 3.58 3 8 3s8-1.34 8-3M4 16c0 1.66 3.58 3 8 3s8-1.34 8-3',
   chevron: 'm6 9 6 6 6-6'
 };
 const I = n =>
@@ -62,6 +63,7 @@ const names = {
   skills: 'Skills',
   audit: 'Nhật ký',
   kanban: 'Kanban',
+  kho: 'Kho',
   feedback: 'Feedback',
   settings: 'Cài đặt'
 };
@@ -668,7 +670,7 @@ function executeClientTool(name, args = {}) {
   if (name === 'navigate') {
     const routeTarget = String(args.route || '').trim();
     if (
-      !/^(overview|mcps|agents|vault|bootstrap|audit|kanban|settings)(:([a-zA-Z0-9_-]{1,64}))?$/.test(
+      !/^(overview|mcps|agents|vault|bootstrap|skills|audit|kanban|kho|feedback|settings)(:([a-zA-Z0-9_-]{1,64}))?$/.test(
         routeTarget
       )
     ) {
@@ -933,6 +935,7 @@ function render() {
     skills: 'grid',
     audit: 'activity',
     kanban: 'grid',
+    kho: 'database',
     feedback: 'bell',
     settings: 'settings'
   };
@@ -946,7 +949,7 @@ function render() {
       )
       .join(
         ''
-      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'skills' ? skillsPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : r === 'feedback' ? feedbackPage(feedbackData, feedbackDetail, feedbackSelected) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
+      )}</nav><div class="sidebottom"><div class="health"><b><span class="dot"></span>Hub đang hoạt động</b><p>Linux · Gen-hub ${state.update?.updatedAt ? 'v' + formatVersion(state.update.updatedAt) : 'v0.1.0'}${state.update?.revision ? ` <span class="mono" title="${esc(state.update.revision)}">(${shortSha(state.update.revision)})</span>` : ''}${state.update?.hasUpdate ? ' <span class="badge warn" style="font-size:10px;padding:1px 5px">Bản mới</span>' : ''}</p></div><div class="profile"><span class="avatar">${esc(state.owner[0].toUpperCase())}</span><div class="spacer"><b>${esc(state.owner)}</b><small>Chủ sở hữu</small></div><button class="iconbutton" data-action="logout" aria-label="Đăng xuất">${I('logout')}</button></div></div></aside><div class="shell"><header class="topbar"><div class="crumb"><button class="iconbutton mobilemenu" data-action="menu" aria-label="Menu">${I('menu')}</button><span>Không gian cá nhân</span><span>/</span><strong>${names[r]}</strong></div><div class="actions">${btn('Hướng dẫn', 'onboard', 'small', 'info')}<div class="notif-wrapper"><button type="button" class="iconbutton notif-btn" data-action="toggle-notifs" aria-label="Thông báo" aria-haspopup="true" aria-expanded="${notifOpen}">${I('bell')}${unreadCount > 0 ? `<span class="notif-badge">${unreadCount > 99 ? '99+' : unreadCount}</span>` : ''}</button>${notifOpen ? renderNotifDropdown() : ''}</div><button class="iconbutton" data-action="refresh" aria-label="Làm mới">${I('refresh')}</button></div></header><main class="main"><div class="demo"><span>${I('lock')}${esc(new URL(state.origin).host)}</span><span>Dữ liệu từ Hub của bạn · ${new Date().toLocaleTimeString('vi-VN')}</span></div>${r === 'overview' ? overview() : r === 'mcps' ? mcps() : r === 'agents' ? agents() : r === 'vault' ? vaultPage() : r === 'bootstrap' ? bootstrapPage() : r === 'skills' ? skillsPage() : r === 'audit' ? auditPage() : r === 'kanban' ? kanbanPage(kanbanData, state.mcps, filter) : r === 'kho' ? khoPage() : r === 'feedback' ? feedbackPage(feedbackData, feedbackDetail, feedbackSelected) : settings()}<footer class="bottomcaption"><span>GEN-HUB / Không gian công cụ của bạn</span><span>Tiếng Việt · GMT+7</span></footer></main></div>`;
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
   layoutMonitorMap(monitorData, monitorView);
@@ -1762,6 +1765,123 @@ function skillsPage() {
     `
   );
 }
+function getKhoUrl() {
+  try {
+    const u = new URL(state?.origin || location.origin);
+    const parts = u.hostname.split('.');
+    if (parts.length >= 2 && !/^\d+\.\d+\.\d+\.\d+$/.test(u.hostname) && u.hostname !== 'localhost') {
+      const domain = parts.slice(-2).join('.');
+      return `${u.protocol}//kho.${domain}`;
+    }
+    return `${u.protocol}//${u.hostname}:3001`;
+  } catch {
+    return 'https://kho.genos.top';
+  }
+}
+function khoPage() {
+  const khoUrl = getKhoUrl();
+  const tables = [
+    { prefix: 'DA', name: 'Dự án', desc: 'Mục tiêu lớn, sản phẩm, chiến dịch kinh doanh.' },
+    { prefix: 'VIEC', name: 'Việc', desc: 'Task, đầu việc thực thi (Kanban view, liên kết DA, 3 mốc ngày tạo/bắt đầu/xong).' },
+    { prefix: 'PHIEN', name: 'Phiên', desc: 'Phiên làm việc agent/Boss, mục tiêu, kết quả, log và token tiêu thụ.' },
+    { prefix: 'QD', name: 'Quyết định', desc: 'ADR, quyết định kiến trúc, kinh doanh và định hướng chiến lược.' },
+    { prefix: 'BAI', name: 'Bài học', desc: 'Rút kinh nghiệm, sai lầm, quy tắc ứng xử (Gallery view).' },
+    { prefix: 'TT', name: 'Tri thức', desc: 'Tài liệu chuẩn, cẩm nang, đặc tả kỹ thuật SSOT.' },
+    { prefix: 'TS', name: 'Tài sản', desc: 'Hạ tầng VPS, domain, repository, thiết bị, dịch vụ SaaS.' },
+    { prefix: 'KHOA', name: 'Chỉ mục khóa', desc: 'Chỉ mục thực thể kết nối dữ liệu chéo giữa các bảng.' }
+  ];
+
+  return (
+    head(
+      'Kho Ryan',
+      'Second brain & cơ sở tri thức có cấu trúc của Boss Ryan trên nền tảng Baserow 1.33+.',
+      btn('Mở Baserow', 'kho-open', 'primary', 'arrow') +
+      btn('Chép liên kết', 'kho-copy-url', '', 'copy')
+    ) +
+    `
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 24px;">
+      <section class="card cardpad">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          ${I('database')}
+          <h3 style="margin:0">Cổng truy cập Baserow</h3>
+        </div>
+        <p class="footnote" style="margin-bottom:12px">Truy cập giao diện bảng biểu trực quan trên web và thiết bị di động.</p>
+        <div class="codecopy" style="margin-bottom:12px">
+          <code>${esc(khoUrl)}</code>
+          <button class="iconbutton" data-action="kho-copy-url" aria-label="Sao chép">${I('copy')}</button>
+        </div>
+        <div style="display:flex;gap:8px">
+          <a class="btn primary small" href="${esc(khoUrl)}" target="_blank" rel="noopener noreferrer">${I('arrow')} Mở trong tab mới</a>
+        </div>
+      </section>
+
+      <section class="card cardpad">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          ${I('plug')}
+          <h3 style="margin:0">Tích hợp Agent & MCP</h3>
+        </div>
+        <p class="footnote" style="margin-bottom:8px"><b>Giao thức MCP:</b> Streamable HTTP (kết nối remote gốc của Baserow).</p>
+        <p class="footnote" style="margin-bottom:8px"><b>Tra cứu nhanh:</b> Hỗ trợ công cụ <code>kho_find_by_id</code> tìm theo mã tiền tố (VD: <code>VIEC-12</code>, <code>DA-1</code>).</p>
+        <p class="footnote"><b>Giới hạn tài nguyên:</b> Container Docker được cô lập với <code>mem_limit: 2g</code>, tự động bảo vệ bộ nhớ hệ thống.</p>
+      </section>
+    </div>
+
+    <section class="card cardpad" style="margin-bottom:24px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <h3 style="margin:0">8 Bảng Hạt Nhân (Core Schema SSOT)</h3>
+          <p class="footnote" style="margin-top:4px">Cấu trúc dữ liệu chuẩn hóa, đồng bộ tự động qua <code>scripts/manage.py kho-schema</code>.</p>
+        </div>
+        <span class="badge info">8 bảng</span>
+      </div>
+      <div class="tablewrap">
+        <table class="audit-table">
+          <thead>
+            <tr>
+              <th style="width:120px">Tiền tố ID</th>
+              <th style="width:180px">Tên bảng</th>
+              <th>Mục đích & Nội dung</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tables.map(t => `
+              <tr>
+                <td><span class="badge mono" style="font-size:12px">${esc(t.prefix)}-{id}</span></td>
+                <td><b>${esc(t.name)}</b></td>
+                <td><span class="footnote">${esc(t.desc)}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card cardpad">
+      <h3 style="margin-bottom:12px">Lệnh Vận Hành Kho Ryan (CLI)</h3>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="listrow">
+          <div>
+            <b>Kích hoạt / Khởi chạy Kho</b>
+            <p class="footnote mono">python3 scripts/manage.py kho-enable</p>
+          </div>
+        </div>
+        <div class="listrow">
+          <div>
+            <b>Đồng bộ Schema & Seed data</b>
+            <p class="footnote mono">python3 scripts/manage.py kho-schema</p>
+          </div>
+        </div>
+        <div class="listrow">
+          <div>
+            <b>Tạo bản sao lưu nhất quán (Consistent Snapshot)</b>
+            <p class="footnote mono">python3 scripts/manage.py backup</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  `
+  );
+}
 function adminAssistantSettings() {
   const a = state.adminAssistant || {};
   const adminAgents = (state.agents || []).filter(ag => ag.isAdmin && ag.status === 'active');
@@ -2339,6 +2459,14 @@ async function act(action, args, el = null) {
     kanbanData = null;
     await loadKanban();
     return toast(`Đã chuyển lưu trữ ${res?.archivedCount ?? 0} issue cột Done`);
+  }
+  if (action === 'kho-open') {
+    window.open(getKhoUrl(), '_blank', 'noopener,noreferrer');
+    return;
+  }
+  if (action === 'kho-copy-url') {
+    navigator.clipboard.writeText(getKhoUrl());
+    return toast('Đã chép liên kết Kho Ryan');
   }
   if (action === 'bootstrap-group-up') {
     syncBootstrapFromDom();
