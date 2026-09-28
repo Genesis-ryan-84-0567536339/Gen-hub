@@ -18,6 +18,10 @@ CONF = pathlib.Path('/etc/gen-hub')
 PENDING = 'Kho chưa được kích hoạt. Chạy sudo gen-hub kho-enable để kích hoạt.'
 
 
+def public_host(state):
+    return state.get('kho_domain') or f"kho.{state['domain']}"
+
+
 def volumes(state):
     return {
         'kho-data': {
@@ -28,8 +32,7 @@ def volumes(state):
 
 
 def service(state, images, common):
-    domain = state['domain']
-    kho_domain = f"kho.{domain}"
+    kho_domain = public_host(state)
     return {
         **copy.deepcopy(common),
         'image': state.get('kho_image', images['baserow']),
@@ -78,7 +81,7 @@ def check_volumes(state, required=False):
     return owned
 
 
-def verify(path):
+def verify(path, state=None):
     if not configured(path):
         raise RuntimeError(PENDING)
     config = json.loads(pathlib.Path(path).read_text())
@@ -88,6 +91,23 @@ def verify(path):
     compose(path, 'exec', '-T', 'hub', 'node', '--input-type=module', '-e',
             "const r=await fetch('http://kho:80/api/_health/',{signal:AbortSignal.timeout(5000)});"
             "const t=(await r.text()).trim();if(!r.ok||(t!=='OK'&&t!=='pass'))process.exit(1)")
+    if state is None:
+        install_file = pathlib.Path(path).parent / 'install.json'
+        if install_file.exists():
+            try:
+                state = json.loads(install_file.read_text())
+            except Exception:
+                state = None
+    if state:
+        kho_host = public_host(state)
+    else:
+        baserow_url = config.get('services', {}).get('kho', {}).get('environment', {}).get('BASEROW_PUBLIC_URL', '')
+        kho_host = baserow_url.replace('https://', '').replace('http://', '').split('/')[0] or 'kho.localhost'
+    caddy_script = (
+        f"const r=await fetch('http://caddy:8080/api/_health/',{{headers:{{'Host':'{kho_host}'}},signal:AbortSignal.timeout(5000)}});"
+        "const t=(await r.text()).trim();if(!r.ok||(t!=='OK'&&t!=='pass'))process.exit(1)"
+    )
+    compose(path, 'exec', '-T', 'hub', 'node', '--input-type=module', '-e', caddy_script)
 
 
 @contextlib.contextmanager
@@ -117,7 +137,7 @@ def snapshot(path):
                 compose(path, 'up', '-d', '--wait', '--wait-timeout', '300', '--no-build', 'kho')
 
 
-def enable(state):
+def enable(state, domain=None):
     """Enable and bootstrap Kho (Baserow) for this installation."""
     from runtime import DATA, atomic, manifest, caddy_config, admin, backup
     path = CONF / 'compose.json'
@@ -128,6 +148,8 @@ def enable(state):
     
     save = lambda: atomic(CONF / 'install.json', json.dumps(state, indent=2))
     state['kho_enabled'] = True
+    if domain:
+        state['kho_domain'] = domain
     before, before_caddy = path.read_text(), (CONF / 'Caddyfile').read_text()
     config = json.loads(before)
     release = ROOT / 'releases' / state.get('revision', '')
@@ -150,7 +172,7 @@ def enable(state):
         atomic(CONF / 'Caddyfile', caddy_config(state), 0o644)
         compose(path, 'config', '--quiet')
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '300', '--no-build', '--force-recreate', 'kho', 'caddy')
-        verify(path)
+        verify(path, state)
     except BaseException:
         state['kho_enabled'] = False
         save()
@@ -161,8 +183,8 @@ def enable(state):
         atomic(CONF / 'Caddyfile', before_caddy, 0o644)
         compose(path, 'up', '-d', '--wait', '--wait-timeout', '150', '--no-build', '--force-recreate', 'caddy')
         raise
-    domain = state['domain']
-    print(f'✓ Kích hoạt Kho Ryan thành công: https://kho.{domain} (hoặc https://{domain}/kho/)')
+    host = public_host(state)
+    print(f'✓ Kích hoạt Kho Ryan thành công: https://{host} (hoặc https://{state["domain"]}/kho/)')
 
 
 def disable(state, purge=False):

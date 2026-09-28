@@ -46,7 +46,8 @@ def caddy_config(state):
     kho_route = ""
     kho_vps = ""
     if state.get('kho_enabled', False):
-        kho_domain = f"kho.{state['domain']}"
+        from kho import public_host
+        kho_domain = public_host(state)
         kho_route = f"""redir /kho /kho/ 308
   handle_path /kho/* {{
     redir https://{kho_domain}{{uri}} 308
@@ -78,7 +79,8 @@ def caddy_config(state):
         return f'{{\n  admin off\n}}\n{kho_vps}{state["domain"]} {{\n  {routes}\n}}\n'
     kho_tunnel_handler = ""
     if state.get('kho_enabled', False):
-        kho_domain = f"kho.{state['domain']}"
+        from kho import public_host
+        kho_domain = public_host(state)
         kho_tunnel_handler = f"""  @kho host {kho_domain}
   handle @kho {{
     reverse_proxy kho:80 {{
@@ -178,7 +180,7 @@ def verify_local(path, state):
         verify(path)
     if state.get('kho_enabled', False):
         from kho import verify as kho_verify
-        kho_verify(path)
+        kho_verify(path, state)
     print('✓ Container và lưu trữ đã sẵn sàng.')
 
 

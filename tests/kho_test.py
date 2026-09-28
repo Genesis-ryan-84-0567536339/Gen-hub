@@ -164,18 +164,26 @@ class KhoTest(unittest.TestCase):
             conf = pathlib.Path(temp)
             compose_json = conf / 'compose.json'
             compose_json.write_text(json.dumps({
-                'services': {'kho': {}},
+                'services': {'kho': {'environment': {'BASEROW_PUBLIC_URL': 'https://kho.genos.top'}}},
                 'x-gen-hub': {'installation_id': 'owned'}
             }))
             with patch('kho.check_volumes', return_value=['kho-data']), \
                  patch('kho.compose') as mock_compose:
                 kho.verify(compose_json)
-                self.assertEqual(mock_compose.call_count, 2)
+                self.assertEqual(mock_compose.call_count, 3)
                 node_call_args = mock_compose.call_args_list[1][0]
                 self.assertIn('node', node_call_args)
                 script = node_call_args[-1]
+                self.assertIn("fetch('http://kho:80/api/_health/'", script)
                 self.assertIn("const t=(await r.text()).trim()", script)
                 self.assertIn("t!=='OK'&&t!=='pass'", script)
+
+                caddy_call_args = mock_compose.call_args_list[2][0]
+                self.assertIn('node', caddy_call_args)
+                caddy_script = caddy_call_args[-1]
+                self.assertIn("fetch('http://caddy:8080/api/_health/'", caddy_script)
+                self.assertIn("'Host':'kho.genos.top'", caddy_script)
+                self.assertIn("t!=='OK'&&t!=='pass'", caddy_script)
 
     def test_kho_enable_uses_timeout_300(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -237,6 +245,126 @@ class KhoTest(unittest.TestCase):
             self.assertIn('--url', captured_argv)
             url_idx = captured_argv.index('--url')
             self.assertEqual(captured_argv[url_idx + 1], 'https://kho.mykho.example.com')
+
+    def test_custom_kho_domain_caddy_and_manifest(self):
+        state = {**self.state(), 'domain': 'hub.genos.top', 'kho_domain': 'kho.genos.top'}
+        # 1. Manifest has correct BASEROW_PUBLIC_URL
+        config = runtime.manifest(state, SOURCE)
+        service = config['services']['kho']
+        self.assertEqual(service['environment']['BASEROW_PUBLIC_URL'], 'https://kho.genos.top')
+
+        # 2. VPS Caddy has kho.genos.top block and redirect
+        caddy_vps = runtime.caddy_config({**state, 'mode': 'vps'})
+        self.assertIn('kho.genos.top {', caddy_vps)
+        self.assertIn('redir https://kho.genos.top{uri} 308', caddy_vps)
+
+        # 3. Personal (tunnel) Caddy has @kho host kho.genos.top
+        caddy_tunnel = runtime.caddy_config({**state, 'mode': 'personal'})
+        self.assertIn('@kho host kho.genos.top', caddy_tunnel)
+        self.assertIn('handle @kho {', caddy_tunnel)
+        self.assertIn('redir https://kho.genos.top{uri} 308', caddy_tunnel)
+
+        # 4. public_host helper returns custom domain
+        self.assertEqual(kho.public_host(state), 'kho.genos.top')
+
+    def test_custom_kho_domain_ingress_in_setup_tunnel(self):
+        import install
+        state = {
+            'mode': 'personal',
+            'domain': 'hub.genos.top',
+            'zone_name': 'genos.top',
+            'zone_id': 'zone123',
+            'account_id': 'acc123',
+            'tunnel_id': 'tun123',
+            'installation_id': 'inst123',
+            'uid': 1000,
+            'gid': 1000,
+            'kho_enabled': True,
+            'kho_domain': 'kho.genos.top'
+        }
+        cf_calls = []
+        def fake_cf(token, path, data=None, method=None):
+            cf_calls.append((path, data, method))
+            if path.startswith('/zones?'):
+                return [{'id': 'zone123', 'account': {'id': 'acc123'}}]
+            if 'dns_records?' in path:
+                return [{'type': 'CNAME', 'name': 'hub.genos.top', 'content': 'tun123.cfargotunnel.com'}]
+            if path.endswith('/token'):
+                return 'fake-token'
+            return {}
+
+        with patch('builtins.input', return_value='fake-api-token'), \
+             patch.object(install, 'ask', return_value='genos.top'), \
+             patch.object(install, 'cf', side_effect=fake_cf), \
+             patch.object(install, 'atomic'), \
+             patch('os.chown'):
+            install.setup_tunnel(state, lambda: None)
+
+        put_configs = [c for c in cf_calls if c[2] == 'PUT' and '/configurations' in c[0]]
+        self.assertEqual(len(put_configs), 1)
+        ingress = put_configs[0][1]['config']['ingress']
+        self.assertEqual(ingress, [
+            {'hostname': 'hub.genos.top', 'service': 'http://caddy:8080'},
+            {'hostname': 'kho.genos.top', 'service': 'http://caddy:8080'},
+            {'service': 'http_status:404'}
+        ])
+
+    def test_kho_enable_with_domain_flag(self):
+        with tempfile.TemporaryDirectory() as temp:
+            conf = pathlib.Path(temp)
+            install_json = conf / 'install.json'
+            compose_json = conf / 'compose.json'
+            caddy_file = conf / 'Caddyfile'
+            state = {**self.state(), 'domain': 'hub.genos.top', 'kho_enabled': False}
+            install_json.write_text(json.dumps(state, indent=2))
+            compose_json.write_text(json.dumps({
+                'services': {'hub': {}, 'caddy': {}},
+                'x-gen-hub': {'installation_id': 'owned'}
+            }))
+            caddy_file.write_text('initial caddy')
+            release_dir = conf / 'releases' / state['revision'] / 'deploy'
+            release_dir.mkdir(parents=True)
+            (release_dir / 'images.json').write_text((SOURCE / 'deploy/images.json').read_text())
+
+            with patch('kho.CONF', conf), \
+                 patch('kho.ROOT', conf), \
+                 patch('runtime.CONF', conf), \
+                 patch('runtime.DATA', conf), \
+                 patch('runtime.backup'), \
+                 patch('kho.run', return_value=result()), \
+                 patch('runtime.admin', return_value=result('yes\n')), \
+                 patch('kho.verify'), \
+                 patch('kho.compose'):
+                kho.enable(state, domain='kho.genos.top')
+
+            self.assertTrue(state['kho_enabled'])
+            self.assertEqual(state['kho_domain'], 'kho.genos.top')
+            saved_state = json.loads(install_json.read_text())
+            self.assertEqual(saved_state['kho_domain'], 'kho.genos.top')
+
+    def test_public_test_checks_kho_https(self):
+        import install
+        state = {
+            'domain': 'hub.genos.top',
+            'installation_id': 'owned',
+            'gitea_enabled': False,
+            'kho_enabled': True,
+            'kho_domain': 'kho.genos.top'
+        }
+        urls_called = []
+        def fake_fetch(url, *args, **kwargs):
+            urls_called.append(url)
+            if '/healthz' in url:
+                return b'{"ok": true, "installationId": "owned"}'
+            if '/api/_health/' in url:
+                return b'OK\n'
+            return b''
+
+        with patch.object(install, 'fetch', side_effect=fake_fetch):
+            install.public_test(state)
+
+        self.assertIn('https://hub.genos.top/healthz', urls_called)
+        self.assertIn('https://kho.genos.top/api/_health/', urls_called)
 
 
 if __name__ == '__main__':

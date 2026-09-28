@@ -42,10 +42,10 @@ Theo chỉ đạo tại review của Claude (Issue #125):
   2. Yêu cầu `GET /` trả về mã chuyển hướng `302 Found` tới `/login`.
   3. Mã nguồn frontend (Nuxt.js) và các route WebSocket/backend của image chính thức `baserow/baserow:1.33.2` hardcode đường dẫn tại root `/` và các endpoint API nội bộ `/api/*`. Việc cấu hình subpath rewrite phức tạp làm gãy tài nguyên tĩnh (assets chunking) và kết nối real-time WebSocket.
 - **Quyết định kiến trúc:**
-  - Chuyển sang định tuyến theo tên miền phụ: `kho.{domain}` (mặc định là `https://kho.genos.top`).
-  - Caddy tự động cấu hình block định tuyến `Host kho.<domain>` chuyển tiếp tới container `kho` cổng 80, giữ nguyên tiêu đề `Host` và `X-Forwarded-*`.
-  - Trên tên miền chính, route `/kho` và `/kho/*` chuyển hướng cố định `308 Permanent Redirect` tới `https://kho.<domain>/`.
-  - Cloudflare Tunnel chỉ cần thêm public hostname `kho.genos.top` trỏ về Caddy reverse proxy trên host.
+  - Chuyển sang định tuyến theo tên miền phụ chuyên dụng: hỗ trợ tùy chỉnh qua key `kho_domain` trong `install.json` (hàm `public_host(state) = state.get('kho_domain') or f"kho.{state['domain']}"`), mặc định fallback về `kho.{domain}` nếu không chỉ định riêng (ví dụ: `kho.genos.top` khi domain chính là `hub.genos.top`).
+  - Caddy tự động cấu hình block định tuyến `Host <kho_domain>` (cả mode VPS lẫn personal tunnel `@kho host <kho_domain>`) chuyển tiếp tới container `kho` cổng 80, giữ nguyên tiêu đề `Host` và `X-Forwarded-*`.
+  - Trên tên miền chính, route `/kho` và `/kho/*` chuyển hướng cố định `308 Permanent Redirect` tới `https://<kho_domain>/`.
+  - Cloudflare Tunnel tự động bổ sung ingress rule cho `public_host(state)` trỏ về Caddy reverse proxy `http://caddy:8080` khi `kho_enabled` là True.
 
 ### 2.3. Đo lường tài nguyên thực tế & Giới hạn RAM
 
