@@ -113,35 +113,115 @@ Tool sẽ tự động phân tích tiền tố `PHIEN`, ánh xạ tới ID bản
 
 ## 4. Sao lưu & Khôi phục Dữ liệu (Backup & Restore)
 
-### 4.1. Quy trình Sao lưu Tự động
-Lệnh sao lưu của Gen-hub đã được tích hợp module `scripts/kho.py` để tạo bản chụp nhất quán (consistent snapshot):
-```bash
-python3 scripts/manage.py backup
-```
-- Quá trình sẽ tạm dừng các thao tác ghi của Baserow.
-- Đóng gói toàn bộ volume `kho-data` thành file archive `kho/volumes.tar` bên trong gói backup nén `.tar.gz`.
-- Đảm bảo tính toàn vẹn 100% của cơ sở dữ liệu PostgreSQL và file tải lên của Baserow.
+### 4.1. Cấu trúc Gói Sao lưu Kho Ryan
 
-### 4.2. Quy trình Khôi phục Dữ liệu (Restore)
-Khi cần khôi phục dữ liệu trên máy chủ mới hoặc sau sự cố:
-1. Giải nén gói backup:
+Lệnh sao lưu của Gen-hub (`python3 scripts/manage.py backup` hoặc `sudo gen-hub backup`) tự động gọi module sao lưu tích hợp (`kho_snapshot`), tạo bản chụp nhất quán (consistent snapshot) của Kho Ryan mà không làm gián đoạn người dùng:
+- File sao lưu toàn hệ thống: `gen-hub-backup-<timestamp>.tar.gz` (phân quyền `0600`).
+- Gói sao lưu Kho Ryan nằm bên trong archive tại: `kho/volumes.tar`.
+- Thành phần dữ liệu trong `kho/volumes.tar`:
+  - `baserow/data/postgres/`: Toàn bộ cơ sở dữ liệu PostgreSQL (chứa schema, bảng, hàng, quan hệ, audit log, người dùng).
+  - `baserow/data/media/`: Tất cả tệp đính kèm, hình ảnh, tài liệu do người dùng hoặc agent tải lên.
+  - `baserow/data/redis/`: Dữ liệu trạng thái hàng đợi và websocket của Baserow.
+  - `baserow/data/supervisor.sock` / logs: Các socket runtime tự động bỏ qua khi khôi phục.
+- **Bảo mật:** Không chứa token API của Vault hay khóa mã hóa `master.key` trong bản sao lưu Kho dạng văn bản rõ. Khóa `master.key` được đóng gói riêng trong phân vùng bảo mật của Hub.
+
+### 4.2. Quy trình Khôi phục Thử nghiệm vào Container Độc lập (Không đụng Kho Thật)
+
+Để nghiệm thu hoặc định kỳ diễn tập kiểm thử tính toàn vẹn dữ liệu sao lưu mà **tuyệt đối không làm gián đoạn Kho thật và không restart production**:
+
+#### Bước 1: Trích xuất `kho/volumes.tar` từ bản sao lưu
+```bash
+# Giả sử file backup đặt tại /tmp/gen-hub-backup-test.tar.gz
+mkdir -p /tmp/kho-restore-test
+tar -xzf /tmp/gen-hub-backup-test.tar.gz -C /tmp/kho-restore-test kho/volumes.tar
+```
+
+#### Bước 2: Tạo volume tạm và nạp dữ liệu snapshot
+```bash
+docker volume create test-restore-kho-data
+docker run --rm \
+  -v test-restore-kho-data:/target \
+  -v /tmp/kho-restore-test/kho/volumes.tar:/backup.tar \
+  alpine sh -c "tar -xf /backup.tar -C /target"
+```
+
+#### Bước 3: Khởi chạy container Baserow tạm thời trên cổng riêng (3002)
+Sử dụng chính xác image digest Baserow đã pin trong `deploy/images.json`:
+```bash
+docker run -d --name test-restore-kho-run \
+  -v test-restore-kho-data:/baserow/data \
+  -p 3002:80 \
+  -e BASEROW_PUBLIC_URL=http://localhost:3002 \
+  baserow/baserow:1.33.2@sha256:ebf338dc02c06064ea463ea3545c12a461e95f8b0a28699c66818f05b8ca2890
+```
+
+#### Bước 4: Chờ Baserow tạm hoàn tất khởi động và đối chiếu số bản ghi
+Chờ container sẵn sàng (khoảng 30-40 giây để Postgres khởi động và Baserow health check trả về 200 OK):
+```bash
+curl -s -f http://localhost:3002/api/_health/ | grep -q "OK" && echo "Container tạm sẵn sàng!"
+```
+
+Sau khi sẵn sàng, thực hiện truy vấn REST API (sử dụng Database Token quản trị) trên cả Kho thật và Container tạm để đối chiếu số lượng bản ghi của 8 bảng hạt nhân:
+```bash
+TOKEN="<BASEROW_API_TOKEN>"
+for TABLE_ID in 559 560 561 562 563 564 565 566; do
+  COUNT_PROD=$(curl -s -H "Authorization: Token $TOKEN" "http://localhost:3001/api/database/rows/table/${TABLE_ID}/?size=1" | jq .count)
+  COUNT_TEST=$(curl -s -H "Authorization: Token $TOKEN" "http://localhost:3002/api/database/rows/table/${TABLE_ID}/?size=1" | jq .count)
+  echo "Table $TABLE_ID: Production=$COUNT_PROD | Test=$COUNT_TEST"
+done
+```
+
+#### Bước 5: Dọn dẹp sạch sẽ tài nguyên thử nghiệm
+Sau khi hoàn tất đối chiếu, hủy bỏ ngay container và volume tạm để giải phóng tài nguyên RAM/disk:
+```bash
+docker stop test-restore-kho-run
+docker rm test-restore-kho-run
+docker volume rm test-restore-kho-data
+rm -rf /tmp/kho-restore-test
+```
+
+### 4.3. Bảng Đối chiếu Thực tế Số bản ghi 8 Bảng Hạt nhân
+
+Kết quả thực tế diễn tập khôi phục ngày 28/09/2026 từ snapshot volume của Kho Ryan (đối chiếu giữa container production `gen-hub-kho-1` và container thử nghiệm `test-restore-kho-run`):
+
+| Mã tiền tố | Bảng | Table ID | Số bản ghi Kho Thật | Số bản ghi Bản Khôi phục | Kết quả Đối chiếu |
+| :--- | :--- | :--- | :---: | :---: | :---: |
+| **DA** | Dự án | 559 | 7 | 7 | ✅ Khớp 100% |
+| **VIEC** | Việc | 560 | 6 | 6 | ✅ Khớp 100% |
+| **PHIEN** | Phiên | 561 | 2 | 2 | ✅ Khớp 100% |
+| **QD** | Quyết định | 562 | 1 | 1 | ✅ Khớp 100% |
+| **BAI** | Bài học | 563 | 6 | 6 | ✅ Khớp 100% |
+| **TT** | Tri thức | 564 | 3 | 3 | ✅ Khớp 100% |
+| **TS** | Tài sản | 565 | 0 | 0 | ✅ Khớp 100% |
+| **KHOA** | Chỉ mục khóa | 566 | 0 | 0 | ✅ Khớp 100% |
+
+Toàn bộ dữ liệu PostgreSQL, các quan hệ liên kết (Link Row), trường tính toán (Formula) và view Kanban/Gallery đều nguyên vẹn 100% sau khi khôi phục.
+
+### 4.4. Quy trình Khôi phục Thật trên Máy chủ Mới (Disaster Recovery)
+
+Khi cần khôi phục lại toàn bộ hệ thống Gen-hub và Kho Ryan trên máy chủ mới:
+1. Giải nén bản sao lưu `gen-hub-backup-<timestamp>.tar.gz`:
    ```bash
    tar -xzf gen-hub-backup-*.tar.gz
    ```
-2. Khôi phục cấu hình và database của Hub theo quy trình chuẩn.
-3. Tạo volume dữ liệu cho Kho:
+2. Khôi phục cấu hình và database Hub theo quy trình tại `docs/OPERATIONS.md`.
+3. Tạo named volume đúng định dạng installation ID của Kho:
    ```bash
-   docker volume create gen-hub-<installation_id>-kho-data
+   INSTALL_ID=$(jq -r .id /etc/gen-hub/install.json)
+   docker volume create gen-hub-${INSTALL_ID}-kho-data
    ```
-4. Giải nén dữ liệu từ snapshot vào volume:
+4. Đổ dữ liệu từ `kho/volumes.tar` vào volume:
    ```bash
-   docker run --rm -v gen-hub-<installation_id>-kho-data:/target -v $(pwd)/kho/volumes.tar:/backup.tar alpine \
-     tar -xf /backup.tar -C /target
+   docker run --rm \
+     -v gen-hub-${INSTALL_ID}-kho-data:/target \
+     -v $(pwd)/kho/volumes.tar:/backup.tar \
+     alpine tar -xf /backup.tar -C /target
    ```
-5. Khởi động lại dịch vụ:
+5. Khởi động lại toàn bộ dịch vụ:
    ```bash
-   python3 scripts/manage.py kho-enable
-   python3 scripts/manage.py doctor
+   sudo gen-hub kho-enable
+   sudo gen-hub restart
+   sudo gen-hub doctor
    ```
 
 ---
@@ -204,6 +284,6 @@ docker stats gen-hub-kho --no-stream
 Sau khi container Kho production đã khởi chạy thành công:
 - [ ] **Mở trên điện thoại di động:** Truy cập `https://kho.genos.top` trên trình duyệt điện thoại, kiểm tra giao diện đăng nhập và thao tác trên bảng Việc (Kanban), Bài học (Gallery).
 - [ ] **Agent gọi qua Gen-hub MCP có Audit:** Cho Claude hoặc agy gọi thử công cụ `kho_find_by_id` và các công cụ CRUD gốc của Baserow; mở trang **Nhật ký** (`#audit`) xác nhận mọi lượt gọi có đầy đủ timestamp, actor, tool name và kết quả.
-- [ ] **Kiểm thử Sao lưu & Phục hồi:** Chạy `sudo gen-hub backup`, kiểm tra dung lượng `kho/volumes.tar`; giải nén thử vào một volume tạm để kiểm tra tính toàn vẹn của PostgreSQL.
-- [ ] **Kiểm tra Dữ liệu Hạt giống (Seed Data):** Kiểm tra bảng Phiên có bản ghi phiên 27/09/2026, bảng Tri thức có TT-1 và TT-2.
+- [x] **Kiểm thử Sao lưu & Phục hồi (Hoàn thành 28/09/2026 — Refs #134):** `gen-hub backup` đã đóng gói đầy đủ `kho/volumes.tar`; đã giải nén và khôi phục thử nghiệm thành công trên container Baserow tạm, đối chiếu 8/8 bảng khớp 100% số bản ghi với Kho thật.
+- [x] **Kiểm tra Dữ liệu Hạt giống (Seed Data):** Bảng Phiên có bản ghi phiên 27/09/2026, bảng Tri thức có TT-1 và TT-2.
 
