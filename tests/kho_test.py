@@ -367,6 +367,24 @@ class KhoTest(unittest.TestCase):
         self.assertIn('https://hub.genos.top/healthz', urls_called)
         self.assertIn('https://kho.genos.top/api/_health/', urls_called)
 
+    def test_public_test_skips_kho_when_kho_domain_not_set(self):
+        import install
+        state = {
+            'domain': 'hub.genos.top',
+            'installation_id': 'owned',
+            'gitea_enabled': False,
+            'kho_enabled': True
+        }
+        urls_called = []
+        def fake_fetch(url, *args, **kwargs):
+            urls_called.append(url)
+            return b'{"ok": true, "installationId": "owned"}'
+
+        with patch.object(install, 'fetch', side_effect=fake_fetch):
+            install.public_test(state)
+
+        self.assertEqual(urls_called, ['https://hub.genos.top/healthz'])
+
 
 if __name__ == '__main__':
     unittest.main()
