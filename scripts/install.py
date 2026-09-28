@@ -95,9 +95,8 @@ def public_test(state):
                     gitea = json.loads(fetch('https://' + state['domain'] + '/gitea/api/healthz'))
                     if gitea.get('status') != 'pass':
                         raise RuntimeError('Gitea chưa sẵn sàng qua HTTPS.')
-                if state.get('kho_enabled', False):
-                    from kho import public_host
-                    kho_host = public_host(state)
+                if state.get('kho_enabled', False) and state.get('kho_domain'):
+                    kho_host = state['kho_domain']
                     kho_health = fetch('https://' + kho_host + '/api/_health/').decode('utf-8', errors='ignore').strip()
                     if kho_health not in ('OK', 'pass'):
                         raise RuntimeError('Kho chưa sẵn sàng qua HTTPS: ' + kho_health)
