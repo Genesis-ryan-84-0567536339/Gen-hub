@@ -181,8 +181,9 @@ class KhoTest(unittest.TestCase):
                 caddy_call_args = mock_compose.call_args_list[2][0]
                 self.assertIn('node', caddy_call_args)
                 caddy_script = caddy_call_args[-1]
-                self.assertIn("fetch('http://caddy:8080/api/_health/'", caddy_script)
-                self.assertIn("'Host':'kho.genos.top'", caddy_script)
+                self.assertIn("node:http", caddy_script)
+                self.assertIn("http://caddy:8080/api/_health/", caddy_script)
+                self.assertIn("Host:'kho.genos.top'", caddy_script)
                 self.assertIn("t!=='OK'&&t!=='pass'", caddy_script)
 
     def test_kho_enable_uses_timeout_300(self):
