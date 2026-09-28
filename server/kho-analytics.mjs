@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   extractData,
   isHttpError,
@@ -5,6 +6,7 @@ import {
   loadTableIds,
   resolveRestBase
 } from './kho-tools.mjs';
+import { isKhoConnector } from './connectors.mjs';
 import { HubError } from './net.mjs';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 phút theo spec 4b
@@ -13,8 +15,59 @@ let memoryCache = {
   data: null
 };
 
+let inFlightFetchPromise = null;
+
 export function invalidateCache() {
   memoryCache = { timestamp: 0, data: null };
+}
+
+/**
+ * Định dạng ngày theo giờ Việt Nam (Asia/Ho_Chi_Minh) dạng YYYY-MM-DD
+ */
+export function toVNYearMonthDay(dateInput) {
+  if (!dateInput) return null;
+  const d = typeof dateInput === 'number' || typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(d);
+}
+
+/**
+ * Định dạng tháng theo giờ Việt Nam dạng YYYY-MM
+ */
+export function toVNYearMonth(dateInput) {
+  const ymd = toVNYearMonthDay(dateInput);
+  return ymd ? ymd.slice(0, 7) : null;
+}
+
+/**
+ * Tính số tuần ISO 8601 (bắt đầu Thứ Hai, kết thúc Chủ Nhật) theo giờ VN
+ */
+export function getISOWeekInfo(dateInput) {
+  const ymd = toVNYearMonthDay(dateInput);
+  if (!ymd) return null;
+  const [year, month, day] = ymd.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  const dayOfWeek = (d.getUTCDay() + 6) % 7; // 0 = Monday, 6 = Sunday
+
+  // Ngày Thứ Hai bắt đầu tuần
+  const monday = new Date(d.getTime() - dayOfWeek * 86400000);
+  const mondayLabel = `${String(monday.getUTCDate()).padStart(2, '0')}/${String(monday.getUTCMonth() + 1).padStart(2, '0')}`;
+
+  // Đưa về Thứ Năm của tuần để tính tuần ISO
+  const thursday = new Date(monday.getTime() + 3 * 86400000);
+  const thursdayYear = thursday.getUTCFullYear();
+  const firstJan = new Date(Date.UTC(thursdayYear, 0, 1));
+  const firstJanDay = (firstJan.getUTCDay() + 6) % 7;
+  const firstThursday = new Date(Date.UTC(thursdayYear, 0, 1 + ((3 - firstJanDay + 7) % 7)));
+  const weekNum = 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / 604800000);
+  const key = `${thursdayYear}-W${String(weekNum).padStart(2, '0')}`;
+
+  return { key, label: mondayLabel, weekNum, year: thursdayYear };
 }
 
 /**
@@ -35,69 +88,114 @@ export function aggregateKhoAnalytics({
   const filterDen = query.den ? String(query.den).trim() : null;
   const filterDuAn = query.du_an ? String(query.du_an).trim().toLowerCase() : null;
 
-  // Lọc Việc theo Dự án và Thời gian
-  const filteredViec = viec.filter(v => {
-    // Lọc theo Dự án
-    if (filterDuAn) {
-      const vProjects = Array.isArray(v['Dự án']) ? v['Dự án'] : [];
-      const matchProject = vProjects.some(p => {
-        const pId = String(p.id || '').toLowerCase();
-        const pVal = String(p.value || '').toLowerCase();
-        return (
-          pId === filterDuAn ||
-          pVal === filterDuAn ||
-          `da-${pId}` === filterDuAn ||
-          pVal.includes(filterDuAn)
-        );
-      });
-      if (!matchProject) return false;
+  function matchesDuAn(record, fieldName = 'Dự án') {
+    if (!filterDuAn) return true;
+    const projects = Array.isArray(record[fieldName]) ? record[fieldName] : [];
+    return projects.some(p => {
+      const pId = String(p.id ?? '').toLowerCase().trim();
+      const pVal = String(p.value ?? '').toLowerCase().trim();
+      return (
+        pId === filterDuAn ||
+        `da-${pId}` === filterDuAn ||
+        pVal === filterDuAn
+      );
+    });
+  }
+
+  function inDateRange(dateStr) {
+    if (!filterTu && !filterDen) return true;
+    if (!dateStr) return false;
+    const d = toVNYearMonthDay(dateStr);
+    if (!d) return false;
+    if (filterTu && d < filterTu) return false;
+    if (filterDen && d > filterDen) return false;
+    return true;
+  }
+
+  // 1. Phân loại Việc theo Dự án
+  const viecByDuAn = viec.filter(v => matchesDuAn(v, 'Dự án'));
+
+  // Việc trong khoảng thời gian lọc (dựa vào Ngày tạo hoặc Ngày xong)
+  const filteredViec = viecByDuAn.filter(v => {
+    if (!filterTu && !filterDen) return true;
+    const dTao = v['Ngày tạo'] ? toVNYearMonthDay(v['Ngày tạo']) : null;
+    const dXong = v['Ngày xong'] ? toVNYearMonthDay(v['Ngày xong']) : null;
+    if (!dTao && !dXong) return false;
+    if (filterTu) {
+      const latest = dXong || dTao;
+      if (latest < filterTu) return false;
     }
-
-    // Lọc theo mốc thời gian (dựa trên Ngày tạo hoặc Ngày xong)
-    const dTao = v['Ngày tạo'] ? String(v['Ngày tạo']).slice(0, 10) : null;
-    const dXong = v['Ngày xong'] ? String(v['Ngày xong']).slice(0, 10) : null;
-    const dCheck = dXong || dTao;
-
-    if (filterTu && dCheck && dCheck < filterTu) return false;
-    if (filterDen && dCheck && dCheck > filterDen) return false;
-
+    if (filterDen) {
+      const earliest = dTao || dXong;
+      if (earliest > filterDen) return false;
+    }
     return true;
   });
 
-  const nowDate = new Date(now);
-  const sevenDaysAgo = new Date(now - 7 * 86400000).toISOString().slice(0, 10);
-  const todayStr = nowDate.toISOString().slice(0, 10);
+  // Lọc các bảng khác theo bộ lọc thời gian và dự án
+  const filteredPhien = phien.filter(p => {
+    if (!matchesDuAn(p, 'Dự án')) return false;
+    const d = p['Ngày'] ? toVNYearMonthDay(p['Ngày']) : null;
+    return inDateRange(d);
+  });
 
-  // 1. Ô KPI
-  const viecDangMo = filteredViec.filter(v => {
+  const filteredQd = qd.filter(q => {
+    if (!matchesDuAn(q, 'Dự án')) return false;
+    const d = q['Ngày'] ? toVNYearMonthDay(q['Ngày']) : null;
+    return inDateRange(d);
+  });
+
+  const filteredBai = bai.filter(b => {
+    if (!matchesDuAn(b, 'Dự án')) return false;
+    let d = b['Ngày tạo'] ? toVNYearMonthDay(b['Ngày tạo']) : null;
+    if (!d) {
+      const bPhien = Array.isArray(b['Phiên']) ? b['Phiên'][0] : null;
+      if (bPhien) {
+        const matchPhien = phien.find(p => p.id === bPhien.id || p['Mã ID'] === bPhien.value);
+        d = matchPhien?.['Ngày'] ? toVNYearMonthDay(matchPhien['Ngày']) : null;
+      }
+    }
+    return inDateRange(d);
+  });
+
+  const filteredAuditLogs = auditLogs.filter(log => {
+    const d = log.created ? toVNYearMonthDay(log.created) : null;
+    return inDateRange(d);
+  });
+
+  // Mốc 7 ngày gần nhất (tính từ now - 6 ngày đến today) theo giờ VN
+  const startDate7d = toVNYearMonthDay(now - 6 * 86400000);
+  const todayStr = toVNYearMonthDay(now);
+
+  // 1. Ô KPI: Việc đang mở · Việc P1 · Xong trong tuần · Bài học mới trong tuần
+  const viecDangMo = viecByDuAn.filter(v => {
     const st = typeof v['Trạng thái'] === 'object' ? v['Trạng thái']?.value : v['Trạng thái'];
     return st && st !== 'Xong';
   });
 
-  const viecP1 = filteredViec.filter(v => {
+  const viecP1 = viecByDuAn.filter(v => {
     const prio = typeof v['Ưu tiên'] === 'object' ? v['Ưu tiên']?.value : v['Ưu tiên'];
     const st = typeof v['Trạng thái'] === 'object' ? v['Trạng thái']?.value : v['Trạng thái'];
     return prio === 'P1' && st !== 'Xong';
   });
 
-  const xongTrongTuan = filteredViec.filter(v => {
+  const xongTrongTuan = viecByDuAn.filter(v => {
     const st = typeof v['Trạng thái'] === 'object' ? v['Trạng thái']?.value : v['Trạng thái'];
-    const dXong = v['Ngày xong'] ? String(v['Ngày xong']).slice(0, 10) : null;
-    return st === 'Xong' && dXong && dXong >= sevenDaysAgo && dXong <= todayStr;
+    const dXong = v['Ngày xong'] ? toVNYearMonthDay(v['Ngày xong']) : null;
+    return st === 'Xong' && dXong && dXong >= startDate7d && dXong <= todayStr;
   });
 
-  // Bài học mới trong tuần (dựa trên phiên liên kết hoặc ngày trong bài học)
   const baiHocMoiTrongTuan = bai.filter(b => {
-    const dTao = b['Ngày tạo'] ? String(b['Ngày tạo']).slice(0, 10) : null;
-    if (dTao) return dTao >= sevenDaysAgo && dTao <= todayStr;
-    // Nếu không có Ngày tạo trực tiếp, tìm ngày từ Phiên liên kết
-    const bPhien = Array.isArray(b['Phiên']) ? b['Phiên'][0] : null;
-    if (bPhien) {
-      const matchPhien = phien.find(p => p.id === bPhien.id || p['Mã ID'] === bPhien.value);
-      const dPhien = matchPhien?.['Ngày'] ? String(matchPhien['Ngày']).slice(0, 10) : null;
-      if (dPhien) return dPhien >= sevenDaysAgo && dPhien <= todayStr;
+    if (!matchesDuAn(b, 'Dự án')) return false;
+    let d = b['Ngày tạo'] ? toVNYearMonthDay(b['Ngày tạo']) : null;
+    if (!d) {
+      const bPhien = Array.isArray(b['Phiên']) ? b['Phiên'][0] : null;
+      if (bPhien) {
+        const matchPhien = phien.find(p => p.id === bPhien.id || p['Mã ID'] === bPhien.value);
+        d = matchPhien?.['Ngày'] ? toVNYearMonthDay(matchPhien['Ngày']) : null;
+      }
     }
-    return false;
+    return d && d >= startDate7d && d <= todayStr;
   });
 
   const kpi = {
@@ -107,54 +205,41 @@ export function aggregateKhoAnalytics({
     bai_hoc_moi_trong_tuan: baiHocMoiTrongTuan.length,
     tong_du_an: da.length,
     tong_viec: filteredViec.length,
-    tong_bai_hoc: bai.length,
+    tong_bai_hoc: filteredBai.length,
     tong_tri_thuc: tt.length,
-    tong_phien: phien.length,
-    tong_quyet_dinh: qd.length
+    tong_phien: filteredPhien.length,
+    tong_quyet_dinh: filteredQd.length
   };
 
   // 2. Nhịp làm việc: Việc xong mỗi tuần (cột) + Việc tạo mới (đường)
-  // Gom theo tuần (8 tuần gần nhất hoặc trong khoảng tu..den)
   const weekBuckets = new Map();
-  // Khởi tạo 8 tuần gần nhất
+  const nowYmd = toVNYearMonthDay(now);
+  const [ny, nm, nd] = nowYmd.split('-').map(Number);
+  const currentMon = new Date(Date.UTC(ny, nm - 1, nd));
+  const currentDayOfWeek = (currentMon.getUTCDay() + 6) % 7;
+  const currentMondayTime = currentMon.getTime() - currentDayOfWeek * 86400000;
+
   for (let i = 7; i >= 0; i--) {
-    const d = new Date(now - i * 7 * 86400000);
-    const yr = d.getFullYear();
-    // Tính số tuần ISO
-    const firstJan = new Date(yr, 0, 1);
-    const weekNum = Math.ceil(((d - firstJan) / 86400000 + firstJan.getDay() + 1) / 7);
-    const key = `${yr}-W${String(weekNum).padStart(2, '0')}`;
-    const startOfWeek = new Date(d);
-    startOfWeek.setDate(d.getDate() - d.getDay() + 1);
-    const label = `${String(startOfWeek.getDate()).padStart(2, '0')}/${String(startOfWeek.getMonth() + 1).padStart(2, '0')}`;
-    if (!weekBuckets.has(key)) {
-      weekBuckets.set(key, { key, label, xong: 0, tao: 0 });
+    const mondayTime = currentMondayTime - i * 7 * 86400000;
+    const wInfo = getISOWeekInfo(mondayTime);
+    if (wInfo && !weekBuckets.has(wInfo.key)) {
+      weekBuckets.set(wInfo.key, { key: wInfo.key, label: wInfo.label, xong: 0, tao: 0 });
     }
   }
 
-  function getWeekKey(dateStr) {
-    if (!dateStr) return null;
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return null;
-    const yr = d.getFullYear();
-    const firstJan = new Date(yr, 0, 1);
-    const weekNum = Math.ceil(((d - firstJan) / 86400000 + firstJan.getDay() + 1) / 7);
-    return `${yr}-W${String(weekNum).padStart(2, '0')}`;
-  }
-
   for (const v of filteredViec) {
-    const dTao = v['Ngày tạo'] ? String(v['Ngày tạo']).slice(0, 10) : null;
-    const dXong = v['Ngày xong'] ? String(v['Ngày xong']).slice(0, 10) : null;
+    const dTao = v['Ngày tạo'] ? toVNYearMonthDay(v['Ngày tạo']) : null;
+    const dXong = v['Ngày xong'] ? toVNYearMonthDay(v['Ngày xong']) : null;
     const st = typeof v['Trạng thái'] === 'object' ? v['Trạng thái']?.value : v['Trạng thái'];
 
     if (dTao) {
-      const wkTao = getWeekKey(dTao);
+      const wkTao = getISOWeekInfo(dTao)?.key;
       if (wkTao && weekBuckets.has(wkTao)) {
         weekBuckets.get(wkTao).tao++;
       }
     }
     if (st === 'Xong' && dXong) {
-      const wkXong = getWeekKey(dXong);
+      const wkXong = getISOWeekInfo(dXong)?.key;
       if (wkXong && weekBuckets.has(wkXong)) {
         weekBuckets.get(wkXong).xong++;
       }
@@ -178,7 +263,6 @@ export function aggregateKhoAnalytics({
     });
   }
 
-  // Danh mục việc không gán DA
   const khongGanDa = {
     id: 0,
     name: 'Khác / Chưa gán',
@@ -204,7 +288,7 @@ export function aggregateKhoAnalytics({
     else if (st === 'Đang làm') target.dang_lam++;
     else if (st === 'Chờ duyệt') target.cho_duyet++;
     else if (st === 'Xong') target.xong++;
-    else target.cho++; // Mặc định vào Chờ
+    else target.cho++;
   }
 
   const viecTheoDuAn = Array.from(daMap.values());
@@ -229,7 +313,7 @@ export function aggregateKhoAnalytics({
         return {
           du_an_id: d.id,
           du_an_name: d.name,
-          so_ngay_tb: 0,
+          so_ngay_tb: null,
           so_viec_tinh: 0
         };
       }
@@ -265,14 +349,13 @@ export function aggregateKhoAnalytics({
     count
   })).sort((a, b) => b.count - a.count);
 
-  // Lượt gọi tool theo agent từ audit log
   const agentAuditMap = new Map();
-  for (const log of auditLogs) {
+  for (const log of filteredAuditLogs) {
     const actor = log.actor ? String(log.actor).trim() : '';
-    if (!actor || actor === 'owner' || actor === 'system' || actor.startsWith('admin-assistant:')) {
+    if (!actor || actor === 'owner' || actor === 'system' || actor === 'unauthenticated' || actor.startsWith('admin-assistant:')) {
       continue;
     }
-    if (log.mcp === 'hub') continue;
+    if (log.mcp === 'hub' || !log.tool) continue;
     agentAuditMap.set(actor, (agentAuditMap.get(actor) || 0) + 1);
   }
 
@@ -285,7 +368,7 @@ export function aggregateKhoAnalytics({
   const chuDeMap = new Map();
   const mucMap = new Map();
 
-  for (const b of bai) {
+  for (const b of filteredBai) {
     const cdRaw = typeof b['Chủ đề'] === 'object' ? b['Chủ đề']?.value : b['Chủ đề'];
     const cd = cdRaw ? String(cdRaw).trim() : 'Chung';
     chuDeMap.set(cd, (chuDeMap.get(cd) || 0) + 1);
@@ -305,48 +388,67 @@ export function aggregateKhoAnalytics({
     value
   }));
 
-  // Tích lũy bài học
-  const baiHocTichLuy = [
-    { moc: '27/09/2026', count: Math.min(2, bai.length) },
-    { moc: '28/09/2026', count: bai.length }
-  ];
-
-  // 7. Lịch hoạt động kiểu GitHub (Heatmap ngày từ Phiên + audit)
-  // Gom hoạt động 90 ngày gần nhất
-  const heatmapMap = new Map();
-  for (let i = 89; i >= 0; i--) {
-    const d = new Date(now - i * 86400000).toISOString().slice(0, 10);
-    heatmapMap.set(d, 0);
+  // Tích lũy bài học theo ngày thực tế (không hardcode)
+  const dateCountMap = new Map();
+  for (const b of filteredBai) {
+    let d = b['Ngày tạo'] ? toVNYearMonthDay(b['Ngày tạo']) : null;
+    if (!d) {
+      const bPhien = Array.isArray(b['Phiên']) ? b['Phiên'][0] : null;
+      if (bPhien) {
+        const matchPhien = phien.find(p => p.id === bPhien.id || p['Mã ID'] === bPhien.value);
+        d = matchPhien?.['Ngày'] ? toVNYearMonthDay(matchPhien['Ngày']) : null;
+      }
+    }
+    if (d) {
+      dateCountMap.set(d, (dateCountMap.get(d) || 0) + 1);
+    }
   }
 
-  // Cộng điểm từ Phiên (mỗi phiên = 3 điểm)
-  for (const p of phien) {
-    const d = p['Ngày'] ? String(p['Ngày']).slice(0, 10) : null;
+  const sortedDates = Array.from(dateCountMap.keys()).sort();
+  let cumulative = 0;
+  const baiHocTichLuy = sortedDates.map(d => {
+    cumulative += dateCountMap.get(d);
+    const [y, m, day] = d.split('-');
+    return {
+      moc: `${day}/${m}/${y}`,
+      date: d,
+      count: cumulative
+    };
+  });
+
+  // 7. Lịch hoạt động kiểu GitHub (Heatmap ngày từ Phiên + audit)
+  // Gom hoạt động 90 ngày gần nhất theo giờ VN
+  const heatmapMap = new Map();
+  for (let i = 89; i >= 0; i--) {
+    const d = toVNYearMonthDay(now - i * 86400000);
+    if (d) heatmapMap.set(d, 0);
+  }
+
+  for (const p of filteredPhien) {
+    const d = p['Ngày'] ? toVNYearMonthDay(p['Ngày']) : null;
     if (d && heatmapMap.has(d)) {
       heatmapMap.set(d, heatmapMap.get(d) + 3);
     }
   }
 
-  // Cộng điểm từ Việc xong (mỗi việc xong = 2 điểm)
   for (const v of filteredViec) {
     const st = typeof v['Trạng thái'] === 'object' ? v['Trạng thái']?.value : v['Trạng thái'];
     if (st === 'Xong' && v['Ngày xong']) {
-      const d = String(v['Ngày xong']).slice(0, 10);
-      if (heatmapMap.has(d)) {
+      const d = toVNYearMonthDay(v['Ngày xong']);
+      if (d && heatmapMap.has(d)) {
         heatmapMap.set(d, heatmapMap.get(d) + 2);
       }
     }
   }
 
-  // Cộng điểm từ Audit log (mỗi lượt gọi tool agent = 1 điểm)
-  for (const log of auditLogs) {
+  for (const log of filteredAuditLogs) {
     const actor = log.actor ? String(log.actor).trim() : '';
-    if (!actor || actor === 'owner' || actor === 'system' || actor.startsWith('admin-assistant:') || log.mcp === 'hub') {
+    if (!actor || actor === 'owner' || actor === 'system' || actor === 'unauthenticated' || actor.startsWith('admin-assistant:') || log.mcp === 'hub' || !log.tool) {
       continue;
     }
     if (log.created) {
-      const d = String(log.created).slice(0, 10);
-      if (heatmapMap.has(d)) {
+      const d = toVNYearMonthDay(log.created);
+      if (d && heatmapMap.has(d)) {
         heatmapMap.set(d, heatmapMap.get(d) + 1);
       }
     }
@@ -354,10 +456,11 @@ export function aggregateKhoAnalytics({
 
   const lichHoatDong = Array.from(heatmapMap.entries()).map(([ngay, diem]) => [ngay, diem]);
 
-  // 8. Quyết định theo tháng + số quyết định bị thay thế (Độ ổn định định hướng)
+  // 8. Quyết định theo tháng + số quyết định bị thay thế
   const qdThangMap = new Map();
-  for (const q of qd) {
-    const d = q['Ngày'] ? String(q['Ngày']).slice(0, 7) : '2026-09';
+  for (const q of filteredQd) {
+    const ym = q['Ngày'] ? toVNYearMonth(q['Ngày']) : null;
+    const d = ym || 'Không rõ ngày';
     if (!qdThangMap.has(d)) {
       qdThangMap.set(d, { thang: d, hieu_luc: 0, thay_the: 0, tong: 0 });
     }
@@ -400,23 +503,9 @@ export function aggregateKhoAnalytics({
   };
 }
 
-/**
- * Đọc dữ liệu từ Baserow REST API có cache 5 phút
- */
-export async function fetchRawKhoData(store, options = {}) {
-  const now = Date.now();
-  if (
-    !options.force &&
-    memoryCache.data &&
-    now - memoryCache.timestamp < CACHE_TTL_MS
-  ) {
-    return { data: memoryCache.data, cacheHit: true };
-  }
-
+async function doFetchRawKhoData(store) {
   const mcps = store.list('mcp') || [];
-  const khoMcp = mcps.find(
-    m => m.name === 'kho-ryan' || m.kind === 'kho' || m.isKho
-  );
+  const khoMcp = mcps.find(isKhoConnector);
 
   if (!khoMcp) {
     throw new HubError(
@@ -436,22 +525,9 @@ export async function fetchRawKhoData(store, options = {}) {
   }
 
   if (!token) {
-    const vaultItems = store.list('vault') || [];
-    const baserowSecret = vaultItems.find(v => v.name && v.name.includes('Baserow'));
-    if (baserowSecret) {
-      try {
-        const unsealed = store.unseal(baserowSecret.secret);
-        token = typeof unsealed === 'string' ? unsealed : (unsealed?.secret || unsealed?.token || '');
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  if (!token) {
     throw new HubError(
-      'Chưa cấu hình API Token cho Kho Ryan. Vui lòng cập nhật secret trong Vault hoặc MCP connector.',
-      401
+      'Chưa cấu hình API Token cho Kho Ryan. Vui lòng cập nhật secret trong MCP connector kho-ryan.',
+      503
     );
   }
 
@@ -463,28 +539,50 @@ export async function fetchRawKhoData(store, options = {}) {
     );
   }
 
-  const restBase = resolveRestBase(khoMcp);
+  const restBase = resolveRestBase({ restUrl: khoMcp.khoRestUrl, url: khoMcp.url });
   const headers = buildHeaders(token);
 
   async function fetchTable(tableId, name) {
-    if (!tableId) return [];
-    const url = `${restBase}/api/database/rows/table/${tableId}/?user_field_names=true&size=200`;
-    try {
-      const res = await fetch(url, { headers });
-      const rawText = await res.text();
-      let parsed = {};
+    if (!tableId) {
+      throw new HubError(`Thiếu cấu hình table_id cho bảng '${name}' trong Kho Ryan`, 503);
+    }
+    let page = 1;
+    const allResults = [];
+    while (true) {
+      const url = `${restBase}/api/database/rows/table/${tableId}/?user_field_names=true&size=200&page=${page}`;
+      let res, rawText, parsed;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        res = await fetch(url, { headers, signal: controller.signal });
+        clearTimeout(timeoutId);
+        rawText = await res.text();
+      } catch (netErr) {
+        throw new HubError(`Không thể kết nối tới Baserow bảng '${name}': ${netErr.message}`, 502);
+      }
       try {
         parsed = JSON.parse(rawText);
       } catch {
         parsed = { raw: rawText };
       }
       if (isHttpError(res, parsed)) {
-        throw new Error(parsed?.error || parsed?.detail || `HTTP ${res.status}`);
+        throw new HubError(
+          `Lỗi từ Baserow bảng '${name}': ${parsed?.error || parsed?.detail || `HTTP ${res.status}`}`,
+          502
+        );
       }
-      return extractData({ json: parsed })?.results || [];
-    } catch (err) {
-      throw new HubError(`Không thể lấy dữ liệu bảng '${name}' từ Baserow (${err.message})`, 502);
+      const results = parsed?.results;
+      if (!Array.isArray(results)) {
+        throw new HubError(`Dữ liệu bảng '${name}' từ Baserow không hợp lệ`, 502);
+      }
+      allResults.push(...results);
+      if (!parsed.next || allResults.length >= (parsed.count ?? allResults.length) || results.length === 0) {
+        break;
+      }
+      page++;
+      if (page > 100) break; // Guard tối đa 20.000 bản ghi
     }
+    return allResults;
   }
 
   // Tải đồng thời 6 bảng cần cho thống kê
@@ -497,7 +595,7 @@ export async function fetchRawKhoData(store, options = {}) {
     fetchTable(tableIds.TT, 'Tri thức')
   ]);
 
-  const rawData = {
+  return {
     da,
     viec,
     phien,
@@ -507,13 +605,41 @@ export async function fetchRawKhoData(store, options = {}) {
     tableIds,
     restBase
   };
+}
 
-  memoryCache = {
-    timestamp: now,
-    data: rawData
-  };
+/**
+ * Đọc dữ liệu từ Baserow REST API có cache 5 phút và gộp in-flight requests
+ */
+export async function fetchRawKhoData(store, options = {}) {
+  const now = Date.now();
+  if (
+    !options.force &&
+    memoryCache.data &&
+    now - memoryCache.timestamp < CACHE_TTL_MS
+  ) {
+    return { data: memoryCache.data, cacheHit: true };
+  }
 
-  return { data: rawData, cacheHit: false };
+  if (inFlightFetchPromise) {
+    const data = await inFlightFetchPromise;
+    return { data, cacheHit: true };
+  }
+
+  inFlightFetchPromise = (async () => {
+    try {
+      const data = await doFetchRawKhoData(store);
+      memoryCache = {
+        timestamp: Date.now(),
+        data
+      };
+      return data;
+    } finally {
+      inFlightFetchPromise = null;
+    }
+  })();
+
+  const data = await inFlightFetchPromise;
+  return { data, cacheHit: false };
 }
 
 /**
@@ -524,16 +650,16 @@ export async function getKhoAnalytics(store, query = {}) {
 
   // Lấy audit logs từ SQLite store (3 tháng gần nhất để đo hiệu suất đội AI và heatmap)
   let auditLogs = [];
-  try {
-    auditLogs = store.db
-      ? store.db
-          .prepare(
-            "SELECT actor, mcp, tool, status, created FROM audit WHERE created >= datetime('now', '-90 days') ORDER BY created DESC"
-          )
-          .all()
-      : [];
-  } catch {
-    auditLogs = store.logs ? store.logs(500) : [];
+  if (store.db) {
+    try {
+      auditLogs = store.db
+        .prepare(
+          "SELECT actor, mcp, tool, status, created FROM audit WHERE created >= datetime('now', '-90 days') AND tool IS NOT NULL AND tool != '' AND mcp != 'hub' ORDER BY created DESC"
+        )
+        .all();
+    } catch (err) {
+      throw new HubError(`Lỗi truy vấn nhật ký audit: ${err.message}`, 500);
+    }
   }
 
   const result = aggregateKhoAnalytics({
@@ -542,12 +668,30 @@ export async function getKhoAnalytics(store, query = {}) {
     query
   });
 
+  // Tìm URL công khai của Kho
+  let publicKhoUrl = process.env.BASEROW_PUBLIC_URL || '';
+  if (!publicKhoUrl) {
+    try {
+      const installConfig = JSON.parse(readFileSync('/etc/gen-hub/install.json', 'utf-8'));
+      if (installConfig.kho_domain) {
+        publicKhoUrl = `https://${installConfig.kho_domain}`;
+      } else if (installConfig.domain) {
+        publicKhoUrl = `https://kho.${installConfig.domain}`;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  if (!publicKhoUrl) {
+    publicKhoUrl = data.restBase;
+  }
+
   return {
     ...result,
     metadata: {
       generated_at: new Date().toISOString(),
       cache_hit: cacheHit,
-      kho_url: data.restBase,
+      kho_url: publicKhoUrl,
       table_ids: data.tableIds
     }
   };

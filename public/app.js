@@ -15,8 +15,19 @@ import { connectionGuide } from './connection-guides.js';
 import { getNotifications, timeAgo } from './notifications.js';
 import { normalizeSettings } from './settings.js';
 import { renderKhoAnalytics } from './kho-analytics.js';
-('use strict');
 let khoSubView = 'analytics';
+let khoAnalyticsQuery = {};
+let khoAnalyticsRendered = false;
+
+window.addEventListener('update-kho-analytics-query', e => {
+  khoAnalyticsQuery = e.detail || {};
+});
+
+window.addEventListener('switch-kho-subtab', e => {
+  khoSubView = e.detail || 'config';
+  khoAnalyticsRendered = false;
+  render();
+});
 const $ = s => document.querySelector(s),
   esc = v =>
     String(v ?? '').replace(
@@ -957,7 +968,12 @@ function render() {
   layoutMonitorMap(monitorData, monitorView);
   if (r === 'kho' && khoSubView === 'analytics') {
     const container = $('#kho-analytics-container');
-    if (container) renderKhoAnalytics(container);
+    if (container && (!khoAnalyticsRendered || !container.children.length)) {
+      khoAnalyticsRendered = true;
+      renderKhoAnalytics(container, khoAnalyticsQuery);
+    }
+  } else {
+    khoAnalyticsRendered = false;
   }
 }
 function monitorEndpoint() {
@@ -2497,6 +2513,7 @@ async function act(action, args, el = null) {
   }
   if (action === 'kho-subtab') {
     khoSubView = id || 'analytics';
+    khoAnalyticsRendered = false;
     render();
     return;
   }
