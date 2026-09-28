@@ -265,3 +265,147 @@ test('kho-tools: khoList, khoCreate, khoUpdate, khoSearch handle REST operations
   assert.equal(parsedSearch.tu_khoa, 'Task');
 });
 
+test('kho-tools: khoCreate and khoUpdate return isError: true on Baserow validation error or rejection', async () => {
+  const { khoCreate, khoUpdate } = await import('../server/kho-tools.mjs');
+
+  // Simulated Baserow error response when validation fails
+  const validationErrorPayload = {
+    error: 'ERROR_REQUEST_BODY_VALIDATION',
+    detail: {
+      'Trọng tâm': [
+        {
+          error: 'Must be a valid boolean.',
+          code: 'invalid'
+        }
+      ]
+    }
+  };
+
+  const fakeRequestValidationFail = async () => ({
+    status: 400,
+    json: validationErrorPayload
+  });
+
+  const ctx = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { DA: 1, VIEC: 2 },
+    request: fakeRequestValidationFail
+  };
+
+  // 1. Test khoCreate with invalid fields (e.g. boolean field passed as string)
+  const createRes = await khoCreate(
+    { bang: 'Dự án', fields: { 'Tên': 'test', 'Trọng tâm': 'Có' } },
+    ctx
+  );
+  assert.equal(createRes.isError, true);
+  assert.ok(Array.isArray(createRes.content));
+  const createText = createRes.content[0].text;
+  assert.ok(!createText.includes('DA-undefined'), 'Must not contain DA-undefined');
+  assert.ok(!createText.includes('Đã tạo thành công'), 'Must not report success');
+  const parsedCreateErr = JSON.parse(createText);
+  assert.equal(parsedCreateErr.error, 'ERROR_REQUEST_BODY_VALIDATION');
+  assert.ok(parsedCreateErr.detail['Trọng tâm']);
+
+  // 2. Test khoUpdate with invalid fields
+  const updateRes = await khoUpdate(
+    { id: 'DA-1', fields: { 'Trọng tâm': 'Có' } },
+    ctx
+  );
+  assert.equal(updateRes.isError, true);
+  const updateText = updateRes.content[0].text;
+  assert.ok(!updateText.includes('Đã cập nhật bản ghi'), 'Must not report success');
+  const parsedUpdateErr = JSON.parse(updateText);
+  assert.equal(parsedUpdateErr.error, 'ERROR_REQUEST_BODY_VALIDATION');
+  assert.ok(parsedUpdateErr.detail['Trọng tâm']);
+});
+
+test('kho-tools: khoList and khoGet handle upstream Baserow HTTP errors', async () => {
+  const { khoList, khoGet } = await import('../server/kho-tools.mjs');
+
+  const fake500Request = async () => ({
+    status: 500,
+    json: { error: 'ERROR_INTERNAL', detail: 'Database server error' }
+  });
+
+  const ctx = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { DA: 1 },
+    request: fake500Request
+  };
+
+  const listRes = await khoList({ bang: 'Dự án' }, ctx);
+  assert.equal(listRes.isError, true);
+  const parsedListErr = JSON.parse(listRes.content[0].text);
+  assert.equal(parsedListErr.error, 'ERROR_INTERNAL');
+
+  const getRes = await khoGet({ id: 'DA-1' }, ctx);
+  assert.equal(getRes.isError, true);
+  const parsedGetErr = JSON.parse(getRes.content[0].text);
+  assert.equal(parsedGetErr.error, 'ERROR_INTERNAL');
+});
+
+test('kho-tools: khoSearch returns isError: true when all tables fail and collects loi on partial failure', async () => {
+  const { khoSearch } = await import('../server/kho-tools.mjs');
+
+  const allFailRequest = async () => ({
+    status: 502,
+    json: { error: 'ERROR_UPSTREAM', detail: 'Baserow unreachable' }
+  });
+
+  const ctxAllFail = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { DA: 1, VIEC: 2, PHIEN: 3, QD: 4, BAI: 5, TT: 6, TS: 7, KHOA: 8 },
+    request: allFailRequest
+  };
+
+  // 1. All tables fail -> returns isError: true with list of errors
+  const resAllFail = await khoSearch({ text: 'test' }, ctxAllFail);
+  assert.equal(resAllFail.isError, true);
+  const parsedAllFail = JSON.parse(resAllFail.content[0].text);
+  assert.ok(parsedAllFail.thong_bao.includes('toàn bộ 6 bảng đều gặp lỗi'));
+  assert.equal(parsedAllFail.loi.length, 6);
+
+  // 2. Single table search fails -> isError: true
+  const partialRequest = async url => {
+    if (url.includes('/api/database/rows/table/1/')) {
+      return {
+        status: 200,
+        json: {
+          count: 1,
+          results: [{ id: 10, 'Tên': 'Dự án Alpha', 'Mã ID': 'DA-10' }]
+        }
+      };
+    }
+    return {
+      status: 500,
+      json: { error: 'ERROR_INTERNAL', detail: 'Table failure' }
+    };
+  };
+
+  const ctxPartial = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { DA: 1, VIEC: 2, PHIEN: 3, QD: 4, BAI: 5, TT: 6, TS: 7, KHOA: 8 },
+    request: partialRequest
+  };
+
+  const resSingleFail = await khoSearch({ text: 'Alpha', bang: 'Việc' }, ctxPartial);
+  assert.equal(resSingleFail.isError, true);
+  const parsedSingleFail = JSON.parse(resSingleFail.content[0].text);
+  assert.equal(parsedSingleFail.loi.length, 1);
+  assert.equal(parsedSingleFail.loi[0].bang, 'Việc');
+
+  // 3. Partial failure across all 6 tables (1 table succeeds, 5 tables fail) -> isError: false with results and loi array
+  const resPartial = await khoSearch({ text: 'Alpha' }, ctxPartial);
+  assert.equal(resPartial.isError, false);
+  const parsedPartial = JSON.parse(resPartial.content[0].text);
+  assert.equal(parsedPartial.so_ket_qua, 1);
+  assert.equal(parsedPartial.ket_qua[0].id, 'DA-10');
+  assert.equal(parsedPartial.loi.length, 5);
+});
+
+
+
