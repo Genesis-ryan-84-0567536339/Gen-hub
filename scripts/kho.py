@@ -104,8 +104,10 @@ def verify(path, state=None):
         baserow_url = config.get('services', {}).get('kho', {}).get('environment', {}).get('BASEROW_PUBLIC_URL', '')
         kho_host = baserow_url.replace('https://', '').replace('http://', '').split('/')[0] or 'kho.localhost'
     caddy_script = (
-        f"const r=await fetch('http://caddy:8080/api/_health/',{{headers:{{'Host':'{kho_host}'}},signal:AbortSignal.timeout(5000)}});"
-        "const t=(await r.text()).trim();if(!r.ok||(t!=='OK'&&t!=='pass'))process.exit(1)"
+        "import http from 'node:http';"
+        f"const req=http.request('http://caddy:8080/api/_health/',{{headers:{{Host:'{kho_host}'}},timeout:5000}},r=>"
+        "{let b='';r.on('data',c=>b+=c);r.on('end',()=>{const t=b.trim();if(r.statusCode!==200||(t!=='OK'&&t!=='pass'))process.exit(1)})});"
+        "req.on('error',()=>process.exit(1));req.on('timeout',()=>{req.destroy();process.exit(1)});req.end();"
     )
     compose(path, 'exec', '-T', 'hub', 'node', '--input-type=module', '-e', caddy_script)
 
