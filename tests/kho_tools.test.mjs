@@ -346,4 +346,66 @@ test('kho-tools: khoList and khoGet handle upstream Baserow HTTP errors', async 
   assert.equal(parsedGetErr.error, 'ERROR_INTERNAL');
 });
 
+test('kho-tools: khoSearch returns isError: true when all tables fail and collects loi on partial failure', async () => {
+  const { khoSearch } = await import('../server/kho-tools.mjs');
+
+  const allFailRequest = async () => ({
+    status: 502,
+    json: { error: 'ERROR_UPSTREAM', detail: 'Baserow unreachable' }
+  });
+
+  const ctxAllFail = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { DA: 1, VIEC: 2, PHIEN: 3, QD: 4, BAI: 5, TT: 6, TS: 7, KHOA: 8 },
+    request: allFailRequest
+  };
+
+  // 1. All tables fail -> returns isError: true with list of errors
+  const resAllFail = await khoSearch({ text: 'test' }, ctxAllFail);
+  assert.equal(resAllFail.isError, true);
+  const parsedAllFail = JSON.parse(resAllFail.content[0].text);
+  assert.ok(parsedAllFail.thong_bao.includes('toàn bộ 6 bảng đều gặp lỗi'));
+  assert.equal(parsedAllFail.loi.length, 6);
+
+  // 2. Single table search fails -> isError: true
+  const partialRequest = async url => {
+    if (url.includes('/api/database/rows/table/1/')) {
+      return {
+        status: 200,
+        json: {
+          count: 1,
+          results: [{ id: 10, 'Tên': 'Dự án Alpha', 'Mã ID': 'DA-10' }]
+        }
+      };
+    }
+    return {
+      status: 500,
+      json: { error: 'ERROR_INTERNAL', detail: 'Table failure' }
+    };
+  };
+
+  const ctxPartial = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { DA: 1, VIEC: 2, PHIEN: 3, QD: 4, BAI: 5, TT: 6, TS: 7, KHOA: 8 },
+    request: partialRequest
+  };
+
+  const resSingleFail = await khoSearch({ text: 'Alpha', bang: 'Việc' }, ctxPartial);
+  assert.equal(resSingleFail.isError, true);
+  const parsedSingleFail = JSON.parse(resSingleFail.content[0].text);
+  assert.equal(parsedSingleFail.loi.length, 1);
+  assert.equal(parsedSingleFail.loi[0].bang, 'Việc');
+
+  // 3. Partial failure across all 6 tables (1 table succeeds, 5 tables fail) -> isError: false with results and loi array
+  const resPartial = await khoSearch({ text: 'Alpha' }, ctxPartial);
+  assert.equal(resPartial.isError, false);
+  const parsedPartial = JSON.parse(resPartial.content[0].text);
+  assert.equal(parsedPartial.so_ket_qua, 1);
+  assert.equal(parsedPartial.ket_qua[0].id, 'DA-10');
+  assert.equal(parsedPartial.loi.length, 5);
+});
+
+
 

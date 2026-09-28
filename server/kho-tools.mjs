@@ -241,6 +241,30 @@ function isHttpError(res, data) {
   return false;
 }
 
+function khoErrorResult(thong_bao, data) {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(
+          typeof data === 'object' && data !== null && !Array.isArray(data)
+            ? {
+                thong_bao,
+                ...data
+              }
+            : {
+                thong_bao,
+                chi_tiet: data
+              },
+          null,
+          2
+        )
+      }
+    ],
+    isError: true
+  };
+}
+
 function buildHeaders(token) {
   return {
     Accept: 'application/json',
@@ -291,27 +315,7 @@ export async function khoList(args, { url, restUrl, token, tableIds, allowPrivat
     const res = await request(queryUrl, { headers, method: 'GET', allowPrivate });
     const data = extractData(res);
     if (isHttpError(res, data)) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              typeof data === 'object' && data !== null && !Array.isArray(data)
-                ? {
-                    thong_bao: `Lỗi đọc danh sách bảng '${tableName}' từ Kho`,
-                    ...data
-                  }
-                : {
-                    thong_bao: `Lỗi đọc danh sách bảng '${tableName}' từ Kho`,
-                    chi_tiet: data
-                  },
-              null,
-              2
-            )
-          }
-        ],
-        isError: true
-      };
+      return khoErrorResult(`Lỗi đọc danh sách bảng '${tableName}' từ Kho`, data);
     }
     return {
       content: [
@@ -359,27 +363,7 @@ export async function khoGet(args, { url, restUrl, token, tableIds, allowPrivate
       if (res?.status === 404 || rowData?.error === 'ERROR_ROW_DOES_NOT_EXIST') {
         throw new HubError(`Không tìm thấy bản ghi ${rawId} trong bảng '${tableName}'`, 404);
       }
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              typeof rowData === 'object' && rowData !== null && !Array.isArray(rowData)
-                ? {
-                    thong_bao: `Lỗi đọc bản ghi ${rawId} từ Kho`,
-                    ...rowData
-                  }
-                : {
-                    thong_bao: `Lỗi đọc bản ghi ${rawId} từ Kho`,
-                    chi_tiet: rowData
-                  },
-              null,
-              2
-            )
-          }
-        ],
-        isError: true
-      };
+      return khoErrorResult(`Lỗi đọc bản ghi ${rawId} từ Kho`, rowData);
     }
     return {
       content: [
@@ -421,27 +405,7 @@ export async function khoCreate(args, { url, restUrl, token, tableIds, allowPriv
     });
     const createdRow = extractData(res);
     if (isHttpError(res, createdRow) || !createdRow?.id) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              typeof createdRow === 'object' && createdRow !== null && !Array.isArray(createdRow)
-                ? {
-                    thong_bao: `Lỗi tạo bản ghi trong bảng '${tableName}' của Kho`,
-                    ...createdRow
-                  }
-                : {
-                    thong_bao: `Lỗi tạo bản ghi trong bảng '${tableName}' của Kho`,
-                    chi_tiet: createdRow
-                  },
-              null,
-              2
-            )
-          }
-        ],
-        isError: true
-      };
+      return khoErrorResult(`Lỗi tạo bản ghi trong bảng '${tableName}' của Kho`, createdRow);
     }
     const assignedId = createdRow['Mã ID'] || `${prefix}-${createdRow.id}`;
     return {
@@ -493,27 +457,7 @@ export async function khoUpdate(args, { url, restUrl, token, tableIds, allowPriv
     });
     const updatedRow = extractData(res);
     if (isHttpError(res, updatedRow) || !updatedRow?.id) {
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              typeof updatedRow === 'object' && updatedRow !== null && !Array.isArray(updatedRow)
-                ? {
-                    thong_bao: `Lỗi cập nhật bản ghi ${rawId} trong bảng '${tableName}' của Kho`,
-                    ...updatedRow
-                  }
-                : {
-                    thong_bao: `Lỗi cập nhật bản ghi ${rawId} trong bảng '${tableName}' của Kho`,
-                    chi_tiet: updatedRow
-                  },
-              null,
-              2
-            )
-          }
-        ],
-        isError: true
-      };
+      return khoErrorResult(`Lỗi cập nhật bản ghi ${rawId} trong bảng '${tableName}' của Kho`, updatedRow);
     }
     return {
       content: [
@@ -557,12 +501,18 @@ export async function khoSearch(args, { url, restUrl, token, tableIds, allowPriv
     : ['Dự án', 'Việc', 'Phiên', 'Quyết định', 'Bài học', 'Tri thức'].map(t => resolveTableInfo(t, map));
 
   const allMatches = [];
+  const errors = [];
   for (const { prefix, tableName, tableId } of targets) {
     const queryUrl = `${restBase}/api/database/rows/table/${tableId}/?user_field_names=true&search=${encodeURIComponent(text)}&size=10`;
     try {
       const res = await request(queryUrl, { headers, method: 'GET', allowPrivate });
       const data = extractData(res);
       if (isHttpError(res, data)) {
+        errors.push({
+          bang: tableName,
+          error: data?.error || `HTTP ${res?.status || 502}`,
+          detail: data?.detail || data
+        });
         continue;
       }
       const rows = data.results || [];
@@ -573,20 +523,48 @@ export async function khoSearch(args, { url, restUrl, token, tableIds, allowPriv
           data: r
         });
       }
-    } catch {
-      // skip errors on individual tables
+    } catch (err) {
+      errors.push({
+        bang: tableName,
+        error: err.message
+      });
     }
+  }
+
+  if (targets.length > 0 && errors.length === targets.length) {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              thong_bao: `Lỗi tìm kiếm trong Kho: toàn bộ ${targets.length} bảng đều gặp lỗi từ upstream`,
+              tu_khoa: text,
+              loi: errors
+            },
+            null,
+            2
+          )
+        }
+      ],
+      isError: true
+    };
+  }
+
+  const resultData = {
+    tu_khoa: text,
+    so_ket_qua: allMatches.length,
+    ket_qua: allMatches
+  };
+  if (errors.length > 0) {
+    resultData.loi = errors;
   }
 
   return {
     content: [
       {
         type: 'text',
-        text: JSON.stringify({
-          tu_khoa: text,
-          so_ket_qua: allMatches.length,
-          ket_qua: allMatches
-        }, null, 2)
+        text: JSON.stringify(resultData, null, 2)
       }
     ],
     isError: false
