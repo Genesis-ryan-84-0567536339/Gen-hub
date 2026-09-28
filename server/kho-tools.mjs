@@ -222,7 +222,7 @@ export function resolveRestBase(context) {
 }
 
 
-function extractData(res) {
+export function extractData(res) {
   if (res?.json !== undefined && res?.json !== null) return res.json;
   if (typeof res?.body === 'string') {
     try { return JSON.parse(res.body); } catch {}
@@ -235,13 +235,13 @@ function extractData(res) {
   return {};
 }
 
-function isHttpError(res, data) {
+export function isHttpError(res, data) {
   if (res?.status && (res.status < 200 || res.status >= 300)) return true;
   if (data?.error) return true;
   return false;
 }
 
-function khoErrorResult(thong_bao, data) {
+export function khoErrorResult(thong_bao, data) {
   return {
     content: [
       {
@@ -265,7 +265,7 @@ function khoErrorResult(thong_bao, data) {
   };
 }
 
-function buildHeaders(token) {
+export function buildHeaders(token) {
   return {
     Accept: 'application/json',
     'Content-Type': 'application/json',

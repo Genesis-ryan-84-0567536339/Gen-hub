@@ -14,7 +14,9 @@ import {
 import { connectionGuide } from './connection-guides.js';
 import { getNotifications, timeAgo } from './notifications.js';
 import { normalizeSettings } from './settings.js';
+import { renderKhoAnalytics } from './kho-analytics.js';
 ('use strict');
+let khoSubView = 'analytics';
 const $ = s => document.querySelector(s),
   esc = v =>
     String(v ?? '').replace(
@@ -953,6 +955,10 @@ function render() {
   document.title = names[r] + ' · Gen-hub';
   positionDetailContent();
   layoutMonitorMap(monitorData, monitorView);
+  if (r === 'kho' && khoSubView === 'analytics') {
+    const container = $('#kho-analytics-container');
+    if (container) renderKhoAnalytics(container);
+  }
 }
 function monitorEndpoint() {
   return `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section>`;
@@ -1791,6 +1797,26 @@ function khoPage() {
     { prefix: 'KHOA', name: 'Chỉ mục khóa', desc: 'Chỉ mục thực thể kết nối dữ liệu chéo giữa các bảng.' }
   ];
 
+  const tabsHeader = `
+    <div class="tabs" style="margin-bottom:20px;">
+      <button class="tab ${khoSubView === 'analytics' ? 'active' : ''}" data-action="kho-subtab" data-id="analytics">📊 Thống kê</button>
+      <button class="tab ${khoSubView === 'config' ? 'active' : ''}" data-action="kho-subtab" data-id="config">🗄️ Cấu hình & 8 Bảng</button>
+    </div>
+  `;
+
+  if (khoSubView === 'analytics') {
+    return (
+      head(
+        'Kho · Thống kê',
+        'Tổng hợp trực quan tiến độ, nhịp làm việc, hiệu suất đội AI và bài học kinh nghiệm từ Kho Ryan.',
+        btn('Mở Baserow', 'kho-open', 'primary', 'arrow') +
+        btn('Chép liên kết', 'kho-copy-url', '', 'copy')
+      ) +
+      tabsHeader +
+      '<div id="kho-analytics-container"></div>'
+    );
+  }
+
   return (
     head(
       'Kho Ryan',
@@ -1798,6 +1824,7 @@ function khoPage() {
       btn('Mở Baserow', 'kho-open', 'primary', 'arrow') +
       btn('Chép liên kết', 'kho-copy-url', '', 'copy')
     ) +
+    tabsHeader +
     `
     <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 24px;">
       <section class="card cardpad">
@@ -2467,6 +2494,11 @@ async function act(action, args, el = null) {
   if (action === 'kho-copy-url') {
     navigator.clipboard.writeText(getKhoUrl());
     return toast('Đã chép liên kết Kho Ryan');
+  }
+  if (action === 'kho-subtab') {
+    khoSubView = id || 'analytics';
+    render();
+    return;
   }
   if (action === 'bootstrap-group-up') {
     syncBootstrapFromDom();

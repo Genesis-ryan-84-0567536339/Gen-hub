@@ -41,6 +41,7 @@ import { bootstrapService } from './bootstrap.mjs';
 import { skillsViewerService } from './skills-viewer.mjs';
 import { kanbanService } from './kanban.mjs';
 import { feedbackService, readLlmConfig } from './feedback.mjs';
+import { getKhoAnalytics } from './kho-analytics.mjs';
 import { githubRetryAt } from './github-rate.mjs';
 import { createChatService } from './llm.mjs';
 import {
@@ -1470,6 +1471,12 @@ export function createHub({
         return respond(200, await kanban.archiveDone(actor));
       }
     }
+    if (resource === 'kho') {
+      if (mid === 'analytics' && method === 'GET') {
+        rate('kho-analytics:' + actor, 60);
+        return respond(200, await getKhoAnalytics(store, b));
+      }
+    }
     if (resource === 'feedback-projects') {
       if (!mid && method === 'GET') return respond(200, { projects: feedback.listProjects() });
       if (!mid && method === 'POST') {
@@ -1846,6 +1853,8 @@ export function createHub({
         '/kanban.js': 'kanban.js',
         '/feedback.js': 'feedback.js',
         '/audit-stats.js': 'audit-stats.js',
+        '/kho-analytics.js': 'kho-analytics.js',
+        '/vendor/echarts.min.js': 'vendor/echarts.min.js',
         '/notifications.js': 'notifications.js',
         '/settings.js': 'settings.js',
         '/styles.css': 'styles.css'
