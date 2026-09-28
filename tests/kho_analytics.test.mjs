@@ -8,7 +8,9 @@ import {
   aggregateKhoAnalytics,
   fetchRawKhoData,
   getKhoAnalytics,
-  invalidateCache
+  invalidateCache,
+  toVNYearMonthDay,
+  getISOWeekInfo
 } from '../server/kho-analytics.mjs';
 import { setMemoryTableIds } from '../server/kho-tools.mjs';
 
@@ -468,6 +470,252 @@ test('kho-analytics: GET /api/kho/analytics returns 200 and structured data with
   assert.equal(res2.status, 200);
   const json2 = await res2.json();
   assert.equal(json2.metadata.cache_hit, true);
+
+  // Test 1: Chưa đăng nhập -> 401
+  const unauthRes = await fetch(`${origin}/api/kho/analytics`);
+  assert.equal(unauthRes.status, 401);
+
+  // Test 2: Token bí mật không có trong response JSON
+  const rawBody = JSON.stringify(json);
+  assert.equal(rawBody.includes('test-token-baserow'), false);
 });
+
+test('kho-analytics: handles pagination when table has >200 rows with next URL', async t => {
+  const { createServer } = await import('node:http');
+
+  // Tạo 250 bản ghi việc
+  const largeViecList = Array.from({ length: 250 }, (_, i) => ({
+    id: i + 1,
+    'Tiêu đề': `Việc ${i + 1}`,
+    'Mã ID': `VIEC-${i + 1}`,
+    'Trạng thái': { value: 'Chờ' }
+  }));
+
+  const fakeBaserow = createServer(async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    const u = new URL(req.url, 'http://127.0.0.1');
+    if (u.pathname.includes('/table/202/')) {
+      const page = u.searchParams.get('page') || '1';
+      if (page === '1') {
+        return res.end(
+          JSON.stringify({
+            count: 250,
+            next: `http://127.0.0.1/api/database/rows/table/202/?page=2&size=200`,
+            results: largeViecList.slice(0, 200)
+          })
+        );
+      }
+      return res.end(
+        JSON.stringify({
+          count: 250,
+          next: null,
+          results: largeViecList.slice(200)
+        })
+      );
+    }
+    return res.end(JSON.stringify({ count: 0, next: null, results: [] }));
+  });
+
+  await new Promise(r => fakeBaserow.listen(0, '127.0.0.1', r));
+  const port = fakeBaserow.address().port;
+  t.after(() => new Promise(r => fakeBaserow.close(r)));
+
+  setMemoryTableIds({
+    DA: 201,
+    VIEC: 202,
+    PHIEN: 203,
+    QD: 204,
+    BAI: 205,
+    TT: 206
+  });
+  t.after(() => setMemoryTableIds(null));
+
+  const dir = mkdtempSync(join(tmpdir(), 'genhub-pagination-'));
+  const store = openStore(dir);
+  t.after(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const sealed = store.seal({ token: 'test-token' });
+  store.put('mcp', 'kho-ryan', {
+    id: 'kho-ryan',
+    name: 'kho-ryan',
+    provider: 'remote',
+    kind: 'kho',
+    isKho: true,
+    khoRestUrl: `http://127.0.0.1:${port}`,
+    secret: sealed
+  });
+
+  invalidateCache();
+  const { data } = await fetchRawKhoData(store, { force: true });
+  assert.equal(data.viec.length, 250);
+});
+
+test('kho-analytics: upstream 5xx throws HubError 502 and is not cached', async t => {
+  const { createServer } = await import('node:http');
+
+  const fakeBaserow = createServer((req, res) => {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Internal server error', detail: 'Database error' }));
+  });
+
+  await new Promise(r => fakeBaserow.listen(0, '127.0.0.1', r));
+  const port = fakeBaserow.address().port;
+  t.after(() => new Promise(r => fakeBaserow.close(r)));
+
+  setMemoryTableIds({ DA: 301, VIEC: 302, PHIEN: 303, QD: 304, BAI: 305, TT: 306 });
+  t.after(() => setMemoryTableIds(null));
+
+  const dir = mkdtempSync(join(tmpdir(), 'genhub-5xx-'));
+  const store = openStore(dir);
+  t.after(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const sealed = store.seal({ token: 'test-token' });
+  store.put('mcp', 'kho-ryan', {
+    id: 'kho-ryan',
+    name: 'kho-ryan',
+    provider: 'remote',
+    kind: 'kho',
+    isKho: true,
+    khoRestUrl: `http://127.0.0.1:${port}`,
+    secret: sealed
+  });
+
+  invalidateCache();
+
+  await assert.rejects(
+    () => fetchRawKhoData(store, { force: true }),
+    err => {
+      assert.equal(err.status, 502);
+      assert.ok(err.message.includes('Lỗi từ Baserow') || err.message.includes('500'));
+      return true;
+    }
+  );
+
+  // Xác nhận lỗi không bị cache
+  await assert.rejects(
+    () => fetchRawKhoData(store),
+    err => {
+      assert.equal(err.status, 502);
+      return true;
+    }
+  );
+});
+
+test('kho-analytics: handles Asia/Ho_Chi_Minh timezone correctly', () => {
+  // 17:30 UTC ngày 27/09 = 00:30 VN ngày 28/09
+  assert.equal(toVNYearMonthDay('2026-09-27T17:30:00Z'), '2026-09-28');
+  // 16:59 UTC ngày 27/09 = 23:59 VN ngày 27/09
+  assert.equal(toVNYearMonthDay('2026-09-27T16:59:00Z'), '2026-09-27');
+
+  // ISO Week: 27/09/2026 là Chủ Nhật (W39), 28/09/2026 là Thứ Hai (W40)
+  const wkSunday = getISOWeekInfo('2026-09-27T10:00:00Z');
+  assert.equal(wkSunday.key, '2026-W39');
+  assert.equal(wkSunday.label, '21/09');
+
+  const wkMonday = getISOWeekInfo('2026-09-28T02:00:00Z');
+  assert.equal(wkMonday.key, '2026-W40');
+  assert.equal(wkMonday.label, '28/09');
+});
+
+test('kho-analytics: project filter matches exactly and does not match substrings', () => {
+  const customDa = [
+    { id: 1, 'Tên': 'Gen', 'Mã ID': 'DA-1' },
+    { id: 2, 'Tên': 'Gen-hub', 'Mã ID': 'DA-2' }
+  ];
+  const customViec = [
+    { id: 1, 'Tiêu đề': 'Task Gen', 'Dự án': [{ id: 1, value: 'Gen' }], 'Trạng thái': { value: 'Chờ' } },
+    { id: 2, 'Tiêu đề': 'Task Gen-hub', 'Dự án': [{ id: 2, value: 'Gen-hub' }], 'Trạng thái': { value: 'Chờ' } }
+  ];
+
+  const resGen = aggregateKhoAnalytics({
+    da: customDa,
+    viec: customViec,
+    query: { du_an: 'Gen' }
+  });
+  // Chỉ khớp đúng 'Gen', không khớp 'Gen-hub'
+  assert.equal(resGen.kpi.tong_viec, 1);
+  assert.equal(resGen.viec_theo_du_an.find(d => d.name === 'Gen')?.tong, 1);
+
+  const resGenHub = aggregateKhoAnalytics({
+    da: customDa,
+    viec: customViec,
+    query: { du_an: 'Gen-hub' }
+  });
+  assert.equal(resGenHub.kpi.tong_viec, 1);
+  assert.equal(resGenHub.viec_theo_du_an.find(d => d.name === 'Gen-hub')?.tong, 1);
+});
+
+test('kho-analytics: uses khoRestUrl when different from url', async t => {
+  const { createServer } = await import('node:http');
+
+  let restEndpointHit = false;
+  let wrongEndpointHit = false;
+
+  const fakeBaserow = createServer((req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url.startsWith('/correct-rest/')) {
+      restEndpointHit = true;
+      return res.end(JSON.stringify({ results: [] }));
+    }
+    wrongEndpointHit = true;
+    res.writeHead(400);
+    res.end(JSON.stringify({ error: 'Wrong endpoint' }));
+  });
+
+  await new Promise(r => fakeBaserow.listen(0, '127.0.0.1', r));
+  const port = fakeBaserow.address().port;
+  t.after(() => new Promise(r => fakeBaserow.close(r)));
+
+  setMemoryTableIds({ DA: 401, VIEC: 402, PHIEN: 403, QD: 404, BAI: 405, TT: 406 });
+  t.after(() => setMemoryTableIds(null));
+
+  const dir = mkdtempSync(join(tmpdir(), 'genhub-resturl-'));
+  const store = openStore(dir);
+  t.after(() => {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const sealed = store.seal({ token: 'test-token' });
+  store.put('mcp', 'kho-ryan', {
+    id: 'kho-ryan',
+    name: 'kho-ryan',
+    provider: 'remote',
+    kind: 'kho',
+    isKho: true,
+    url: `http://127.0.0.1:${port}/wrong-url`,
+    khoRestUrl: `http://127.0.0.1:${port}/correct-rest`,
+    secret: sealed
+  });
+
+  invalidateCache();
+  await fetchRawKhoData(store, { force: true });
+  assert.equal(restEndpointHit, true);
+  assert.equal(wrongEndpointHit, false);
+});
+
+test('kho-analytics: project with no completed tasks returns so_ngay_tb as null (not 0)', () => {
+  const customDa = [{ id: 1, 'Tên': 'Dự án mới', 'Mã ID': 'DA-1' }];
+  const customViec = [
+    { id: 1, 'Tiêu đề': 'Task 1', 'Dự án': [{ id: 1, value: 'Dự án mới' }], 'Trạng thái': { value: 'Đang làm' }, 'Ngày tạo': '2026-09-28' }
+  ];
+
+  const res = aggregateKhoAnalytics({
+    da: customDa,
+    viec: customViec
+  });
+
+  const stat = res.thoi_gian_hoan_thanh_tb.find(d => d.du_an_name === 'Dự án mới');
+  assert.ok(stat);
+  assert.equal(stat.so_ngay_tb, null);
+  assert.equal(stat.so_viec_tinh, 0);
+});
+
 
 

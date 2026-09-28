@@ -13,6 +13,7 @@ import {
   khoFindById,
   khoFindByIdTool
 } from './kho-tools.mjs';
+import { invalidateCache } from './kho-analytics.mjs';
 export function isKhoConnector(m) {
   return (
     m?.provider === 'remote' &&
@@ -623,17 +624,23 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
           allowPrivate: m.allowPrivate,
           request: serviceRequest
         };
-        return await measurePhase('upstreamCall', () => {
+        return await measurePhase('upstreamCall', async () => {
           switch (t) {
             case 'kho_list':
               return khoList(a, ctx);
             case 'kho_get':
             case 'kho_find_by_id':
               return khoGet(a, ctx);
-            case 'kho_create':
-              return khoCreate(a, ctx);
-            case 'kho_update':
-              return khoUpdate(a, ctx);
+            case 'kho_create': {
+              const res = await khoCreate(a, ctx);
+              if (!res?.isError) invalidateCache();
+              return res;
+            }
+            case 'kho_update': {
+              const res = await khoUpdate(a, ctx);
+              if (!res?.isError) invalidateCache();
+              return res;
+            }
             case 'kho_search':
               return khoSearch(a, ctx);
             default:
