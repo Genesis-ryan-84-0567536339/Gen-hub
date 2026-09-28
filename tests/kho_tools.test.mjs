@@ -265,3 +265,85 @@ test('kho-tools: khoList, khoCreate, khoUpdate, khoSearch handle REST operations
   assert.equal(parsedSearch.tu_khoa, 'Task');
 });
 
+test('kho-tools: khoCreate and khoUpdate return isError: true on Baserow validation error or rejection', async () => {
+  const { khoCreate, khoUpdate } = await import('../server/kho-tools.mjs');
+
+  // Simulated Baserow error response when validation fails
+  const validationErrorPayload = {
+    error: 'ERROR_REQUEST_BODY_VALIDATION',
+    detail: {
+      'Trọng tâm': [
+        {
+          error: 'Must be a valid boolean.',
+          code: 'invalid'
+        }
+      ]
+    }
+  };
+
+  const fakeRequestValidationFail = async () => ({
+    status: 400,
+    json: validationErrorPayload
+  });
+
+  const ctx = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { DA: 1, VIEC: 2 },
+    request: fakeRequestValidationFail
+  };
+
+  // 1. Test khoCreate with invalid fields (e.g. boolean field passed as string)
+  const createRes = await khoCreate(
+    { bang: 'Dự án', fields: { 'Tên': 'test', 'Trọng tâm': 'Có' } },
+    ctx
+  );
+  assert.equal(createRes.isError, true);
+  assert.ok(Array.isArray(createRes.content));
+  const createText = createRes.content[0].text;
+  assert.ok(!createText.includes('DA-undefined'), 'Must not contain DA-undefined');
+  assert.ok(!createText.includes('Đã tạo thành công'), 'Must not report success');
+  const parsedCreateErr = JSON.parse(createText);
+  assert.equal(parsedCreateErr.error, 'ERROR_REQUEST_BODY_VALIDATION');
+  assert.ok(parsedCreateErr.detail['Trọng tâm']);
+
+  // 2. Test khoUpdate with invalid fields
+  const updateRes = await khoUpdate(
+    { id: 'DA-1', fields: { 'Trọng tâm': 'Có' } },
+    ctx
+  );
+  assert.equal(updateRes.isError, true);
+  const updateText = updateRes.content[0].text;
+  assert.ok(!updateText.includes('Đã cập nhật bản ghi'), 'Must not report success');
+  const parsedUpdateErr = JSON.parse(updateText);
+  assert.equal(parsedUpdateErr.error, 'ERROR_REQUEST_BODY_VALIDATION');
+  assert.ok(parsedUpdateErr.detail['Trọng tâm']);
+});
+
+test('kho-tools: khoList and khoGet handle upstream Baserow HTTP errors', async () => {
+  const { khoList, khoGet } = await import('../server/kho-tools.mjs');
+
+  const fake500Request = async () => ({
+    status: 500,
+    json: { error: 'ERROR_INTERNAL', detail: 'Database server error' }
+  });
+
+  const ctx = {
+    restUrl: 'http://kho:80',
+    token: 'test-token',
+    tableIds: { DA: 1 },
+    request: fake500Request
+  };
+
+  const listRes = await khoList({ bang: 'Dự án' }, ctx);
+  assert.equal(listRes.isError, true);
+  const parsedListErr = JSON.parse(listRes.content[0].text);
+  assert.equal(parsedListErr.error, 'ERROR_INTERNAL');
+
+  const getRes = await khoGet({ id: 'DA-1' }, ctx);
+  assert.equal(getRes.isError, true);
+  const parsedGetErr = JSON.parse(getRes.content[0].text);
+  assert.equal(parsedGetErr.error, 'ERROR_INTERNAL');
+});
+
+
