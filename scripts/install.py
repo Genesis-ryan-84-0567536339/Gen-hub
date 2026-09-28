@@ -73,7 +73,13 @@ def setup_tunnel(state,save):
             raise RuntimeError('Hostname có bản ghi khác. Hãy chọn hostname chưa dùng hoặc sửa DNS thủ công; bộ cài không ghi đè.')
     else:cf(token,'/zones/'+state['zone_id']+'/dns_records',{'type':'CNAME','name':state['domain'],'content':target,'proxied':True},'POST')
     previous_config = cf(token, endpoint+'/configurations').get('config') if state.get('services_installed') and state.get('engine') != 'compose' else None
-    cf(token,endpoint+'/configurations',{'config':{'ingress':[{'hostname':state['domain'],'service':'http://caddy:8080'},{'service':'http_status:404'}]}},'PUT')
+    ingress = [{'hostname': state['domain'], 'service': 'http://caddy:8080'}]
+    if state.get('kho_enabled', False):
+        from kho import public_host
+        kho_host = public_host(state)
+        ingress.append({'hostname': kho_host, 'service': 'http://caddy:8080'})
+    ingress.append({'service': 'http_status:404'})
+    cf(token, endpoint+'/configurations', {'config': {'ingress': ingress}}, 'PUT')
     runtime_token=cf(token,endpoint+'/token')
     atomic(CONF/'tunnel.token',runtime_token+'\n');os.chown(CONF/'tunnel.token',state['uid'],state['gid'])
     print('✓ Đã thiết lập tunnel và DNS. API token quản trị không được lưu trên đĩa.')
@@ -89,11 +95,17 @@ def public_test(state):
                     gitea = json.loads(fetch('https://' + state['domain'] + '/gitea/api/healthz'))
                     if gitea.get('status') != 'pass':
                         raise RuntimeError('Gitea chưa sẵn sàng qua HTTPS.')
+                if state.get('kho_enabled', False):
+                    from kho import public_host
+                    kho_host = public_host(state)
+                    kho_health = fetch('https://' + kho_host + '/api/_health/').decode('utf-8', errors='ignore').strip()
+                    if kho_health not in ('OK', 'pass'):
+                        raise RuntimeError('Kho chưa sẵn sàng qua HTTPS: ' + kho_health)
                 print('✓ HTTPS hợp lệ, domain đã tới đúng Gen-hub và storage đã cấu hình.');return
         except (OSError,ValueError,RuntimeError):pass
         if i%3==0:print('Đang chờ DNS/HTTPS/tunnel…')
         time.sleep(5)
-    raise RuntimeError('Hub hoặc Gitea chưa qua kiểm tra HTTPS. Xem sudo gen-hub status và sudo gen-hub logs. Chạy lại bộ cài để kiểm tra tiếp.')
+    raise RuntimeError('Hub hoặc Gitea hoặc Kho chưa qua kiểm tra HTTPS. Xem sudo gen-hub status và sudo gen-hub logs. Chạy lại bộ cài để kiểm tra tiếp.')
 
 def checkpoint(state, save, name, action):
     print('\n→ ' + name)

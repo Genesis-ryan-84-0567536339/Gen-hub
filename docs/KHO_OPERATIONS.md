@@ -12,7 +12,7 @@ Mọi thao tác vòng đời của Kho Ryan đều được tích hợp nhất q
 
 | Lệnh | Ý nghĩa & Hành vi |
 | :--- | :--- |
-| `python3 scripts/manage.py kho-enable` | Kích hoạt dịch vụ Kho Ryan, cấu hình route `kho.<domain>` và `/kho` trên Caddy, kéo image Baserow 1.33.2 và khởi động container. |
+| `python3 scripts/manage.py kho-enable [--domain <host>]` | Kích hoạt dịch vụ Kho Ryan, cấu hình `kho_domain` (mặc định: `kho.<domain>`), route Caddy và ingress tunnel, kéo image Baserow 1.33.2 và khởi động container. |
 | `python3 scripts/manage.py kho-disable` | Dừng và gỡ bỏ container Kho Ryan, xóa route Caddy, nhưng **bảo tồn toàn bộ dữ liệu** trong volume `kho-data`. |
 | `python3 scripts/manage.py kho-disable --purge` | Dừng container và **xóa vĩnh viễn dữ liệu** (yêu cầu gõ xác nhận `DELETE KHO`). |
 | `python3 scripts/manage.py kho-schema` | Thực thi đồng bộ declarative schema từ `kho/schema.json` vào Baserow (idempotent, an toàn, không tạo trùng). |
@@ -27,19 +27,25 @@ Mọi thao tác vòng đời của Kho Ryan đều được tích hợp nhất q
 ### Bước 1: Kích hoạt dịch vụ trên máy chủ
 Chạy lệnh kích hoạt:
 ```bash
-python3 scripts/manage.py kho-enable
+# Kích hoạt mặc định (tự động ghép kho.<domain>):
+sudo gen-hub kho-enable
+
+# Hoặc kích hoạt chỉ định tên miền tùy chỉnh (ví dụ kho.genos.top khi domain chính là hub.genos.top):
+sudo gen-hub kho-enable --domain kho.genos.top
 ```
 Lệnh sẽ:
-1. Ghi nhận cờ `kho_enabled: true` vào file cấu hình cài đặt `install.json`.
+1. Ghi nhận cờ `kho_enabled: true` (và `kho_domain` nếu có) vào file cấu hình cài đặt `install.json`.
 2. Bổ sung service `kho` vào Docker Compose manifest với cấu hình:
+   - Biến môi trường: `BASEROW_PUBLIC_URL=https://<kho_domain>`
    - Image: `baserow/baserow:1.33.2@sha256:ebf338dc02c06064ea463ea3545c12a461e95f8b0a28699c66818f05b8ca2890`
    - Memory limit: `mem_limit: '2g'`
    - PIDs limit: `pids_limit: 256`
    - Volume: `gen-hub-<id>-kho-data` gắn vào `/baserow/data`.
 3. Bổ sung cấu hình reverse proxy vào `Caddyfile`:
-   - Subdomain: `kho.<domain>` chuyển tiếp tới container `kho:80`.
-   - Path redirect: `https://<domain>/kho` redirect 308 tới `https://kho.<domain>/`.
+   - Subdomain: `<kho_domain>` chuyển tiếp tới container `kho:80`.
+   - Path redirect: `https://<domain>/kho` redirect 308 tới `https://<kho_domain>/`.
 4. Áp dụng Compose và khởi động container ngầm.
+5. Kiểm tra kết nối nội bộ trực tiếp tới Baserow và qua Caddy (`Host: <kho_domain>`).
 
 ### Bước 2: Thiết lập Tài khoản Quản trị Baserow
 1. Mở trình duyệt truy cập: `https://kho.genos.top` (hoặc `http://localhost:3001` nếu chạy local).

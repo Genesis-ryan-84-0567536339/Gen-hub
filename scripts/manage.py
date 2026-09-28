@@ -32,7 +32,8 @@ def main():
         else:
             print('Gitea: https://' + state['domain'] + '/gitea/' if state.get('gitea_bootstrapped') else PENDING)
         if state.get('kho_enabled'):
-            print(f"Kho Ryan: https://kho.{state['domain']} (hoặc https://{state['domain']}/kho/)")
+            from kho import public_host
+            print(f"Kho Ryan: https://{public_host(state)} (hoặc https://{state['domain']}/kho/)")
         else:
             print('Kho Ryan: chưa bật (bật bằng sudo gen-hub kho-enable)')
         from ci_runner import status as ci_status
@@ -51,12 +52,12 @@ def main():
             require_bootstrap(state, path)
         if state.get('kho_enabled'):
             from kho import verify as kho_verify
-            kho_verify(path)
+            kho_verify(path, state)
         from ci_runner import status as ci_status
         ci_status(state, doctor=True)
         print('✓ Owner' + (' và Gitea' if state.get('gitea_enabled', True) else '') + (' và Kho' if state.get('kho_enabled') else '') + ' sẵn sàng.'); return
     if command not in ['ci-bootstrap', 'deploy-action-register', 'gitea-enable', 'gitea-disable', 'kho-enable', 'kho-disable', 'kho-schema', 'restart', 'reset-password', 'backup', 'update', 'rollback', 'uninstall', 'doctor', 'auto-update', 'github-token', 'migrate-ids']:
-        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | kho-enable | kho-disable [--purge] | kho-schema | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
+        print('Lệnh: ci-bootstrap --help | deploy-action-register /path/action.json | gitea-enable (bootstrap bắt buộc cho máy cũ) | gitea-disable [--purge] | kho-enable [--domain <host>] | kho-disable [--purge] | kho-schema | status | logs | doctor [--fix] [--cloudflare] | restart | reset-password | backup [tệp.tar.gz] | update | github-token | auto-update on/off | rollback | uninstall [--purge] [--cloudflare] | migrate-ids'); return
     if command == 'update':
         from lifecycle import update
         update(state, automatic='--auto' in sys.argv); return
@@ -86,8 +87,16 @@ def main():
         disable(state, purge='--purge' in sys.argv)
         return
     if command == 'kho-enable':
+        domain = None
+        args = sys.argv[2:]
+        if '--domain' in args:
+            idx = args.index('--domain')
+            if idx + 1 < len(args):
+                domain = args[idx + 1]
+            else:
+                raise RuntimeError('Thiếu giá trị cho --domain')
         from kho import enable
-        enable(state)
+        enable(state, domain=domain)
         return
     if command == 'kho-disable':
         from kho import disable
@@ -107,7 +116,8 @@ def main():
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         table_ids_output = DATA / 'kho_table_ids.json'
-        default_url = f"https://kho.{state['domain']}" if state.get('domain') else 'http://127.0.0.1:80'
+        from kho import public_host
+        default_url = f"https://{public_host(state)}" if state.get('domain') else 'http://127.0.0.1:80'
         extra_args = []
         if not any(arg.startswith('--output') for arg in sys.argv[2:]):
             extra_args.extend(['--output', str(table_ids_output)])
