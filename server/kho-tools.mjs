@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { HubError } from './net.mjs';
+import { sanitizeText } from './store.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -597,7 +598,16 @@ function truncateString(val, maxLength) {
   if (val === null || val === undefined) return '';
   const s = String(val).trim();
   if (s.length <= maxLength) return s;
-  return s.slice(0, maxLength);
+  if (maxLength <= 1) return s.slice(0, maxLength);
+  return s.slice(0, maxLength - 1) + '…';
+}
+
+function stripSecretToken(rawText, secretToken) {
+  let cleaned = sanitizeText(typeof rawText === 'string' ? rawText : JSON.stringify(rawText));
+  if (secretToken && typeof secretToken === 'string' && secretToken.length >= 4) {
+    cleaned = cleaned.replaceAll(secretToken, '[REDACTED]');
+  }
+  return cleaned;
 }
 
 export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPrivate, request }) {
@@ -628,15 +638,17 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
   const restBase = resolveRestBase({ restUrl, url });
   const headers = buildHeaders(token);
 
-  async function fetchAllRows(tableId, tableName) {
+  async function fetchAllRows(tableId, tableName, extraQuery = '') {
     let page = 1;
     const allRows = [];
     while (true) {
-      const queryUrl = `${restBase}/api/database/rows/table/${tableId}/?user_field_names=true&size=200&page=${page}`;
+      const sep = extraQuery ? (extraQuery.startsWith('&') ? extraQuery : `&${extraQuery}`) : '';
+      const queryUrl = `${restBase}/api/database/rows/table/${tableId}/?user_field_names=true&page=${page}${sep}`;
       const res = await request(queryUrl, { headers, method: 'GET', allowPrivate });
       const data = extractData(res);
       if (isHttpError(res, data)) {
-        const errorDetail = data?.error || data?.detail || `HTTP ${res?.status || 502}`;
+        const rawDetail = data?.error || data?.detail || `HTTP ${res?.status || 502}`;
+        const errorDetail = stripSecretToken(rawDetail, token);
         throw new HubError(`Lỗi đọc bảng '${tableName}' từ Kho: ${errorDetail}`, res?.status || 502);
       }
       const results = data?.results;
@@ -648,17 +660,57 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
         break;
       }
       page++;
-      if (page > 50) break;
+      if (page > 50) {
+        throw new HubError(`Bảng '${tableName}' vượt quá giới hạn phân trang an toàn (50 trang)`, 502);
+      }
     }
     return allRows;
   }
 
   try {
+    // 1. Lấy option ID cho single_select nếu có (mặc định Xong: 3284, Hiệu lực: 3293)
+    let xongOptionId = 3284;
+    let hieuLucOptionId = 3293;
+    try {
+      const [viecFieldsRes, qdFieldsRes] = await Promise.all([
+        request(`${restBase}/api/database/fields/table/${map.VIEC}/`, { headers, method: 'GET', allowPrivate }).catch(() => null),
+        request(`${restBase}/api/database/fields/table/${map.QD}/`, { headers, method: 'GET', allowPrivate }).catch(() => null)
+      ]);
+      const viecFields = extractData(viecFieldsRes);
+      if (Array.isArray(viecFields)) {
+        const tt = viecFields.find(f => f.name === 'Trạng thái');
+        const opt = tt?.select_options?.find(o => o.value === 'Xong');
+        if (opt?.id) xongOptionId = opt.id;
+      }
+      const qdFields = extractData(qdFieldsRes);
+      if (Array.isArray(qdFields)) {
+        const tt = qdFields.find(f => f.name === 'Trạng thái');
+        const opt = tt?.select_options?.find(o => o.value === 'Hiệu lực');
+        if (opt?.id) hieuLucOptionId = opt.id;
+      }
+    } catch {
+      // Fallback to defaults
+    }
+
     const [phienRows, viecRows, qdRows, daRows] = await Promise.all([
-      fetchAllRows(map.PHIEN, 'Phiên'),
-      fetchAllRows(map.VIEC, 'Việc'),
-      fetchAllRows(map.QD, 'Quyết định'),
-      fetchAllRows(map.DA, 'Dự án')
+      // Phiên: Lọc và sắp xếp phía Baserow theo Ngày và ID giảm dần, lấy đúng soPhien
+      fetchAllRows(map.PHIEN, 'Phiên', `size=${soPhien}&order_by=-Ng%C3%A0y,-M%C3%A3+ID`).catch(async () => {
+        return fetchAllRows(map.PHIEN, 'Phiên', `size=${soPhien}&order_by=-Ng%C3%A0y`).catch(async () => {
+          return fetchAllRows(map.PHIEN, 'Phiên', `size=${soPhien}`);
+        });
+      }),
+      // Việc: Lọc trạng thái khác Xong (hoặc rỗng), size=100
+      fetchAllRows(map.VIEC, 'Việc', `size=100&filter_type=OR&filter__Tr%E1%BA%A1ng+th%C3%A1i__single_select_not_equal=${xongOptionId}&filter__Tr%E1%BA%A1ng+th%C3%A1i__empty`).catch(async () => {
+        return fetchAllRows(map.VIEC, 'Việc', 'size=100');
+      }),
+      // Quyết định: Lọc trạng thái Hiệu lực, size=100
+      fetchAllRows(map.QD, 'Quyết định', `size=100&filter__Tr%E1%BA%A1ng+th%C3%A1i__single_select_equal=${hieuLucOptionId}`).catch(async () => {
+        return fetchAllRows(map.QD, 'Quyết định', 'size=100');
+      }),
+      // Dự án: Lọc Trọng tâm == 1, size=100
+      fetchAllRows(map.DA, 'Dự án', 'size=100&filter__Tr%E1%BB%8Dng+t%C3%A2m__boolean=1').catch(async () => {
+        return fetchAllRows(map.DA, 'Dự án', 'size=100');
+      })
     ]);
 
     // 1. Phiên gần nhất: sắp xếp giảm dần theo Ngày rồi id
@@ -672,18 +724,18 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
     const phienGanNhat = phienSorted.slice(0, soPhien).map(p => ({
       id: p['Mã ID'] || `PHIEN-${p.id}`,
       ngay: p['Ngày'] ? String(p['Ngày']).slice(0, 10) : '',
-      chu_de: p['Chủ đề'] ? String(p['Chủ đề']).trim() : '',
-      viec_tiep: truncateString(p['Việc tiếp'], 400),
-      canh_bao: truncateString(p['Cảnh báo'], 400)
+      chu_de: truncateString(p['Chủ đề'], 80),
+      viec_tiep: truncateString(p['Việc tiếp'], 200),
+      canh_bao: truncateString(p['Cảnh báo'], 200)
     }));
 
-    // 2. Việc đang mở: Trạng thái ≠ Xong, sắp P1 → P3, tối đa 20
+    // 2. Việc đang mở: Trạng thái ≠ Xong (rỗng coi là đang mở), sắp P1 → P3, tối đa 20
     const PRIORITY_RANK = { p1: 1, p2: 2, p3: 3 };
     const viecDangMo = viecRows
       .filter(v => {
         const stRaw = typeof v['Trạng thái'] === 'object' ? v['Trạng thái']?.value : v['Trạng thái'];
         const st = String(stRaw || '').trim().toLowerCase();
-        return st && st !== 'xong';
+        return !st || st !== 'xong';
       })
       .sort((a, b) => {
         const prioRawA = typeof a['Ưu tiên'] === 'object' ? a['Ưu tiên']?.value : a['Ưu tiên'];
@@ -699,20 +751,21 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
         const prioRaw = typeof v['Ưu tiên'] === 'object' ? v['Ưu tiên']?.value : v['Ưu tiên'];
         return {
           id: v['Mã ID'] || `VIEC-${v.id}`,
-          tieu_de: v['Tiêu đề'] ? String(v['Tiêu đề']).trim() : '',
+          tieu_de: truncateString(v['Tiêu đề'], 80),
           trang_thai: String(stRaw || '').trim(),
           uu_tien: String(prioRaw || '').trim(),
           nguoi_lam: v['Người làm'] ? String(v['Người làm']).trim() : ''
         };
       });
 
-    // 3. Quyết định hiệu lực: Trạng thái = Hiệu lực; Nội dung cắt ≤ 160 ký tự
+    // 3. Quyết định hiệu lực: Trạng thái = Hiệu lực; Nội dung cắt ≤ 160 ký tự, tối đa 15 QĐ
     const quyetDinhHieuLuc = qdRows
       .filter(q => {
         const stRaw = typeof q['Trạng thái'] === 'object' ? q['Trạng thái']?.value : q['Trạng thái'];
         const st = String(stRaw || '').trim().toLowerCase();
         return (st === 'hiệu lực' || st === 'có hiệu lực') || (st.includes('hiệu lực') && !st.includes('hết') && !st.includes('thay thế'));
       })
+      .slice(0, 15)
       .map(q => {
         const rawContent = q['Nội dung'] || q['Tiêu đề'] || '';
         return {
@@ -721,15 +774,16 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
         };
       });
 
-    // 4. Dự án trọng tâm: Trọng tâm = true; chỉ id + ten
+    // 4. Dự án trọng tâm: Trọng tâm = true; chỉ id + ten, tối đa 10 Dự án
     const duAnTrongTam = daRows
       .filter(d => {
         const tt = d['Trọng tâm'];
-        return tt === true || tt === 'true' || tt === 'Có' || tt === 't';
+        return tt === true || tt === 'true' || tt === 'Có' || tt === '1' || tt === 1 || tt === 't';
       })
+      .slice(0, 10)
       .map(d => ({
         id: d['Mã ID'] || `DA-${d.id}`,
-        ten: d['Tên'] ? String(d['Tên']).trim() : `Dự án ${d.id}`
+        ten: truncateString(d['Tên'] ? String(d['Tên']).trim() : `Dự án ${d.id}`, 80)
       }));
 
     const result = {
@@ -740,18 +794,55 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
       ghi_chu: 'Cần chi tiết: kho_get <ID>'
     };
 
+    let serialized = JSON.stringify(result);
+
+    // Chặn trên kích thước ~3.000 ký tự (Hard budget guard)
+    const MAX_OUTPUT_CHARS = 3000;
+    if (serialized.length > MAX_OUTPUT_CHARS) {
+      result.bi_cat = true;
+      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.quyet_dinh_hieu_luc.length > 5) {
+        result.quyet_dinh_hieu_luc.pop();
+      }
+      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.viec_dang_mo.length > 5) {
+        result.viec_dang_mo.pop();
+      }
+      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.phien_gan_nhat.length > 1) {
+        result.phien_gan_nhat.pop();
+      }
+      if (JSON.stringify(result).length > MAX_OUTPUT_CHARS) {
+        for (const p of result.phien_gan_nhat) {
+          p.viec_tiep = truncateString(p.viec_tiep, 100);
+          p.canh_bao = truncateString(p.canh_bao, 100);
+        }
+        for (const v of result.viec_dang_mo) {
+          v.tieu_de = truncateString(v.tieu_de, 50);
+        }
+        for (const q of result.quyet_dinh_hieu_luc) {
+          q.noi_dung_ngan = truncateString(q.noi_dung_ngan, 80);
+        }
+      }
+      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.quyet_dinh_hieu_luc.length > 1) {
+        result.quyet_dinh_hieu_luc.pop();
+      }
+      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.viec_dang_mo.length > 1) {
+        result.viec_dang_mo.pop();
+      }
+      serialized = JSON.stringify(result);
+    }
+
     return {
       content: [
         {
           type: 'text',
-          text: JSON.stringify(result, null, 2)
+          text: serialized
         }
       ],
       isError: false
     };
   } catch (err) {
-    return khoErrorResult(`Lỗi tóm tắt Kho Ryan: ${err.message}`, {
-      error: err.message,
+    const safeMsg = stripSecretToken(err.message || 'Lỗi không xác định', token);
+    return khoErrorResult(`Lỗi tóm tắt Kho Ryan: ${safeMsg}`, {
+      error: safeMsg,
       status: err.status || 502
     });
   }
