@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../server/store.mjs';
-import { PREFIX_TABLE_MAP, khoFindById, khoFindByIdTool, khoTomTat, khoTomTatTool, KHO_TOOLS, loadTableIds, resolveRestBase, setMemoryTableIds } from '../server/kho-tools.mjs';
+import { PREFIX_TABLE_MAP, khoFindById, khoFindByIdTool, khoTomTat, khoTomTatTool, KHO_TOOLS, loadTableIds, resolveRestBase, setMemoryTableIds, cutAtSentence } from '../server/kho-tools.mjs';
 import { checkToolPermissions, isKhoConnector } from '../server/connectors.mjs';
 
 test('kho-tools: validates prefix-to-table mapping for all 8 tables', () => {
@@ -486,11 +486,11 @@ test('kho-tools: khoTomTat successfully aggregates and formats core data', async
   assert.equal(data.viec_dang_mo[2].id, 'VIEC-2'); // P3
   assert.equal(data.viec_dang_mo[2].uu_tien, 'P3');
 
-  // 3. Quyết định hiệu lực: chỉ lấy QD-3, cắt nội dung <= 160 ký tự kèm …
+  // 3. Quyết định hiệu lực: chỉ lấy QD-3, nội dung nguyên văn
   assert.equal(data.quyet_dinh_hieu_luc.length, 1);
   assert.equal(data.quyet_dinh_hieu_luc[0].id, 'QD-3');
-  assert.equal(data.quyet_dinh_hieu_luc[0].noi_dung_ngan.length, 160);
-  assert.ok(data.quyet_dinh_hieu_luc[0].noi_dung_ngan.endsWith('…'));
+  assert.equal(data.quyet_dinh_hieu_luc[0].noi_dung, 'D'.repeat(200));
+  assert.equal(data.bi_cat, undefined, 'Không có trường bi_cat khi không bị cắt');
 
   // 4. Dự án trọng tâm: chỉ DA-2 và DA-3, chỉ có id + ten
   assert.equal(data.du_an_trong_tam.length, 2);
@@ -521,6 +521,20 @@ test('kho-tools: khoTomTat successfully aggregates and formats core data', async
   const resNeg = await khoTomTat({ so_phien: -3 }, ctx);
   const dataNeg = JSON.parse(resNeg.content[0].text);
   assert.equal(dataNeg.phien_gan_nhat.length, 1); // Clamp to min 1
+});
+
+test('kho-tools: cutAtSentence correctly cuts at sentence boundary or falls back to word boundary', () => {
+  const text1 = 'Câu thứ nhất. Câu thứ hai! Câu thứ ba? Kết thúc.';
+  // cap = 30 fits 'Câu thứ nhất. Câu thứ hai!' (26 chars) + ' …' -> 28 <= 30
+  const cut1 = cutAtSentence(text1, 30);
+  assert.equal(cut1, 'Câu thứ nhất. Câu thứ hai! …');
+
+  // Single long sentence exceeding cap cuts at word boundary
+  const text2 = 'Đây là một câu rất dài không có dấu chấm phẩy gì cả và cần được cắt gọn.';
+  const cut2 = cutAtSentence(text2, 25);
+  assert.ok(cut2.length <= 25);
+  assert.ok(cut2.endsWith(' …'));
+  assert.equal(cut2, 'Đây là một câu rất dài …');
 });
 
 test('kho-tools: khoTomTat treats empty/null Trạng thái as open task', async () => {
@@ -583,7 +597,7 @@ test('kho-tools: khoTomTat handles multi-page pagination', async () => {
   assert.equal(data.viec_dang_mo[1].id, 'VIEC-2');
 });
 
-test('kho-tools: khoTomTat hard budget guard guarantees output length <= 3000 chars with 20 long tasks + 5 long sessions', async () => {
+test('kho-tools: khoTomTat hard budget guard guarantees output length <= 4500 chars with 20 long tasks + 5 long sessions', async () => {
   const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
   const longText = 'A'.repeat(600);
 
@@ -637,11 +651,204 @@ test('kho-tools: khoTomTat hard budget guard guarantees output length <= 3000 ch
   const res = await khoTomTat({ so_phien: 5 }, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
   assert.equal(res.isError, false);
   const textOutput = res.content[0].text;
-  // Output MUST be strictly <= 3000 chars!
-  assert.ok(textOutput.length <= 3000, `Output length (${textOutput.length}) must be <= 3000 chars`);
+  // Output MUST be strictly <= 4500 chars!
+  assert.ok(textOutput.length <= 4500, `Output length (${textOutput.length}) must be <= 4500 chars`);
   const parsed = JSON.parse(textOutput);
-  // Must have pruned or marked bi_cat
-  assert.equal(parsed.bi_cat, true);
+  // Must have pruned and marked bi_cat as array of strings
+  assert.ok(Array.isArray(parsed.bi_cat));
+  assert.ok(parsed.bi_cat.includes('phien_chi_tiet'));
+  assert.ok(parsed.bi_cat.some(item => item.startsWith('phien_cu:')));
+  assert.ok(parsed.bi_cat.some(item => item.startsWith('viec_P3:')));
+  assert.ok(parsed.bi_cat.includes('viec_tieu_de'));
+  assert.ok(parsed.bi_cat.some(item => item.startsWith('viec_P2:')));
+  assert.ok(parsed.bi_cat.includes('phien_bo_chi_tiet'));
+  assert.ok(parsed.bi_cat.some(item => item.startsWith('qd_rut_gon:')));
+});
+
+test('kho-tools: khoTomTat preserves verbatim text for all 8 decisions in standard Kho Ryan data with no bi_cat on default', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const qdContents = {
+    1: 'QD-1 nội dung nguyên bản khởi tạo kho.',
+    2: 'QD-2 nội dung nguyên bản về quy chuẩn commit và PR.',
+    3: 'QD-3 nội dung nguyên bản về bảo mật.',
+    4: 'QD-4 tác phong làm việc chuẩn mực: 📋 Còn nợ: hiển thị đầy đủ danh sách việc dở dang; 💡 Học nhanh: cập nhật bài học rút ra.',
+    5: 'QD-5 nghi thức giao tiếp điều hành: 📋 Còn nợ: theo dõi sát sao; 💡 Học nhanh: áp dụng ngay.',
+    6: 'QD-6 quy định về luồng dữ liệu.',
+    7: 'QD-7 chính sách quản lý token và bí mật.',
+    8: 'QD-8 hệ thống giám sát và cảnh báo sớm.'
+  };
+
+  const qdRows = Object.entries(qdContents).map(([id, content]) => ({
+    id: Number(id),
+    'Mã ID': `QD-${id}`,
+    'Ngày': `2026-09-2${Math.min(9, Number(id))}`,
+    'Nội dung': content,
+    'Trạng thái': 'Có hiệu lực'
+  }));
+
+  const fakeData = {
+    101: [{ id: 1, 'Mã ID': 'PHIEN-1', 'Ngày': '2026-09-29', 'Chủ đề': 'Phiên hiện tại', 'Việc tiếp': 'Việc A', 'Cảnh báo': 'Cảnh báo B' }],
+    102: [
+      { id: 1, 'Mã ID': 'VIEC-1', 'Tiêu đề': 'Việc P1 đang làm', 'Trạng thái': 'Đang làm', 'Ưu tiên': 'P1', 'Người làm': 'agy' }
+    ],
+    103: qdRows,
+    104: [{ id: 1, 'Mã ID': 'DA-1', 'Tên': 'Gen-hub', 'Trọng tâm': true }]
+  };
+
+  const fakeRequest = async url => {
+    for (const [tId, rows] of Object.entries(fakeData)) {
+      if (url.includes(`/api/database/rows/table/${tId}/`)) {
+        return { status: 200, body: { count: rows.length, next: null, results: rows } };
+      }
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  };
+
+  const ctx = { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest };
+
+  // 1. Mặc định (so_phien=1): đủ 8 Quyết định nguyên văn, không có bi_cat, length <= 4500
+  const resDefault = await khoTomTat({}, ctx);
+  assert.equal(resDefault.isError, false);
+  const textDefault = resDefault.content[0].text;
+  assert.ok(textDefault.length <= 4500);
+  const parsedDefault = JSON.parse(textDefault);
+  assert.equal(parsedDefault.quyet_dinh_hieu_luc.length, 8);
+  assert.equal(parsedDefault.bi_cat, undefined, 'Không có bi_cat khi không bị cắt');
+
+  // Kiểm tra QD-4 và QD-5 nguyên văn
+  const qd4 = parsedDefault.quyet_dinh_hieu_luc.find(q => q.id === 'QD-4');
+  const qd5 = parsedDefault.quyet_dinh_hieu_luc.find(q => q.id === 'QD-5');
+  assert.ok(qd4);
+  assert.ok(qd5);
+  assert.equal(qd4.noi_dung, qdContents[4]);
+  assert.equal(qd5.noi_dung, qdContents[5]);
+  assert.ok(qd4.noi_dung.includes('📋 Còn nợ'));
+  assert.ok(qd4.noi_dung.includes('💡 Học nhanh'));
+  assert.ok(qd5.noi_dung.includes('📋 Còn nợ'));
+  assert.ok(qd5.noi_dung.includes('💡 Học nhanh'));
+
+  // Kiểm tra sắp xếp: mới nhất lên trước
+  assert.equal(parsedDefault.quyet_dinh_hieu_luc[0].id, 'QD-8');
+
+  // 2. Với so_phien=5
+  const res5 = await khoTomTat({ so_phien: 5 }, ctx);
+  assert.equal(res5.isError, false);
+  const text5 = res5.content[0].text;
+  assert.ok(text5.length <= 4500);
+  const parsed5 = JSON.parse(text5);
+  assert.equal(parsed5.quyet_dinh_hieu_luc.length, 8);
+});
+
+test('kho-tools: khoTomTat pruning prioritizes sessions and tasks before decisions', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const longSentence = 'Nội dung chi tiết của phiên này rất dài và chứa nhiều câu cần xử lý. ';
+
+  const phienRows = Array.from({ length: 5 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `PHIEN-${i + 1}`,
+    'Ngày': `2026-09-2${i}`,
+    'Chủ đề': `Chủ đề phiên ${i + 1} ` + 'A'.repeat(80),
+    'Việc tiếp': longSentence.repeat(5),
+    'Cảnh báo': 'Cảnh báo phiên ' + longSentence.repeat(5)
+  }));
+
+  const viecRows = [
+    { id: 100, 'Mã ID': 'VIEC-100', 'Tiêu đề': 'Việc P1 quan trọng cần giữ nguyên vẹn', 'Trạng thái': 'Đang làm', 'Ưu tiên': 'P1' },
+    ...Array.from({ length: 15 }, (_, i) => ({
+      id: i + 1,
+      'Mã ID': `VIEC-${i + 1}`,
+      'Tiêu đề': `Việc P3 số ${i + 1} có thể bỏ bớt khi cần giải phóng ngân sách ` + 'x'.repeat(40),
+      'Trạng thái': 'Đang làm',
+      'Ưu tiên': 'P3'
+    }))
+  ];
+
+  const qdRows = Array.from({ length: 8 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `QD-${i + 1}`,
+    'Ngày': `2026-09-28`,
+    'Nội dung': `Quy định số ${i + 1} có nội dung tiêu chuẩn vừa phải khoảng 150 ký tự để kiểm tra. Quy định này không được cắt trước các chi tiết phiên và việc P3.`,
+    'Trạng thái': 'Có hiệu lực'
+  }));
+
+  const fakeData = { 101: phienRows, 102: viecRows, 103: qdRows, 104: [] };
+
+  const fakeRequest = async url => {
+    for (const [tId, rows] of Object.entries(fakeData)) {
+      if (url.includes(`/api/database/rows/table/${tId}/`)) {
+        return { status: 200, body: { count: rows.length, next: null, results: rows } };
+      }
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  };
+
+  const res = await khoTomTat({ so_phien: 5 }, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
+  assert.equal(res.isError, false);
+  const parsed = JSON.parse(res.content[0].text);
+
+  // Mọi ID QĐ hiệu lực đều còn đủ và chưa bị rút gọn vì ngân sách chỉ mới cắt ở tầng phiên/việc
+  assert.equal(parsed.quyet_dinh_hieu_luc.length, 8);
+  for (const q of parsed.quyet_dinh_hieu_luc) {
+    assert.equal(q.noi_dung.endsWith('…'), false, `QĐ ${q.id} không bị cắt`);
+  }
+  // bi_cat có phien_chi_tiet, không có qd_rut_gon
+  assert.ok(parsed.bi_cat);
+  assert.ok(parsed.bi_cat.includes('phien_chi_tiet'));
+  assert.equal(parsed.bi_cat.some(item => item.startsWith('qd_rut_gon:')), false, 'QĐ không bị rút gọn');
+});
+
+test('kho-tools: khoTomTat extreme decision load truncates oldest decisions at sentence boundary without dropping IDs', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const longSentence = 'Quy tắc thứ nhất rất quan trọng. Quy tắc thứ hai cũng rất quan trọng. ';
+
+  // 15 QĐ x 400 ký tự
+  const qdRows = Array.from({ length: 15 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `QD-${i + 1}`,
+    'Ngày': `2026-09-1${String(i).padStart(2, '0')}`,
+    'Nội dung': `Quyết định ${i + 1}. ` + longSentence.repeat(5),
+    'Trạng thái': 'Có hiệu lực'
+  }));
+
+  const fakeData = {
+    101: [{ id: 1, 'Mã ID': 'PHIEN-1', 'Ngày': '2026-09-29', 'Chủ đề': 'P1', 'Việc tiếp': '', 'Cảnh báo': '' }],
+    102: [{ id: 1, 'Mã ID': 'VIEC-1', 'Tiêu đề': 'Task 1', 'Trạng thái': 'Đang làm', 'Ưu tiên': 'P1' }],
+    103: qdRows,
+    104: []
+  };
+
+  const fakeRequest = async url => {
+    for (const [tId, rows] of Object.entries(fakeData)) {
+      if (url.includes(`/api/database/rows/table/${tId}/`)) {
+        return { status: 200, body: { count: rows.length, next: null, results: rows } };
+      }
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  };
+
+  const res = await khoTomTat({}, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
+  assert.equal(res.isError, false);
+  const textOutput = res.content[0].text;
+  assert.ok(textOutput.length <= 4500, `Output length (${textOutput.length}) must be <= 4500`);
+  const parsed = JSON.parse(textOutput);
+
+  // Mọi mã QĐ đều còn đủ 15 cái! Không bao giờ drop ID nào
+  assert.equal(parsed.quyet_dinh_hieu_luc.length, 15);
+  for (let i = 1; i <= 15; i++) {
+    assert.ok(parsed.quyet_dinh_hieu_luc.some(q => q.id === `QD-${i}`));
+  }
+
+  // bi_cat có qd_rut_gon
+  assert.ok(parsed.bi_cat);
+  assert.ok(parsed.bi_cat.some(item => item.startsWith('qd_rut_gon:')));
+
+  // QĐ mới nhất (index 0) không bị cắt trước QĐ cũ
+  const newestQd = parsed.quyet_dinh_hieu_luc[0];
+  const oldestQd = parsed.quyet_dinh_hieu_luc[parsed.quyet_dinh_hieu_luc.length - 1];
+  assert.ok(oldestQd.noi_dung.endsWith('…'), 'QĐ cũ nhất bị rút gọn');
+
+  // Ghi chú có cảnh báo QĐ rút gọn
+  assert.ok(parsed.ghi_chu.includes('QĐ đánh dấu … đã rút gọn: kho_get <mã> để đọc đủ'));
 });
 
 test('kho-tools: khoTomTat strips secret token when upstream only returns detail (no error key)', async () => {

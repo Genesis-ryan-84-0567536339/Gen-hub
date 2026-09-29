@@ -178,7 +178,7 @@ export const khoFindByIdTool = {
 export const khoTomTatTool = {
   name: 'kho_tom_tat',
   description:
-    'Tóm tắt thông tin cốt lõi trong Kho Ryan cho đầu phiên làm việc (Phiên gần nhất, Việc đang mở, Quyết định hiệu lực, Dự án trọng tâm). Gọn nhẹ, tiết kiệm token.',
+    'Tóm tắt thông tin cốt lõi trong Kho Ryan cho đầu phiên làm việc (Phiên gần nhất, Việc đang mở, Quyết định hiệu lực nguyên văn, Dự án trọng tâm). Ngân sách tối đa 4.500 ký tự.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -602,6 +602,39 @@ function truncateString(val, maxLength) {
   return s.slice(0, maxLength - 1) + '…';
 }
 
+export function cutAtSentence(s, cap) {
+  if (s === null || s === undefined) return '';
+  const text = String(s).trim();
+  if (text.length <= cap) return text;
+  if (cap <= 2) return text.slice(0, cap);
+
+  // Tách các câu: ranh giới câu kết thúc bằng . hoặc ! hoặc ? theo sau là khoảng trắng hoặc kết thúc chuỗi
+  const sentenceRegex = /[^.!?]+(?:[.!?]+(?:\s+|$)|$)/g;
+  const sentences = text.match(sentenceRegex) || [text];
+
+  let accumulated = '';
+  for (const sentence of sentences) {
+    const candidate = accumulated ? `${accumulated}${sentence}` : sentence;
+    if ((candidate.trim() + ' …').length <= cap) {
+      accumulated = candidate;
+    } else {
+      break;
+    }
+  }
+
+  if (accumulated.trim().length > 0) {
+    return accumulated.trim() + ' …';
+  }
+
+  // Câu đầu tiên dài hơn cap: cắt ở ranh giới từ
+  const sub = text.slice(0, cap - 2);
+  const lastSpace = sub.lastIndexOf(' ');
+  if (lastSpace > 0) {
+    return sub.slice(0, lastSpace).trim() + ' …';
+  }
+  return sub.trim() + ' …';
+}
+
 function stripSecretToken(rawText, secretToken) {
   let cleaned = sanitizeText(typeof rawText === 'string' ? rawText : JSON.stringify(rawText));
   if (secretToken && typeof secretToken === 'string' && secretToken.length >= 4) {
@@ -704,8 +737,10 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
         return fetchAllRows(map.VIEC, 'Việc', 'size=100');
       }),
       // Quyết định: Lọc trạng thái Hiệu lực, size=100
-      fetchAllRows(map.QD, 'Quyết định', `size=100&filter__Tr%E1%BA%A1ng+th%C3%A1i__single_select_equal=${hieuLucOptionId}`).catch(async () => {
-        return fetchAllRows(map.QD, 'Quyết định', 'size=100');
+      fetchAllRows(map.QD, 'Quyết định', `size=100&order_by=-Ng%C3%A0y,-M%C3%A3+ID&filter__Tr%E1%BA%A1ng+th%C3%A1i__single_select_equal=${hieuLucOptionId}`).catch(async () => {
+        return fetchAllRows(map.QD, 'Quyết định', `size=100&filter__Tr%E1%BA%A1ng+th%C3%A1i__single_select_equal=${hieuLucOptionId}`).catch(async () => {
+          return fetchAllRows(map.QD, 'Quyết định', 'size=100');
+        });
       }),
       // Dự án: Lọc Trọng tâm == 1, size=100
       fetchAllRows(map.DA, 'Dự án', 'size=100&filter__Tr%E1%BB%8Dng+t%C3%A2m__boolean=1').catch(async () => {
@@ -758,19 +793,24 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
         };
       });
 
-    // 3. Quyết định hiệu lực: Trạng thái = Hiệu lực; Nội dung cắt ≤ 160 ký tự, tối đa 15 QĐ
+    // 3. Quyết định hiệu lực: Trạng thái = Hiệu lực; sắp xếp Ngày giảm dần rồi id giảm dần (mới nhất trước); trả nguyên văn nội dung
     const quyetDinhHieuLuc = qdRows
       .filter(q => {
         const stRaw = typeof q['Trạng thái'] === 'object' ? q['Trạng thái']?.value : q['Trạng thái'];
         const st = String(stRaw || '').trim().toLowerCase();
         return (st === 'hiệu lực' || st === 'có hiệu lực') || (st.includes('hiệu lực') && !st.includes('hết') && !st.includes('thay thế'));
       })
-      .slice(0, 15)
+      .sort((a, b) => {
+        const dateA = String(a['Ngày'] || '').slice(0, 10);
+        const dateB = String(b['Ngày'] || '').slice(0, 10);
+        if (dateA !== dateB) return dateB.localeCompare(dateA);
+        return (b.id || 0) - (a.id || 0);
+      })
       .map(q => {
         const rawContent = q['Nội dung'] || q['Tiêu đề'] || '';
         return {
           id: q['Mã ID'] || `QD-${q.id}`,
-          noi_dung_ngan: truncateString(rawContent, 160)
+          noi_dung: String(rawContent).trim()
         };
       });
 
@@ -794,41 +834,181 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
       ghi_chu: 'Cần chi tiết: kho_get <ID>'
     };
 
-    let serialized = JSON.stringify(result);
+    // Chặn trên ngân sách 4.500 ký tự (QĐ ngân sách riêng 3.600 ký tự)
+    const MAX_OUTPUT_CHARS = 4500;
+    const MAX_QD_CHARS = 3600;
 
-    // Chặn trên kích thước ~3.000 ký tự (Hard budget guard)
-    const MAX_OUTPUT_CHARS = 3000;
-    if (serialized.length > MAX_OUTPUT_CHARS) {
-      result.bi_cat = true;
-      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.quyet_dinh_hieu_luc.length > 5) {
-        result.quyet_dinh_hieu_luc.pop();
+    const biCat = [];
+
+    const getCurrentSerialized = () => {
+      const payload = { ...result };
+      if (biCat.length > 0) {
+        payload.bi_cat = biCat;
       }
-      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.viec_dang_mo.length > 5) {
-        result.viec_dang_mo.pop();
-      }
-      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.phien_gan_nhat.length > 1) {
-        result.phien_gan_nhat.pop();
-      }
-      if (JSON.stringify(result).length > MAX_OUTPUT_CHARS) {
-        for (const p of result.phien_gan_nhat) {
-          p.viec_tiep = truncateString(p.viec_tiep, 100);
-          p.canh_bao = truncateString(p.canh_bao, 100);
+      return JSON.stringify(payload);
+    };
+
+    const isQdOverflow = () => JSON.stringify(result.quyet_dinh_hieu_luc).length > MAX_QD_CHARS;
+
+    // 1. Chi tiết phiên: viec_tiep, canh_bao 200 → 100 (bằng cutAtSentence)
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      let trimmedPhien = false;
+      for (const p of result.phien_gan_nhat) {
+        if (p.viec_tiep && p.viec_tiep.length > 100) {
+          p.viec_tiep = cutAtSentence(p.viec_tiep, 100);
+          trimmedPhien = true;
         }
-        for (const v of result.viec_dang_mo) {
-          v.tieu_de = truncateString(v.tieu_de, 50);
-        }
-        for (const q of result.quyet_dinh_hieu_luc) {
-          q.noi_dung_ngan = truncateString(q.noi_dung_ngan, 80);
+        if (p.canh_bao && p.canh_bao.length > 100) {
+          p.canh_bao = cutAtSentence(p.canh_bao, 100);
+          trimmedPhien = true;
         }
       }
-      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.quyet_dinh_hieu_luc.length > 1) {
-        result.quyet_dinh_hieu_luc.pop();
+      if (trimmedPhien) {
+        biCat.push('phien_chi_tiet');
       }
-      while (JSON.stringify(result).length > MAX_OUTPUT_CHARS && result.viec_dang_mo.length > 1) {
-        result.viec_dang_mo.pop();
-      }
-      serialized = JSON.stringify(result);
     }
+
+    // 2. Bỏ phiên cũ nhất, giữ tối thiểu 1
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS && result.phien_gan_nhat.length > 1) {
+      let phienCuCount = 0;
+      while (getCurrentSerialized().length > MAX_OUTPUT_CHARS && result.phien_gan_nhat.length > 1) {
+        result.phien_gan_nhat.pop();
+        phienCuCount++;
+      }
+      if (phienCuCount > 0) {
+        biCat.push(`phien_cu:-${phienCuCount}`);
+      }
+    }
+
+    // 3. Bỏ việc P3 (từ cuối)
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      let viecP3Count = 0;
+      for (let i = result.viec_dang_mo.length - 1; i >= 0; i--) {
+        if (getCurrentSerialized().length <= MAX_OUTPUT_CHARS) break;
+        const v = result.viec_dang_mo[i];
+        if (String(v.uu_tien || '').trim().toLowerCase() === 'p3') {
+          result.viec_dang_mo.splice(i, 1);
+          viecP3Count++;
+        }
+      }
+      if (viecP3Count > 0) {
+        biCat.push(`viec_P3:-${viecP3Count}`);
+      }
+    }
+
+    // 4. Rút tieu_de việc 80 → 50
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      let trimmedTieuDe = false;
+      for (const v of result.viec_dang_mo) {
+        if (v.tieu_de && v.tieu_de.length > 50) {
+          v.tieu_de = truncateString(v.tieu_de, 50);
+          trimmedTieuDe = true;
+        }
+      }
+      if (trimmedTieuDe) {
+        biCat.push('viec_tieu_de');
+      }
+    }
+
+    // 5. Bỏ việc P2 (từ cuối), giữ tối thiểu mọi việc P1
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      let viecP2Count = 0;
+      for (let i = result.viec_dang_mo.length - 1; i >= 0; i--) {
+        if (getCurrentSerialized().length <= MAX_OUTPUT_CHARS) break;
+        const v = result.viec_dang_mo[i];
+        if (String(v.uu_tien || '').trim().toLowerCase() === 'p2') {
+          result.viec_dang_mo.splice(i, 1);
+          viecP2Count++;
+        }
+      }
+      if (viecP2Count > 0) {
+        biCat.push(`viec_P2:-${viecP2Count}`);
+      }
+    }
+
+    // 6. Bỏ chi tiết phiên còn lại (chỉ còn id/ngay/chu_de)
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      let droppedDetails = false;
+      for (const p of result.phien_gan_nhat) {
+        if (p.viec_tiep !== undefined || p.canh_bao !== undefined) {
+          delete p.viec_tiep;
+          delete p.canh_bao;
+          droppedDetails = true;
+        }
+      }
+      if (droppedDetails) {
+        biCat.push('phien_bo_chi_tiet');
+      }
+    }
+
+    // 7. Chỉ khi mục QĐ tự nó > MAX_QD_CHARS (hoặc sau bước 6 vẫn vượt): rút gọn QĐ cũ nhất trước bằng cutAtSentence(…, 220). Không bao giờ bỏ id QĐ nào.
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS || isQdOverflow()) {
+      const qdRutGonIds = [];
+      const noteSuffix = '; QĐ đánh dấu … đã rút gọn: kho_get <mã> để đọc đủ; nên gộp/Thay thế QĐ cũ';
+      // QĐ đã được sort mới nhất ở đầu (index 0), cũ nhất ở cuối (index length - 1)
+      for (let i = result.quyet_dinh_hieu_luc.length - 1; i >= 0; i--) {
+        if (getCurrentSerialized().length <= MAX_OUTPUT_CHARS && !isQdOverflow()) break;
+        const q = result.quyet_dinh_hieu_luc[i];
+        if (q.noi_dung && q.noi_dung.length > 220) {
+          q.noi_dung = cutAtSentence(q.noi_dung, 220);
+          qdRutGonIds.push(q.id);
+          if (!result.ghi_chu.includes(noteSuffix)) {
+            result.ghi_chu += noteSuffix;
+          }
+          const itemTag = `qd_rut_gon:${qdRutGonIds.join(',')}`;
+          const existingIdx = biCat.findIndex(item => item.startsWith('qd_rut_gon:'));
+          if (existingIdx >= 0) {
+            biCat[existingIdx] = itemTag;
+          } else {
+            biCat.push(itemTag);
+          }
+        }
+      }
+    }
+
+    // Dự phòng trường hợp cực đoan (nhiều QĐ / nhiều dự án / nhiều việc P1) vẫn vượt 4.500:
+    // Cắt tỉa sâu hơn QĐ cũ xuống 100 rồi 50
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      for (let i = result.quyet_dinh_hieu_luc.length - 1; i >= 0; i--) {
+        if (getCurrentSerialized().length <= MAX_OUTPUT_CHARS) break;
+        const q = result.quyet_dinh_hieu_luc[i];
+        q.noi_dung = cutAtSentence(q.noi_dung, 100);
+      }
+    }
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      for (let i = result.quyet_dinh_hieu_luc.length - 1; i >= 0; i--) {
+        if (getCurrentSerialized().length <= MAX_OUTPUT_CHARS) break;
+        const q = result.quyet_dinh_hieu_luc[i];
+        q.noi_dung = cutAtSentence(q.noi_dung, 50);
+      }
+    }
+    // Rút gọn tên dự án trọng tâm
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      for (const d of result.du_an_trong_tam) {
+        if (getCurrentSerialized().length <= MAX_OUTPUT_CHARS) break;
+        if (d.ten && d.ten.length > 40) {
+          d.ten = truncateString(d.ten, 40);
+        }
+      }
+    }
+    // Bỏ việc P1 từ cuối nếu vẫn vượt ngân sách
+    if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
+      let viecP1Count = 0;
+      for (let i = result.viec_dang_mo.length - 1; i >= 0; i--) {
+        if (getCurrentSerialized().length <= MAX_OUTPUT_CHARS) break;
+        result.viec_dang_mo.splice(i, 1);
+        viecP1Count++;
+      }
+      if (viecP1Count > 0) {
+        biCat.push(`viec_P1:-${viecP1Count}`);
+      }
+    }
+
+    // Gắn bi_cat nếu có bất kỳ phần tử nào bị cắt
+    if (biCat.length > 0) {
+      result.bi_cat = biCat;
+    }
+    const serialized = JSON.stringify(result);
 
     return {
       content: [
