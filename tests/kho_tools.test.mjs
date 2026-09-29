@@ -486,10 +486,11 @@ test('kho-tools: khoTomTat successfully aggregates and formats core data', async
   assert.equal(data.viec_dang_mo[2].id, 'VIEC-2'); // P3
   assert.equal(data.viec_dang_mo[2].uu_tien, 'P3');
 
-  // 3. Quyết định hiệu lực: chỉ lấy QD-3, cắt nội dung <= 160 ký tự
+  // 3. Quyết định hiệu lực: chỉ lấy QD-3, cắt nội dung <= 160 ký tự kèm …
   assert.equal(data.quyet_dinh_hieu_luc.length, 1);
   assert.equal(data.quyet_dinh_hieu_luc[0].id, 'QD-3');
   assert.equal(data.quyet_dinh_hieu_luc[0].noi_dung_ngan.length, 160);
+  assert.ok(data.quyet_dinh_hieu_luc[0].noi_dung_ngan.endsWith('…'));
 
   // 4. Dự án trọng tâm: chỉ DA-2 và DA-3, chỉ có id + ten
   assert.equal(data.du_an_trong_tam.length, 2);
@@ -504,45 +505,173 @@ test('kho-tools: khoTomTat successfully aggregates and formats core data', async
   assert.equal(data2.phien_gan_nhat.length, 2);
   assert.equal(data2.phien_gan_nhat[0].id, 'PHIEN-3');
   assert.equal(data2.phien_gan_nhat[1].id, 'PHIEN-2');
-  // Check truncation of canh_bao in PHIEN-2 <= 400 chars
-  assert.equal(data2.phien_gan_nhat[1].canh_bao.length, 400);
+  // Check truncation of canh_bao in PHIEN-2 <= 200 chars and ends with …
+  assert.equal(data2.phien_gan_nhat[1].canh_bao.length, 200);
+  assert.ok(data2.phien_gan_nhat[1].canh_bao.endsWith('…'));
 
   // Test so_phien > 5 clamps to 5, so_phien < 1 clamps to 1
   const resMax = await khoTomTat({ so_phien: 10 }, ctx);
   const dataMax = JSON.parse(resMax.content[0].text);
   assert.equal(dataMax.phien_gan_nhat.length, 3); // Only 3 total in fakeData
+
+  const resMin = await khoTomTat({ so_phien: 0 }, ctx);
+  const dataMin = JSON.parse(resMin.content[0].text);
+  assert.equal(dataMin.phien_gan_nhat.length, 1); // Clamp to min 1
+
+  const resNeg = await khoTomTat({ so_phien: -3 }, ctx);
+  const dataNeg = JSON.parse(resNeg.content[0].text);
+  assert.equal(dataNeg.phien_gan_nhat.length, 1); // Clamp to min 1
 });
 
-test('kho-tools: khoTomTat returns isError: true on upstream failure and does not leak token', async () => {
+test('kho-tools: khoTomTat treats empty/null Trạng thái as open task', async () => {
   const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
-  const secretToken = 'super-secret-kho-token-999';
+  const fakeData = {
+    101: [{ id: 1, 'Mã ID': 'PHIEN-1', 'Ngày': '2026-09-28', 'Chủ đề': 'P1', 'Việc tiếp': '', 'Cảnh báo': '' }],
+    102: [
+      { id: 1, 'Mã ID': 'VIEC-1', 'Tiêu đề': 'Task with null status', 'Trạng thái': null, 'Ưu tiên': 'P1' },
+      { id: 2, 'Mã ID': 'VIEC-2', 'Tiêu đề': 'Task with empty status', 'Trạng thái': '', 'Ưu tiên': 'P2' },
+      { id: 3, 'Mã ID': 'VIEC-3', 'Tiêu đề': 'Task completed', 'Trạng thái': 'Xong', 'Ưu tiên': 'P1' }
+    ],
+    103: [],
+    104: []
+  };
 
-  const failingRequest = async (url) => {
+  const fakeRequest = async url => {
+    for (const [tId, rows] of Object.entries(fakeData)) {
+      if (url.includes(`/api/database/rows/table/${tId}/`)) {
+        return { status: 200, body: { count: rows.length, next: null, results: rows } };
+      }
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  };
+
+  const res = await khoTomTat({}, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
+  assert.equal(res.isError, false);
+  const data = JSON.parse(res.content[0].text);
+  // VIEC-1 and VIEC-2 should be included because null/empty status is considered open
+  assert.equal(data.viec_dang_mo.length, 2);
+  assert.equal(data.viec_dang_mo[0].id, 'VIEC-1');
+  assert.equal(data.viec_dang_mo[1].id, 'VIEC-2');
+});
+
+test('kho-tools: khoTomTat handles multi-page pagination', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const page1 = [
+    { id: 1, 'Mã ID': 'VIEC-1', 'Tiêu đề': 'Task 1', 'Trạng thái': 'Đang làm', 'Ưu tiên': 'P1' }
+  ];
+  const page2 = [
+    { id: 2, 'Mã ID': 'VIEC-2', 'Tiêu đề': 'Task 2', 'Trạng thái': 'Đang làm', 'Ưu tiên': 'P2' }
+  ];
+
+  const fakeRequest = async url => {
+    if (url.includes('/api/database/rows/table/102/')) {
+      if (url.includes('page=1')) {
+        return { status: 200, body: { count: 2, next: 'http://kho/page=2', results: page1 } };
+      }
+      if (url.includes('page=2')) {
+        return { status: 200, body: { count: 2, next: null, results: page2 } };
+      }
+    }
+    return { status: 200, body: { count: 0, next: null, results: [] } };
+  };
+
+  const res = await khoTomTat({}, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
+  assert.equal(res.isError, false);
+  const data = JSON.parse(res.content[0].text);
+  assert.equal(data.viec_dang_mo.length, 2);
+  assert.equal(data.viec_dang_mo[0].id, 'VIEC-1');
+  assert.equal(data.viec_dang_mo[1].id, 'VIEC-2');
+});
+
+test('kho-tools: khoTomTat hard budget guard guarantees output length <= 3000 chars with 20 long tasks + 5 long sessions', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const longText = 'A'.repeat(600);
+
+  // Generate 5 long sessions
+  const phienRows = Array.from({ length: 5 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `PHIEN-${i + 1}`,
+    'Ngày': `2026-09-2${i}`,
+    'Chủ đề': `Chủ đề phiên rất dài ${longText.slice(0, 100)}`,
+    'Việc tiếp': `Việc tiếp rất dài ${longText}`,
+    'Cảnh báo': `Cảnh báo rất dài ${longText}`
+  }));
+
+  // Generate 25 tasks (should take max 20)
+  const viecRows = Array.from({ length: 25 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `VIEC-${i + 1}`,
+    'Tiêu đề': `Tiêu đề việc rất dài ${longText.slice(0, 120)}`,
+    'Trạng thái': 'Đang làm',
+    'Ưu tiên': i % 3 === 0 ? 'P1' : i % 3 === 1 ? 'P2' : 'P3',
+    'Người làm': 'Claude và agy'
+  }));
+
+  // Generate 20 decisions
+  const qdRows = Array.from({ length: 20 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `QD-${i + 1}`,
+    'Nội dung': `Quyết định quy định rất dài ${longText}`,
+    'Trạng thái': 'Hiệu lực'
+  }));
+
+  // Generate 15 projects
+  const daRows = Array.from({ length: 15 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `DA-${i + 1}`,
+    'Tên': `Dự án chiến lược trọng tâm ${longText.slice(0, 100)}`,
+    'Trọng tâm': true
+  }));
+
+  const fakeData = { 101: phienRows, 102: viecRows, 103: qdRows, 104: daRows };
+
+  const fakeRequest = async url => {
+    for (const [tId, rows] of Object.entries(fakeData)) {
+      if (url.includes(`/api/database/rows/table/${tId}/`)) {
+        return { status: 200, body: { count: rows.length, next: null, results: rows } };
+      }
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  };
+
+  const res = await khoTomTat({ so_phien: 5 }, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
+  assert.equal(res.isError, false);
+  const textOutput = res.content[0].text;
+  // Output MUST be strictly <= 3000 chars!
+  assert.ok(textOutput.length <= 3000, `Output length (${textOutput.length}) must be <= 3000 chars`);
+  const parsed = JSON.parse(textOutput);
+  // Must have pruned or marked bi_cat
+  assert.equal(parsed.bi_cat, true);
+});
+
+test('kho-tools: khoTomTat strips secret token when upstream only returns detail (no error key)', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const secretToken = 'super-secret-unique-token-abc123xyz';
+
+  const detailOnlyFailRequest = async url => {
     if (url.includes('/api/database/rows/table/102/')) {
       return {
         status: 502,
-        body: { error: 'ERROR_GATEWAY_TIMEOUT', detail: `Upstream error with token ${secretToken}` }
+        body: { detail: `Authentication failure upstream with token ${secretToken}` }
       };
     }
-    return {
-      status: 200,
-      body: { count: 0, next: null, results: [] }
-    };
+    return { status: 200, body: { count: 0, next: null, results: [] } };
   };
 
   const ctx = {
     restUrl: 'http://kho:80',
     token: secretToken,
     tableIds,
-    request: failingRequest
+    request: detailOnlyFailRequest
   };
 
   const res = await khoTomTat({}, ctx);
   assert.equal(res.isError, true);
   const outputText = res.content[0].text;
   assert.ok(outputText.includes('Lỗi tóm tắt Kho Ryan'));
-  // Token should not be leaked anywhere in output text
-  assert.equal(outputText.includes(secretToken), false);
+  // Secret token must NEVER appear anywhere in the output!
+  assert.equal(outputText.includes(secretToken), false, 'Secret token must be completely stripped');
+  assert.ok(outputText.includes('[REDACTED]'));
 });
 
 
