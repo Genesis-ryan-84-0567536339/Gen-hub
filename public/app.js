@@ -59,7 +59,9 @@ const paths = {
   file: 'M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6',
   bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
   database: 'M4 6c0 1.66 3.58 3 8 3s8-1.34 8-3-3.58-3-8-3-8 1.34-8 3zm0 5c0 1.66 3.58 3 8 3s8-1.34 8-3M4 16c0 1.66 3.58 3 8 3s8-1.34 8-3',
-  chevron: 'm6 9 6 6 6-6'
+  chevron: 'm6 9 6 6 6-6',
+  eye: 'M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  eyeOff: 'M10.73 5.08a10.43 10.43 0 0 1 11.2 6.57 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-1.44 2.49M14.08 14.16a3 3 0 0 1-4.24-4.24M17.48 17.5a10.75 10.75 0 0 1-15.42-5.15 1 1 0 0 1 0-.7 10.75 10.75 0 0 1 4.45-5.14M2 2l20 20'
 };
 const I = n =>
   `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[n] || paths.plug}"/></svg>`;
@@ -89,7 +91,8 @@ let state = null,
   statusFilter = 'all',
   agentFilter = 'all',
   mcpFilter = 'all',
-  timeFilter = 'all';
+  timeFilter = 'all',
+  endpointVisible = false;
 const selected = { agents: null, mcps: null, vault: null, settings: 'general' };
 const detailTabs = { agents: 'info', mcps: 'info', vault: 'info', settings: 'info' };
 let activity = new Map(),
@@ -977,7 +980,10 @@ function render() {
   }
 }
 function monitorEndpoint() {
-  return `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section>`;
+  const visible = endpointVisible;
+  const maskedVal = '••••••••••••••••••••••••';
+  const displayVal = visible ? esc(state.endpoint) : maskedVal;
+  return `<section class="card endpointbar"><span class="endpointbar-label">${I('link')}Một endpoint cho mọi agent</span><div class="codecopy" data-endpoint="${esc(state.endpoint)}"><code data-endpoint="${esc(state.endpoint)}" class="${visible ? '' : 'endpoint-masked'}" ${visible ? '' : 'title="Bấm con mắt để xem"'}>${displayVal}</code><div class="codecopy-actions"><button type="button" class="iconbutton" data-action="toggle-endpoint-visibility" aria-label="${visible ? 'Ẩn link kết nối' : 'Xem link kết nối'}" title="${visible ? 'Ẩn link kết nối' : 'Xem link kết nối'}">${I(visible ? 'eyeOff' : 'eye')}</button><button type="button" class="iconbutton" data-action="copyendpoint" aria-label="Sao chép" title="Sao chép">${I('copy')}</button></div></div>${btn('Hướng dẫn kết nối', 'connect', 'small', 'arrow')}</section>`;
 }
 function overview() {
   return (
@@ -2138,10 +2144,13 @@ function agentPermissions(a) {
 }
 function connect() {
   modalContext = { kind: 'connect' };
+  const visible = endpointVisible;
+  const maskedVal = '••••••••••••••••••••••••';
+  const displayVal = visible ? esc(state.endpoint) : maskedVal;
   show(
     'Kết nối agent',
     'Chọn OAuth hoặc tạo token riêng cho client.',
-    `<div class="codecopy"><code>${esc(state.endpoint)}</code><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép">${I('copy')}</button></div><div class="steps"><div class="step"><div><h3>Thêm endpoint vào MCP client</h3><p>Chọn Streamable HTTP. Client hỗ trợ OAuth sẽ mở trang đăng nhập Hub để bạn duyệt và cấp quyền.</p></div></div><div class="step"><div><h3>Agent chỉ thấy tool được cấp</h3><p>Quyền được kiểm tra trên mỗi lượt gọi. Không chuyển token dịch vụ cho agent.</p></div></div></div><div class="divider"></div><h3>Tạo token riêng</h3><p class="footnote">Dành cho client dùng Authorization: Bearer. Token hết hạn sau 90 ngày; chỉ hiển thị một lần.</p><form id="manual-agent" style="margin-top:20px"><label class="field">Tên agent<input class="input" name="name" required maxlength="80" placeholder="Codex CLI"></label>${grantRows([])}<button class="btn primary" type="submit">Tạo agent & token</button></form>`,
+    `<div class="codecopy" data-endpoint="${esc(state.endpoint)}"><code data-endpoint="${esc(state.endpoint)}" class="${visible ? '' : 'endpoint-masked'}" ${visible ? '' : 'title="Bấm con mắt để xem"'}>${displayVal}</code><div class="codecopy-actions"><button type="button" class="iconbutton" data-action="toggle-endpoint-visibility" aria-label="${visible ? 'Ẩn link kết nối' : 'Xem link kết nối'}" title="${visible ? 'Ẩn link kết nối' : 'Xem link kết nối'}">${I(visible ? 'eyeOff' : 'eye')}</button><button class="iconbutton" data-action="copyendpoint" aria-label="Sao chép" title="Sao chép">${I('copy')}</button></div></div><div class="steps"><div class="step"><div><h3>Thêm endpoint vào MCP client</h3><p>Chọn Streamable HTTP. Client hỗ trợ OAuth sẽ mở trang đăng nhập Hub để bạn duyệt và cấp quyền.</p></div></div><div class="step"><div><h3>Agent chỉ thấy tool được cấp</h3><p>Quyền được kiểm tra trên mỗi lượt gọi. Không chuyển token dịch vụ cho agent.</p></div></div></div><div class="divider"></div><h3>Tạo token riêng</h3><p class="footnote">Dành cho client dùng Authorization: Bearer. Token hết hạn sau 90 ngày; chỉ hiển thị một lần.</p><form id="manual-agent" style="margin-top:20px"><label class="field">Tên agent<input class="input" name="name" required maxlength="80" placeholder="Codex CLI"></label>${grantRows([])}<button class="btn primary" type="submit">Tạo agent & token</button></form>`,
     btn('Đóng', 'close'),
     true
   );
@@ -2646,16 +2655,47 @@ async function act(action, args, el = null) {
     login();
     return;
   }
+  if (action === 'toggle-endpoint-visibility') {
+    endpointVisible = !endpointVisible;
+    const containers = document.querySelectorAll('.codecopy[data-endpoint]');
+    if (containers.length) {
+      containers.forEach(container => {
+        const codeEl = container.querySelector('code');
+        const eyeBtn = container.querySelector('[data-action="toggle-endpoint-visibility"]');
+        const realUrl = container.dataset.endpoint || state.endpoint;
+        if (codeEl) {
+          if (endpointVisible) {
+            codeEl.textContent = realUrl;
+            codeEl.classList.remove('endpoint-masked');
+            codeEl.removeAttribute('title');
+          } else {
+            codeEl.textContent = '••••••••••••••••••••••••';
+            codeEl.classList.add('endpoint-masked');
+            codeEl.title = 'Bấm con mắt để xem';
+          }
+        }
+        if (eyeBtn) {
+          eyeBtn.innerHTML = I(endpointVisible ? 'eyeOff' : 'eye');
+          eyeBtn.title = endpointVisible ? 'Ẩn link kết nối' : 'Xem link kết nối';
+          eyeBtn.setAttribute('aria-label', endpointVisible ? 'Ẩn link kết nối' : 'Xem link kết nối');
+        }
+      });
+    } else {
+      renderMonitorBody();
+    }
+    return;
+  }
   if (action === 'copyendpoint') {
     const isExplicitAdmin = id === 'admin';
-    const codeText = el?.closest('.codecopy')?.querySelector('code')?.textContent?.trim();
+    const codeEl = el?.closest('.codecopy')?.querySelector('code');
     if (isExplicitAdmin) {
       const adminEndpoint =
         state.adminAssistant?.endpoint ||
         (state.origin ? state.origin + '/mcp/admin' : '/mcp/admin');
-      return copy(codeText || adminEndpoint);
+      return copy(codeEl?.textContent?.trim() || adminEndpoint);
     }
-    return copy(codeText || state.endpoint);
+    const realEndpoint = codeEl?.dataset?.endpoint || state.endpoint || codeEl?.textContent?.trim();
+    return copy(realEndpoint);
   }
   if (action === 'copytoken') return copy(modalContext.token);
   if (action === 'onboard') return onboarding();
