@@ -174,13 +174,33 @@ export const khoFindByIdTool = {
     'Tra cứu nhanh bản ghi trong Kho Ryan theo ID tiền tố (alias tương đương kho_get, vd: VIEC-12, PHIEN-1, DA-1).'
 };
 
+export const khoTomTatTool = {
+  name: 'kho_tom_tat',
+  description:
+    'Tóm tắt thông tin cốt lõi trong Kho Ryan cho đầu phiên làm việc (Phiên gần nhất, Việc đang mở, Quyết định hiệu lực, Dự án trọng tâm). Gọn nhẹ, tiết kiệm token.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      so_phien: {
+        type: 'integer',
+        description: 'Số lượng phiên gần nhất cần lấy (mặc định: 1, tối đa: 5)'
+      }
+    },
+    additionalProperties: false
+  },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+  published: true,
+  permission: { status: 'ok', reason: 'Khả dụng' }
+};
+
 export const KHO_TOOLS = [
   khoListTool,
   khoGetTool,
   khoCreateTool,
   khoUpdateTool,
   khoSearchTool,
-  khoFindByIdTool
+  khoFindByIdTool,
+  khoTomTatTool
 ];
 
 let memoryTableIds = null;
@@ -572,3 +592,168 @@ export async function khoSearch(args, { url, restUrl, token, tableIds, allowPriv
 }
 
 export const khoFindById = khoGet;
+
+function truncateString(val, maxLength) {
+  if (val === null || val === undefined) return '';
+  const s = String(val).trim();
+  if (s.length <= maxLength) return s;
+  return s.slice(0, maxLength);
+}
+
+export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPrivate, request }) {
+  const soPhienRaw = parseInt(args?.so_phien, 10);
+  const soPhien = isNaN(soPhienRaw) ? 1 : Math.max(1, Math.min(5, soPhienRaw));
+
+  const map = tableIds !== undefined ? tableIds : loadTableIds();
+  if (!map || typeof map !== 'object' || Object.keys(map).length === 0) {
+    throw new HubError(
+      'Chưa có dữ liệu ánh xạ bảng Kho Ryan (thiếu table_ids.json). Vui lòng đồng bộ schema trước khi thao tác.',
+      503
+    );
+  }
+
+  const requiredTables = [
+    { prefix: 'PHIEN', name: 'Phiên' },
+    { prefix: 'VIEC', name: 'Việc' },
+    { prefix: 'QD', name: 'Quyết định' },
+    { prefix: 'DA', name: 'Dự án' }
+  ];
+
+  for (const { prefix, name } of requiredTables) {
+    if (!map[prefix]) {
+      throw new HubError(`Chưa tìm thấy ID bảng cho '${name}' trong Kho Ryan`, 404);
+    }
+  }
+
+  const restBase = resolveRestBase({ restUrl, url });
+  const headers = buildHeaders(token);
+
+  async function fetchAllRows(tableId, tableName) {
+    let page = 1;
+    const allRows = [];
+    while (true) {
+      const queryUrl = `${restBase}/api/database/rows/table/${tableId}/?user_field_names=true&size=200&page=${page}`;
+      const res = await request(queryUrl, { headers, method: 'GET', allowPrivate });
+      const data = extractData(res);
+      if (isHttpError(res, data)) {
+        const errorDetail = data?.error || data?.detail || `HTTP ${res?.status || 502}`;
+        throw new HubError(`Lỗi đọc bảng '${tableName}' từ Kho: ${errorDetail}`, res?.status || 502);
+      }
+      const results = data?.results;
+      if (!Array.isArray(results)) {
+        throw new HubError(`Dữ liệu bảng '${tableName}' từ Kho không hợp lệ`, 502);
+      }
+      allRows.push(...results);
+      if (!data.next || allRows.length >= (data.count ?? allRows.length) || results.length === 0) {
+        break;
+      }
+      page++;
+      if (page > 50) break;
+    }
+    return allRows;
+  }
+
+  try {
+    const [phienRows, viecRows, qdRows, daRows] = await Promise.all([
+      fetchAllRows(map.PHIEN, 'Phiên'),
+      fetchAllRows(map.VIEC, 'Việc'),
+      fetchAllRows(map.QD, 'Quyết định'),
+      fetchAllRows(map.DA, 'Dự án')
+    ]);
+
+    // 1. Phiên gần nhất: sắp xếp giảm dần theo Ngày rồi id
+    const phienSorted = phienRows.slice().sort((a, b) => {
+      const dateA = String(a['Ngày'] || '').slice(0, 10);
+      const dateB = String(b['Ngày'] || '').slice(0, 10);
+      if (dateA !== dateB) return dateB.localeCompare(dateA);
+      return (b.id || 0) - (a.id || 0);
+    });
+
+    const phienGanNhat = phienSorted.slice(0, soPhien).map(p => ({
+      id: p['Mã ID'] || `PHIEN-${p.id}`,
+      ngay: p['Ngày'] ? String(p['Ngày']).slice(0, 10) : '',
+      chu_de: p['Chủ đề'] ? String(p['Chủ đề']).trim() : '',
+      viec_tiep: truncateString(p['Việc tiếp'], 400),
+      canh_bao: truncateString(p['Cảnh báo'], 400)
+    }));
+
+    // 2. Việc đang mở: Trạng thái ≠ Xong, sắp P1 → P3, tối đa 20
+    const PRIORITY_RANK = { p1: 1, p2: 2, p3: 3 };
+    const viecDangMo = viecRows
+      .filter(v => {
+        const stRaw = typeof v['Trạng thái'] === 'object' ? v['Trạng thái']?.value : v['Trạng thái'];
+        const st = String(stRaw || '').trim().toLowerCase();
+        return st && st !== 'xong';
+      })
+      .sort((a, b) => {
+        const prioRawA = typeof a['Ưu tiên'] === 'object' ? a['Ưu tiên']?.value : a['Ưu tiên'];
+        const prioRawB = typeof b['Ưu tiên'] === 'object' ? b['Ưu tiên']?.value : b['Ưu tiên'];
+        const rankA = PRIORITY_RANK[String(prioRawA || '').trim().toLowerCase()] || 99;
+        const rankB = PRIORITY_RANK[String(prioRawB || '').trim().toLowerCase()] || 99;
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.id || 0) - (b.id || 0);
+      })
+      .slice(0, 20)
+      .map(v => {
+        const stRaw = typeof v['Trạng thái'] === 'object' ? v['Trạng thái']?.value : v['Trạng thái'];
+        const prioRaw = typeof v['Ưu tiên'] === 'object' ? v['Ưu tiên']?.value : v['Ưu tiên'];
+        return {
+          id: v['Mã ID'] || `VIEC-${v.id}`,
+          tieu_de: v['Tiêu đề'] ? String(v['Tiêu đề']).trim() : '',
+          trang_thai: String(stRaw || '').trim(),
+          uu_tien: String(prioRaw || '').trim(),
+          nguoi_lam: v['Người làm'] ? String(v['Người làm']).trim() : ''
+        };
+      });
+
+    // 3. Quyết định hiệu lực: Trạng thái = Hiệu lực; Nội dung cắt ≤ 160 ký tự
+    const quyetDinhHieuLuc = qdRows
+      .filter(q => {
+        const stRaw = typeof q['Trạng thái'] === 'object' ? q['Trạng thái']?.value : q['Trạng thái'];
+        const st = String(stRaw || '').trim().toLowerCase();
+        return (st === 'hiệu lực' || st === 'có hiệu lực') || (st.includes('hiệu lực') && !st.includes('hết') && !st.includes('thay thế'));
+      })
+      .map(q => {
+        const rawContent = q['Nội dung'] || q['Tiêu đề'] || '';
+        return {
+          id: q['Mã ID'] || `QD-${q.id}`,
+          noi_dung_ngan: truncateString(rawContent, 160)
+        };
+      });
+
+    // 4. Dự án trọng tâm: Trọng tâm = true; chỉ id + ten
+    const duAnTrongTam = daRows
+      .filter(d => {
+        const tt = d['Trọng tâm'];
+        return tt === true || tt === 'true' || tt === 'Có' || tt === 't';
+      })
+      .map(d => ({
+        id: d['Mã ID'] || `DA-${d.id}`,
+        ten: d['Tên'] ? String(d['Tên']).trim() : `Dự án ${d.id}`
+      }));
+
+    const result = {
+      phien_gan_nhat: phienGanNhat,
+      viec_dang_mo: viecDangMo,
+      quyet_dinh_hieu_luc: quyetDinhHieuLuc,
+      du_an_trong_tam: duAnTrongTam,
+      ghi_chu: 'Cần chi tiết: kho_get <ID>'
+    };
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(result, null, 2)
+        }
+      ],
+      isError: false
+    };
+  } catch (err) {
+    return khoErrorResult(`Lỗi tóm tắt Kho Ryan: ${err.message}`, {
+      error: err.message,
+      status: err.status || 502
+    });
+  }
+}
+

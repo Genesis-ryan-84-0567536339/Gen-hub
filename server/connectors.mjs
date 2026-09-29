@@ -11,7 +11,8 @@ import {
   khoUpdate,
   khoSearch,
   khoFindById,
-  khoFindByIdTool
+  khoFindByIdTool,
+  khoTomTat
 } from './kho-tools.mjs';
 import { invalidateCache } from './kho-analytics.mjs';
 export function isKhoConnector(m) {
@@ -643,6 +644,8 @@ export function connectorService(store, { mcpRequest = request, serviceRequest =
             }
             case 'kho_search':
               return khoSearch(a, ctx);
+            case 'kho_tom_tat':
+              return khoTomTat(a, ctx);
             default:
               throw new HubError(`Không tìm thấy công cụ Kho: ${t}`, 404);
           }

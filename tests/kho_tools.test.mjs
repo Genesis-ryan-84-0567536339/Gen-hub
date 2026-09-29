@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../server/store.mjs';
-import { PREFIX_TABLE_MAP, khoFindById, khoFindByIdTool, loadTableIds, resolveRestBase, setMemoryTableIds } from '../server/kho-tools.mjs';
+import { PREFIX_TABLE_MAP, khoFindById, khoFindByIdTool, khoTomTat, khoTomTatTool, KHO_TOOLS, loadTableIds, resolveRestBase, setMemoryTableIds } from '../server/kho-tools.mjs';
 import { checkToolPermissions, isKhoConnector } from '../server/connectors.mjs';
 
 test('kho-tools: validates prefix-to-table mapping for all 8 tables', () => {
@@ -406,6 +406,145 @@ test('kho-tools: khoSearch returns isError: true when all tables fail and collec
   assert.equal(parsedPartial.ket_qua[0].id, 'DA-10');
   assert.equal(parsedPartial.loi.length, 5);
 });
+
+test('kho-tools: KHO_TOOLS includes khoTomTatTool with correct schema and annotations', () => {
+  const tool = KHO_TOOLS.find(t => t.name === 'kho_tom_tat');
+  assert.ok(tool, 'kho_tom_tat must be present in KHO_TOOLS');
+  assert.equal(tool.name, 'kho_tom_tat');
+  assert.equal(tool.annotations?.readOnlyHint, true);
+  assert.equal(tool.annotations?.destructiveHint, false);
+  assert.equal(tool.inputSchema?.properties?.so_phien?.type, 'integer');
+});
+
+test('kho-tools: khoTomTat successfully aggregates and formats core data', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const fakeData = {
+    101: [
+      { id: 1, 'Mã ID': 'PHIEN-1', 'Ngày': '2026-09-27', 'Chủ đề': 'Phiên 1', 'Việc tiếp': 'A'.repeat(500), 'Cảnh báo': 'Cảnh báo 1' },
+      { id: 2, 'Mã ID': 'PHIEN-2', 'Ngày': '2026-09-28', 'Chủ đề': 'Phiên 2', 'Việc tiếp': 'Việc tiếp 2', 'Cảnh báo': 'B'.repeat(500) },
+      { id: 3, 'Mã ID': 'PHIEN-3', 'Ngày': '2026-09-28', 'Chủ đề': 'Phiên 3 (mới hơn)', 'Việc tiếp': 'Việc tiếp 3', 'Cảnh báo': 'Cảnh báo 3' }
+    ],
+    102: [
+      { id: 1, 'Mã ID': 'VIEC-1', 'Tiêu đề': 'Việc đã xong', 'Trạng thái': 'Xong', 'Ưu tiên': 'P1', 'Người làm': 'Ryan' },
+      { id: 2, 'Mã ID': 'VIEC-2', 'Tiêu đề': 'Việc P3', 'Trạng thái': 'Đang làm', 'Ưu tiên': 'P3', 'Người làm': 'Claude' },
+      { id: 3, 'Mã ID': 'VIEC-3', 'Tiêu đề': 'Việc P1', 'Trạng thái': { value: 'Chờ' }, 'Ưu tiên': { value: 'P1' }, 'Người làm': 'agy' },
+      { id: 4, 'Mã ID': 'VIEC-4', 'Tiêu đề': 'Việc P2', 'Trạng thái': 'Đang làm', 'Ưu tiên': 'P2', 'Người làm': 'Ryan' }
+    ],
+    103: [
+      { id: 1, 'Mã ID': 'QD-1', 'Nội dung': 'Quyết định hết hiệu lực', 'Trạng thái': 'Hết hiệu lực' },
+      { id: 2, 'Mã ID': 'QD-2', 'Nội dung': 'Quyết định bị thay thế', 'Trạng thái': 'Bị thay thế' },
+      { id: 3, 'Mã ID': 'QD-3', 'Nội dung': 'D'.repeat(200), 'Trạng thái': 'Có hiệu lực' }
+    ],
+    104: [
+      { id: 1, 'Mã ID': 'DA-1', 'Tên': 'Dự án không trọng tâm', 'Trọng tâm': false },
+      { id: 2, 'Mã ID': 'DA-2', 'Tên': 'Dự án trọng tâm 1', 'Trọng tâm': true },
+      { id: 3, 'Mã ID': 'DA-3', 'Tên': 'Dự án trọng tâm 2', 'Trọng tâm': 'Có' }
+    ]
+  };
+
+  const fakeRequest = async (url, opts) => {
+    // Check authorization header format
+    assert.equal(opts.headers?.Authorization, 'Token secret-token-xyz');
+    for (const [tId, rows] of Object.entries(fakeData)) {
+      if (url.includes(`/api/database/rows/table/${tId}/`)) {
+        return {
+          status: 200,
+          body: {
+            count: rows.length,
+            next: null,
+            results: rows
+          }
+        };
+      }
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  };
+
+  const ctx = {
+    restUrl: 'http://kho:80',
+    token: 'secret-token-xyz',
+    tableIds,
+    request: fakeRequest
+  };
+
+  // Test default so_phien = 1
+  const res = await khoTomTat({}, ctx);
+  assert.equal(res.isError, false);
+  const data = JSON.parse(res.content[0].text);
+
+  // 1. Phien gan nhat: so_phien default 1 -> should pick PHIEN-3 (same date 2026-09-28, id 3 > id 2)
+  assert.equal(data.phien_gan_nhat.length, 1);
+  assert.equal(data.phien_gan_nhat[0].id, 'PHIEN-3');
+  assert.equal(data.phien_gan_nhat[0].chu_de, 'Phiên 3 (mới hơn)');
+
+  // 2. Việc đang mở: không chứa VIEC-1 (Xong), thứ tự P1 -> P2 -> P3
+  assert.equal(data.viec_dang_mo.length, 3);
+  assert.equal(data.viec_dang_mo[0].id, 'VIEC-3'); // P1
+  assert.equal(data.viec_dang_mo[0].uu_tien, 'P1');
+  assert.equal(data.viec_dang_mo[1].id, 'VIEC-4'); // P2
+  assert.equal(data.viec_dang_mo[1].uu_tien, 'P2');
+  assert.equal(data.viec_dang_mo[2].id, 'VIEC-2'); // P3
+  assert.equal(data.viec_dang_mo[2].uu_tien, 'P3');
+
+  // 3. Quyết định hiệu lực: chỉ lấy QD-3, cắt nội dung <= 160 ký tự
+  assert.equal(data.quyet_dinh_hieu_luc.length, 1);
+  assert.equal(data.quyet_dinh_hieu_luc[0].id, 'QD-3');
+  assert.equal(data.quyet_dinh_hieu_luc[0].noi_dung_ngan.length, 160);
+
+  // 4. Dự án trọng tâm: chỉ DA-2 và DA-3, chỉ có id + ten
+  assert.equal(data.du_an_trong_tam.length, 2);
+  assert.deepEqual(data.du_an_trong_tam, [
+    { id: 'DA-2', ten: 'Dự án trọng tâm 1' },
+    { id: 'DA-3', ten: 'Dự án trọng tâm 2' }
+  ]);
+
+  // Test so_phien = 2
+  const res2 = await khoTomTat({ so_phien: 2 }, ctx);
+  const data2 = JSON.parse(res2.content[0].text);
+  assert.equal(data2.phien_gan_nhat.length, 2);
+  assert.equal(data2.phien_gan_nhat[0].id, 'PHIEN-3');
+  assert.equal(data2.phien_gan_nhat[1].id, 'PHIEN-2');
+  // Check truncation of canh_bao in PHIEN-2 <= 400 chars
+  assert.equal(data2.phien_gan_nhat[1].canh_bao.length, 400);
+
+  // Test so_phien > 5 clamps to 5, so_phien < 1 clamps to 1
+  const resMax = await khoTomTat({ so_phien: 10 }, ctx);
+  const dataMax = JSON.parse(resMax.content[0].text);
+  assert.equal(dataMax.phien_gan_nhat.length, 3); // Only 3 total in fakeData
+});
+
+test('kho-tools: khoTomTat returns isError: true on upstream failure and does not leak token', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const secretToken = 'super-secret-kho-token-999';
+
+  const failingRequest = async (url) => {
+    if (url.includes('/api/database/rows/table/102/')) {
+      return {
+        status: 502,
+        body: { error: 'ERROR_GATEWAY_TIMEOUT', detail: `Upstream error with token ${secretToken}` }
+      };
+    }
+    return {
+      status: 200,
+      body: { count: 0, next: null, results: [] }
+    };
+  };
+
+  const ctx = {
+    restUrl: 'http://kho:80',
+    token: secretToken,
+    tableIds,
+    request: failingRequest
+  };
+
+  const res = await khoTomTat({}, ctx);
+  assert.equal(res.isError, true);
+  const outputText = res.content[0].text;
+  assert.ok(outputText.includes('Lỗi tóm tắt Kho Ryan'));
+  // Token should not be leaked anywhere in output text
+  assert.equal(outputText.includes(secretToken), false);
+});
+
 
 
 
