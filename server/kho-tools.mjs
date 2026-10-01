@@ -608,9 +608,10 @@ export function cutAtSentence(s, cap) {
   if (text.length <= cap) return text;
   if (cap <= 2) return text.slice(0, cap);
 
-  // Tách các câu: ranh giới câu kết thúc bằng . hoặc ! hoặc ? theo sau là khoảng trắng hoặc kết thúc chuỗi
-  const sentenceRegex = /[^.!?]+(?:[.!?]+(?:\s+|$)|$)/g;
-  const sentences = text.match(sentenceRegex) || [text];
+  // Tách câu: chỉ coi . ! ? là ranh giới khi theo sau là khoảng trắng hoặc hết chuỗi
+  // (kho.genos.top, 5.1, gen-workplace.db không bị tách). Các đoạn nối lại đúng bằng text,
+  // nên luôn giữ phần đầu của chuỗi.
+  const sentences = text.match(/[\s\S]+?(?:[.!?]+(?=\s)\s*|$)/g) || [text];
 
   let accumulated = '';
   for (const sentence of sentences) {
@@ -725,7 +726,7 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
       // Fallback to defaults
     }
 
-    const [phienRows, viecRows, qdRows, daRows] = await Promise.all([
+    const [phienRows, viecRows, qdRows, daRows, qdTrongRows] = await Promise.all([
       // Phiên: Lọc và sắp xếp phía Baserow theo Ngày và ID giảm dần, lấy đúng soPhien
       fetchAllRows(map.PHIEN, 'Phiên', `size=${soPhien}&order_by=-Ng%C3%A0y,-M%C3%A3+ID`).catch(async () => {
         return fetchAllRows(map.PHIEN, 'Phiên', `size=${soPhien}&order_by=-Ng%C3%A0y`).catch(async () => {
@@ -745,7 +746,9 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
       // Dự án: Lọc Trọng tâm == 1, size=100
       fetchAllRows(map.DA, 'Dự án', 'size=100&filter__Tr%E1%BB%8Dng+t%C3%A2m__boolean=1').catch(async () => {
         return fetchAllRows(map.DA, 'Dự án', 'size=100');
-      })
+      }),
+      // Quyết định có Trạng thái trống: bị bộ lọc Hiệu lực loại bỏ, đếm riêng để báo (lỗi thì bỏ qua)
+      fetchAllRows(map.QD, 'Quyết định', 'size=100&filter__Tr%E1%BA%A1ng+th%C3%A1i__empty').catch(() => [])
     ]);
 
     // 1. Phiên gần nhất: sắp xếp giảm dần theo Ngày rồi id
@@ -789,7 +792,7 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
           tieu_de: truncateString(v['Tiêu đề'], 80),
           trang_thai: String(stRaw || '').trim(),
           uu_tien: String(prioRaw || '').trim(),
-          nguoi_lam: v['Người làm'] ? String(v['Người làm']).trim() : ''
+          nguoi_lam: v['Người làm'] ? String(typeof v['Người làm'] === 'object' ? v['Người làm'].value ?? '' : v['Người làm']).trim() : ''
         };
       });
 
@@ -833,6 +836,16 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
       du_an_trong_tam: duAnTrongTam,
       ghi_chu: 'Cần chi tiết: kho_get <ID>'
     };
+
+    // Báo riêng số Quyết định chưa có Trạng thái (không nằm trong danh sách hiệu lực ở trên)
+    const qdTrangThaiTrong = qdTrongRows.filter(q => {
+      const stRaw = typeof q['Trạng thái'] === 'object' && q['Trạng thái'] !== null ? q['Trạng thái'].value : q['Trạng thái'];
+      return !String(stRaw || '').trim();
+    }).length;
+    if (qdTrangThaiTrong > 0) {
+      result.qd_trang_thai_trong = qdTrangThaiTrong;
+      result.ghi_chu += `; ${qdTrangThaiTrong} QĐ chưa có Trạng thái (không tính vào danh sách hiệu lực): kho_list QD để rà soát`;
+    }
 
     // Chặn trên ngân sách 4.500 ký tự (QĐ ngân sách riêng 3.600 ký tự)
     const MAX_OUTPUT_CHARS = 4500;
@@ -910,13 +923,13 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
       }
     }
 
-    // 5. Bỏ việc P2 (từ cuối), giữ tối thiểu mọi việc P1
+    // 5. Bỏ việc P2 (từ cuối), giữ tối thiểu mọi việc P1 và mọi việc có Người làm = agy
     if (getCurrentSerialized().length > MAX_OUTPUT_CHARS) {
       let viecP2Count = 0;
       for (let i = result.viec_dang_mo.length - 1; i >= 0; i--) {
         if (getCurrentSerialized().length <= MAX_OUTPUT_CHARS) break;
         const v = result.viec_dang_mo[i];
-        if (String(v.uu_tien || '').trim().toLowerCase() === 'p2') {
+        if (String(v.uu_tien || '').trim().toLowerCase() === 'p2' && v.nguoi_lam.toLowerCase() !== 'agy') {
           result.viec_dang_mo.splice(i, 1);
           viecP2Count++;
         }
@@ -1027,4 +1040,3 @@ export async function khoTomTat(args, { url, restUrl, token, tableIds, allowPriv
     });
   }
 }
-

@@ -537,6 +537,128 @@ test('kho-tools: cutAtSentence correctly cuts at sentence boundary or falls back
   assert.equal(cut2, 'Đây là một câu rất dài …');
 });
 
+test('kho-tools: cutAtSentence giữ phần đầu khi chuỗi có dấu chấm trong tên miền, số phiên bản, đuôi file (Refs #153)', () => {
+  const qd1 = 'Kho Ryan chuẩn (second brain) = Baserow tự host tại kho.genos.top, đọc/ghi qua tool kho_* do Gen-hub cấp. SQLite /data/gen-workplace/data/gen-workplace.db chỉ là dữ liệu vận hành.';
+  const qd3 = 'Chọn model: Haiku 4.5 cho việc đơn giản; Opus 5.5 cho bước quan trọng; Fable 5.1 cho việc khó nhất.';
+
+  for (const cap of [100, 120, 170]) {
+    const cut = cutAtSentence(qd1, cap);
+    assert.ok(cut.length <= cap, `QD-1 cap=${cap}: dài ${cut.length}`);
+    assert.ok(cut.startsWith('Kho Ryan chuẩn (second brain) = Baserow'), `QD-1 cap=${cap} mất phần đầu: ${cut}`);
+    assert.ok(cut.endsWith(' …'));
+  }
+  // Ranh giới câu hợp lệ duy nhất là ". " sau "Gen-hub cấp"; không cắt giữa kho.genos.top
+  assert.equal(
+    cutAtSentence(qd1, 120),
+    'Kho Ryan chuẩn (second brain) = Baserow tự host tại kho.genos.top, đọc/ghi qua tool kho_* do Gen-hub cấp. …'
+  );
+  // Câu đầu dài hơn cap: cắt cứng ở khoảng trắng, không cắt giữa tên miền
+  assert.equal(cutAtSentence(qd1, 60), 'Kho Ryan chuẩn (second brain) = Baserow tự host tại …');
+
+  for (const cap of [60, 80]) {
+    const cut = cutAtSentence(qd3, cap);
+    assert.ok(cut.length <= cap, `QD-3 cap=${cap}: dài ${cut.length}`);
+    assert.ok(cut.startsWith('Chọn model: Haiku 4.5'), `QD-3 cap=${cap} mất phần đầu: ${cut}`);
+    assert.ok(cut.endsWith(' …'));
+  }
+
+  // Chuỗi chứa gen-workplace.db ở đầu không bị mất phần đầu
+  const withDb = 'File gen-workplace.db chứa dữ liệu vận hành của hệ thống. Không sửa tay file này.';
+  assert.equal(cutAtSentence(withDb, 65), 'File gen-workplace.db chứa dữ liệu vận hành của hệ thống. …');
+});
+
+test('kho-tools: cutAtSentence giữ nguyên chuỗi ngắn, cắt đúng chuỗi không có dấu chấm và không đổi ranh giới câu thật', () => {
+  // Chuỗi ngắn hơn hoặc bằng cap: không đổi (chỉ trim)
+  assert.equal(cutAtSentence('Chuỗi ngắn kho.genos.top 5.1', 100), 'Chuỗi ngắn kho.genos.top 5.1');
+  assert.equal(cutAtSentence('  Vừa đủ  ', 8), 'Vừa đủ');
+  assert.equal(cutAtSentence(null, 10), '');
+  // Không có dấu chấm: cắt ở khoảng trắng gần nhất và giữ phần đầu
+  const noDot = 'Một chuỗi dài không có bất kỳ dấu chấm câu nào cả nên phải cắt ở ranh giới từ';
+  const cutNoDot = cutAtSentence(noDot, 30);
+  assert.ok(cutNoDot.length <= 30);
+  assert.ok(cutNoDot.startsWith('Một chuỗi dài'));
+  assert.equal(cutNoDot, 'Một chuỗi dài không có bất …');
+  // Dấu ! và ? theo sau bởi khoảng trắng vẫn là ranh giới câu; "..." cũng vậy
+  assert.equal(cutAtSentence('Đúng rồi! Có chắc không? Chắc chắn mà... Hết.', 22), 'Đúng rồi! …');
+  assert.equal(cutAtSentence('Đúng rồi! Có chắc không? Chắc chắn mà... Hết.', 40), 'Đúng rồi! Có chắc không? …');
+  // Dấu chấm cuối chuỗi (không có khoảng trắng phía sau) là ranh giới hợp lệ
+  assert.equal(cutAtSentence('Câu một. Câu hai.', 12), 'Câu một. …');
+});
+
+test('kho-tools: khoTomTat báo riêng số Quyết định có Trạng thái trống và vẫn đặt QĐ hiệu lực nguyên văn', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const fakeData = {
+    101: [{ id: 1, 'Mã ID': 'PHIEN-1', 'Ngày': '2026-09-29', 'Chủ đề': 'P', 'Việc tiếp': '', 'Cảnh báo': '' }],
+    102: [],
+    103: [
+      { id: 1, 'Mã ID': 'QD-1', 'Nội dung': 'QD hiệu lực', 'Trạng thái': { value: 'Hiệu lực' } },
+      { id: 2, 'Mã ID': 'QD-2', 'Nội dung': 'QD thiếu trạng thái (null)', 'Trạng thái': null },
+      { id: 3, 'Mã ID': 'QD-3', 'Nội dung': 'QD thiếu trạng thái (rỗng)', 'Trạng thái': '' }
+    ],
+    104: []
+  };
+  const fakeRequest = async url => {
+    for (const [tId, rows] of Object.entries(fakeData)) {
+      if (url.includes(`/api/database/rows/table/${tId}/`)) {
+        return { status: 200, body: { count: rows.length, next: null, results: rows } };
+      }
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  };
+
+  const res = await khoTomTat({}, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
+  assert.equal(res.isError, false);
+  const data = JSON.parse(res.content[0].text);
+  assert.equal(data.quyet_dinh_hieu_luc.length, 1);
+  assert.equal(data.quyet_dinh_hieu_luc[0].id, 'QD-1');
+  assert.equal(data.qd_trang_thai_trong, 2);
+  assert.ok(data.ghi_chu.includes('2 QĐ chưa có Trạng thái'));
+
+  // Không có QĐ trống: không thêm trường mới
+  fakeData[103] = [fakeData[103][0]];
+  const res2 = await khoTomTat({}, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
+  assert.equal(JSON.parse(res2.content[0].text).qd_trang_thai_trong, undefined);
+});
+
+test('kho-tools: khoTomTat không cắt Việc P2 có Người làm = agy khi vượt ngân sách', async () => {
+  const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
+  const longTitle = 'Tiêu đề việc rất dài ' + 'x'.repeat(100);
+  const viecRows = Array.from({ length: 20 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `VIEC-${i + 1}`,
+    'Tiêu đề': longTitle,
+    'Trạng thái': 'Đang làm',
+    'Ưu tiên': 'P2',
+    'Người làm': i < 3 ? { value: 'agy' } : 'Ryan'
+  }));
+  const phienRows = [{ id: 1, 'Mã ID': 'PHIEN-1', 'Ngày': '2026-09-29', 'Chủ đề': 'P', 'Việc tiếp': '', 'Cảnh báo': '' }];
+  // 8 QĐ x ~400 ký tự (nguyên văn) làm ngân sách vượt mà việc P3/tiêu đề không đủ giải phóng
+  const qdRows = Array.from({ length: 8 }, (_, i) => ({
+    id: i + 1,
+    'Mã ID': `QD-${i + 1}`,
+    'Nội dung': 'Quy định ' + 'y'.repeat(390),
+    'Trạng thái': 'Hiệu lực'
+  }));
+  const fakeData = { 101: phienRows, 102: viecRows, 103: qdRows, 104: [] };
+  const fakeRequest = async url => {
+    for (const [tId, rows] of Object.entries(fakeData)) {
+      if (url.includes(`/api/database/rows/table/${tId}/`)) {
+        return { status: 200, body: { count: rows.length, next: null, results: rows } };
+      }
+    }
+    return { status: 404, body: { error: 'Not found' } };
+  };
+
+  const res = await khoTomTat({}, { restUrl: 'http://kho:80', token: 'token', tableIds, request: fakeRequest });
+  assert.equal(res.isError, false);
+  assert.ok(res.content[0].text.length <= 4500);
+  const parsed = JSON.parse(res.content[0].text);
+  assert.ok(parsed.bi_cat.some(item => item.startsWith('viec_P2:')), 'phải có cắt việc P2');
+  const agyIds = parsed.viec_dang_mo.filter(v => v.nguoi_lam === 'agy').map(v => v.id);
+  assert.deepEqual(agyIds, ['VIEC-1', 'VIEC-2', 'VIEC-3']);
+  assert.ok(parsed.viec_dang_mo.length < 20);
+});
+
 test('kho-tools: khoTomTat treats empty/null Trạng thái as open task', async () => {
   const tableIds = { PHIEN: 101, VIEC: 102, QD: 103, DA: 104 };
   const fakeData = {
