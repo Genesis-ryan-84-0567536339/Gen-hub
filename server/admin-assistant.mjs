@@ -50,7 +50,7 @@ const routes = [
     'Đổi tên, bật/tắt hoặc công bố tool của connector.',
     'PATCH',
     a => 'mcps/' + a.id,
-    { id: string, name: string, on: { type: 'boolean' }, published: strings },
+    { id: string, name: string, on: { type: 'boolean' }, published: strings, autoPublish: { type: 'boolean' } },
     ['id']
   ),
   tool(

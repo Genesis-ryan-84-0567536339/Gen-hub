@@ -51,7 +51,7 @@ import {
   renderCSV
 } from './export-audit.mjs';
 const pub = fileURLToPath(new URL('../public/', import.meta.url));
-const cleanMcp = ({ secret, ...m }) => ({ ...m, hasCredential: !!secret });
+const cleanMcp = ({ secret, ...m }) => ({ ...m, hasCredential: !!secret, autoPublish: !!m.autoPublish });
 
 function detectRevision() {
   if (process.env.GENHUB_REVISION) return process.env.GENHUB_REVISION.trim();
@@ -461,7 +461,7 @@ export function createHub({
               )
             : isKhoConnector(m)
               ? (old.find(x => x.name === t.name)?.published ?? true)
-              : (old.find(x => x.name === t.name)?.published ?? t.annotations?.readOnlyHint === true)
+              : (old.find(x => x.name === t.name)?.published ?? (m.autoPublish === true ? true : t.annotations?.readOnlyHint === true))
     }));
     latest.status = 'connected';
     latest.lastError = null;
@@ -979,6 +979,7 @@ export function createHub({
           auth: b.auth === 'none' ? 'none' : 'token',
           url: b.url || '',
           allowPrivate: !!b.allowPrivate,
+          autoPublish: !!b.autoPublish,
           created: new Date().toISOString()
         };
       if (b.kind) m.kind = text(b.kind, 32);
@@ -1027,6 +1028,7 @@ export function createHub({
           m.isKho = !!b.isKho;
           if (m.isKho) m.kind = 'kho';
         }
+        if (b.autoPublish !== undefined) m.autoPublish = !!b.autoPublish;
         if (b.published) {
           if (
             !Array.isArray(b.published) ||

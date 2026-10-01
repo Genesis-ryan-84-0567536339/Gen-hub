@@ -1995,7 +1995,7 @@ function mcp(id) {
 }
 function connectorInfo(m) {
   const id = m.id;
-  return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(m.created)}</dd></div></dl><form id="connector-info" data-id="${esc(id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(m.name)}" maxlength="60" required></label><button class="btn primary" type="submit">Lưu thông tin</button></form><div class="divider"></div><div class="mcpdetailtop">${logo(m)}<div><h3>${esc(m.name)}</h3><p>${esc(m.description)}</p></div><span class="spacer"></span>${badge(m.status)}</div><div class="actions">${btn('Kết nối / xác thực', 'credential:' + id, 'small', 'link')}${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}${m.hasCredential ? btn('Ngắt kết nối', 'disconnect:' + id, 'danger small') : ''}</div>${m.lastError ? `<p class="errorline" style="margin-top:15px">${esc(m.lastError)}</p>` : ''}<div class="settingsrow"><div><h3>Cung cấp MCP</h3><p>${m.on ? 'MCP đang được bật' : 'Tạm dừng cho tất cả agent'}</p></div>${sw(m.on, 'toggle:' + id, 'Cung cấp MCP')}</div><p class="footnote">Đồng bộ lần gần nhất: ${date(m.syncedAt)}</p><div class="divider"></div>${btn('Gỡ MCP khỏi Hub', 'remove:' + id, 'danger small')}`;
+  return `<dl class="detailgrid"><div><dt>ID</dt><dd>${esc(id)}</dd></div><div><dt>Ngày tạo</dt><dd>${date(m.created)}</dd></div></dl><form id="connector-info" data-id="${esc(id)}"><label class="field">Tên gợi nhớ<input class="input" name="name" value="${esc(m.name)}" maxlength="60" required></label><button class="btn primary" type="submit">Lưu thông tin</button></form><div class="divider"></div><div class="mcpdetailtop">${logo(m)}<div><h3>${esc(m.name)}</h3><p>${esc(m.description)}</p></div><span class="spacer"></span>${badge(m.status)}</div><div class="actions">${btn('Kết nối / xác thực', 'credential:' + id, 'small', 'link')}${btn('Đồng bộ tool', 'sync:' + id, 'small', 'refresh')}${m.hasCredential ? btn('Ngắt kết nối', 'disconnect:' + id, 'danger small') : ''}</div>${m.lastError ? `<p class="errorline" style="margin-top:15px">${esc(m.lastError)}</p>` : ''}<div class="settingsrow"><div><h3>Cung cấp MCP</h3><p>${m.on ? 'MCP đang được bật' : 'Tạm dừng cho tất cả agent'}</p></div>${sw(m.on, 'toggle:' + id, 'Cung cấp MCP')}</div><div class="settingsrow"><div><h3>Tự động công bố tool mới</h3><p>${m.autoPublish ? 'Tool mới phát hiện khi đồng bộ sẽ tự động công bố' : 'Tool mới cần công bố thủ công (mặc định an toàn)'}</p></div>${sw(m.autoPublish, 'toggle-autopublish:' + id, 'Tự động công bố tool mới')}</div><p class="footnote">Đồng bộ lần gần nhất: ${date(m.syncedAt)}</p><div class="divider"></div>${btn('Gỡ MCP khỏi Hub', 'remove:' + id, 'danger small')}`;
 }
 function toolPermissionBadge(p) {
   if (!p || p.status === 'ok') {
@@ -2718,6 +2718,13 @@ async function act(action, args, el = null) {
   if (action === 'toggle') {
     const m = state.mcps.find(m => m.id === id);
     await api('mcps/' + id, 'PATCH', { on: !m.on });
+    await refresh();
+    if (modal.open) mcp(id);
+    return;
+  }
+  if (action === 'toggle-autopublish') {
+    const m = state.mcps.find(m => m.id === id);
+    await api('mcps/' + id, 'PATCH', { autoPublish: !m.autoPublish });
     await refresh();
     if (modal.open) mcp(id);
     return;
