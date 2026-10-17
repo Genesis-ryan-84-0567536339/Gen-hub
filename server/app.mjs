@@ -914,7 +914,13 @@ export function createHub({
       if (mid === 'create-brain' && method === 'POST')
         return respond(200, await bootstrap.createBrainRepo(b));
       if (!write) return respond(200, bootstrap.get());
-      if (method === 'PATCH') return respond(200, bootstrap.update(b.groups, actor));
+      if (method === 'PATCH') {
+        const payload =
+          b && typeof b === 'object' && !Array.isArray(b) && (b.groups !== undefined || b.enabled !== undefined)
+            ? b
+            : (b?.groups || b);
+        return respond(200, bootstrap.update(payload, actor));
+      }
       throw new HubError('Không tìm thấy API', 404);
     }
     if (resource === 'skills' && method === 'GET') {
@@ -1904,6 +1910,7 @@ export function createHub({
     store,
     auth,
     allowed,
+    bootstrap,
     checkRemoteUpdate,
     chatService,
     monitor,

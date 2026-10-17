@@ -190,21 +190,49 @@ export function bootstrapService(store, connectors) {
 
   function get() {
     const stored = store.get('bootstrap', 'main');
-    if (stored) return stored;
-    return { groups: DEFAULT_BOOTSTRAP_GROUPS, updated: null };
+    if (stored) {
+      return {
+        enabled: stored.enabled !== false,
+        groups: Array.isArray(stored.groups) ? stored.groups : DEFAULT_BOOTSTRAP_GROUPS,
+        updated: stored.updated || null
+      };
+    }
+    return { enabled: true, groups: DEFAULT_BOOTSTRAP_GROUPS, updated: null };
   }
 
-  function update(groups, actor) {
+  function update(input, actor) {
+    const current = get();
+    let groups;
+    let enabled = current.enabled;
+
+    if (Array.isArray(input)) {
+      groups = input;
+    } else if (input && typeof input === 'object') {
+      if (input.enabled !== undefined) {
+        enabled = Boolean(input.enabled);
+      }
+      groups = input.groups !== undefined ? input.groups : current.groups;
+    } else {
+      throw new HubError('Dữ liệu cập nhật Bootstrap không hợp lệ');
+    }
+
     if (!Array.isArray(groups) || groups.length > MAX_GROUPS)
       throw new HubError(`Tối đa ${MAX_GROUPS} nhóm`);
-    const record = { groups: groups.map(normalizeGroup), updated: new Date().toISOString() };
+
+    const record = {
+      enabled,
+      groups: groups.map(normalizeGroup),
+      updated: new Date().toISOString()
+    };
     store.put('bootstrap', 'main', record);
-    store.audit(actor, 'hub', 'bootstrap.update', 'success', { groupCount: record.groups.length }, {});
+    store.audit(actor, 'hub', 'bootstrap.update', 'success', { enabled, groupCount: record.groups.length }, {});
     return record;
   }
 
   function render() {
-    const { groups } = get();
+    const b = get();
+    if (!b.enabled) return '';
+    const { groups } = b;
     if (!groups.length) return '';
     return groups
       .map(

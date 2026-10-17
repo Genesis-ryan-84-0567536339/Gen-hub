@@ -166,3 +166,65 @@ test('Bootstrap: create-brain works with provider github-mcp (shapes captured fr
   const fileCalls = calls.slice(1);
   assert(fileCalls.every(c => c.args.owner === 'real-owner' && c.args.repo === 'Brain'));
 });
+
+test('Bootstrap toggle: enable/disable controls render() and MCP agent initialize instructions', async t => {
+  const x = await fixture(t);
+
+  // 1. Initial GET has enabled === true
+  const initRes = await x.call('/api/bootstrap');
+  assert.equal(initRes.status, 200);
+  assert.equal(initRes.data.enabled, true);
+  assert.ok(x.hub.bootstrap.render().includes('Kết nối nguồn chuẩn'));
+
+  // 2. Create agent and test MCP initialize instructions when enabled
+  const agent = (await x.call('/api/agents', 'POST', { name: 'Worker', permissions: [] })).data;
+  const initMcpRes = await x.call(
+    '/mcp',
+    'POST',
+    { jsonrpc: '2.0', id: 1, method: 'initialize' },
+    { Authorization: 'Bearer ' + agent.token }
+  );
+  assert.equal(initMcpRes.status, 200);
+  assert.ok(initMcpRes.data.result.instructions.includes('Kết nối nguồn chuẩn'));
+  assert.ok(initMcpRes.data.result.instructions.includes('BOOTSTRAP.md'));
+
+  // 3. Toggle off: PATCH { enabled: false }
+  const toggleOffRes = await x.call('/api/bootstrap', 'PATCH', { enabled: false });
+  assert.equal(toggleOffRes.status, 200);
+  assert.equal(toggleOffRes.data.enabled, false);
+
+  // Check GET /api/bootstrap and GET /api/state
+  const getOffRes = await x.call('/api/bootstrap');
+  assert.equal(getOffRes.data.enabled, false);
+  const stateRes = await x.call('/api/state');
+  assert.equal(stateRes.data.bootstrap.enabled, false);
+
+  // Check render() returns empty string
+  assert.equal(x.hub.bootstrap.render(), '');
+
+  // Check MCP initialize when disabled does NOT include bootstrap instruction
+  const initMcpDisabledRes = await x.call(
+    '/mcp',
+    'POST',
+    { jsonrpc: '2.0', id: 2, method: 'initialize' },
+    { Authorization: 'Bearer ' + agent.token }
+  );
+  assert.equal(initMcpDisabledRes.status, 200);
+  assert.ok(!initMcpDisabledRes.data.result.instructions.includes('Kết nối nguồn chuẩn'));
+  assert.ok(!initMcpDisabledRes.data.result.instructions.includes('BOOTSTRAP.md'));
+
+  // 4. Toggle back on: PATCH { enabled: true }
+  const toggleOnRes = await x.call('/api/bootstrap', 'PATCH', { enabled: true });
+  assert.equal(toggleOnRes.status, 200);
+  assert.equal(toggleOnRes.data.enabled, true);
+  assert.ok(x.hub.bootstrap.render().includes('Kết nối nguồn chuẩn'));
+
+  const initMcpEnabledRes = await x.call(
+    '/mcp',
+    'POST',
+    { jsonrpc: '2.0', id: 3, method: 'initialize' },
+    { Authorization: 'Bearer ' + agent.token }
+  );
+  assert.ok(initMcpEnabledRes.data.result.instructions.includes('Kết nối nguồn chuẩn'));
+});
+
