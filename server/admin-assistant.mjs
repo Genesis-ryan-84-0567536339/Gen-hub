@@ -235,11 +235,11 @@ const routes = [
   ),
   tool(
     'bootstrap_update',
-    'Thay toàn bộ nhóm/bước Bootstrap (mảng groups, mỗi group có title + steps[{title, content}]).',
+    'Thay toàn bộ nhóm/bước Bootstrap hoặc bật/tắt gửi hướng dẫn cho agent (enabled: boolean, groups: array).',
     'PATCH',
     () => 'bootstrap',
-    { groups: { type: 'array' } },
-    ['groups']
+    { groups: { type: 'array' }, enabled: { type: 'boolean' } },
+    []
   ),
   tool(
     'bootstrap_create_brain',

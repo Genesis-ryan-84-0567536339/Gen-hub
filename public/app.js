@@ -402,15 +402,18 @@ async function loadMonitor(background = false) {
 }
 let bootstrapState = null;
 let brainRepoResult = null;
-function getBootstrapGroups() {
+function getBootstrapState() {
   if (!bootstrapState) {
     if (state?.bootstrap) {
       bootstrapState = JSON.parse(JSON.stringify(state.bootstrap));
     } else {
-      bootstrapState = { groups: [] };
+      bootstrapState = { enabled: true, groups: [] };
     }
   }
-  return bootstrapState.groups || [];
+  return bootstrapState;
+}
+function getBootstrapGroups() {
+  return getBootstrapState().groups || [];
 }
 function renderBootstrapText(groups) {
   if (!groups || !groups.length) return '';
@@ -449,8 +452,15 @@ function updateBootstrapField(el, updatePreview = true) {
 function updateBootstrapPreview() {
   const previewEl = document.getElementById('bootstrap-preview');
   if (previewEl) {
-    const text = renderBootstrapText(getBootstrapGroups());
-    previewEl.textContent = text || '(Chưa có nội dung hướng dẫn)';
+    const isEnabled = getBootstrapState().enabled !== false;
+    if (!isEnabled) {
+      previewEl.textContent = '(Hướng dẫn Bootstrap đang TẮT — không gửi nội dung này tới Agent)';
+      previewEl.style.opacity = '0.6';
+    } else {
+      const text = renderBootstrapText(getBootstrapGroups());
+      previewEl.textContent = text || '(Chưa có nội dung hướng dẫn)';
+      previewEl.style.opacity = '1';
+    }
   }
 }
 function syncBootstrapFromDom() {
@@ -487,7 +497,8 @@ async function saveBootstrap() {
       content: s.content.trim()
     }))
   }));
-  const res = await api('bootstrap', 'PATCH', { groups: cleanGroups });
+  const isEnabled = getBootstrapState().enabled !== false;
+  const res = await api('bootstrap', 'PATCH', { enabled: isEnabled, groups: cleanGroups });
   bootstrapState = JSON.parse(JSON.stringify(res));
   if (state) state.bootstrap = res;
   toast('Đã lưu thay đổi hướng dẫn Bootstrap');
@@ -1604,12 +1615,16 @@ function settings() {
   );
 }
 function bootstrapPage() {
+  const bs = getBootstrapState();
+  const isEnabled = bs.enabled !== false;
   const groups = getBootstrapGroups();
   const lastUpdated =
     bootstrapState?.updated || state?.bootstrap?.updated
       ? date(bootstrapState?.updated || state?.bootstrap?.updated)
       : '';
-  const previewText = renderBootstrapText(groups);
+  const previewText = isEnabled
+    ? renderBootstrapText(groups)
+    : '(Hướng dẫn Bootstrap đang TẮT — không gửi nội dung này tới Agent)';
 
   const groupCards = groups.length
     ? groups
@@ -1679,6 +1694,26 @@ function bootstrapPage() {
     `
     <div class="twocol">
       <div class="bootstrap-editor">
+        <div class="card cardpad" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+                <h3 style="margin:0;font-size:15px">Gửi hướng dẫn khởi động cho Agent</h3>
+                <span class="badge ${isEnabled ? 'green' : 'gray'}" style="font-weight:600">
+                  ${isEnabled ? 'Đang bật' : 'Đang tắt'}
+                </span>
+              </div>
+              <p class="footnote" style="margin:0">
+                ${isEnabled
+                  ? 'Đang bật: Tự động gửi quy tắc Bootstrap khi Agent kết nối (initialize).'
+                  : 'Đang tắt: Tạm dừng gửi hướng dẫn này cho Agent khi kết nối.'}
+              </p>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px">
+              ${sw(isEnabled, 'bootstrap-toggle', 'Bật / Tắt gửi hướng dẫn Bootstrap')}
+            </div>
+          </div>
+        </div>
         ${groupCards}
         <div class="actions" style="margin-top:20px;display:flex;gap:12px;align-items:center">
           <button type="button" class="btn" data-action="bootstrap-group-add">${I('plus')} Thêm nhóm</button>
@@ -1687,9 +1722,14 @@ function bootstrapPage() {
       </div>
       <div>
         <section class="card cardpad" style="position:sticky;top:20px">
-          <h2>Khung xem trước</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px">
+            <h2 style="margin:0">Khung xem trước</h2>
+            <span class="badge ${isEnabled ? 'green' : 'gray'}" style="font-size:11px;font-weight:600">
+              ${isEnabled ? 'Bật tiêm vào Agent' : 'Đã tắt tiêm'}
+            </span>
+          </div>
           <p class="footnote" style="margin-top:4px;margin-bottom:16px">Nội dung hướng dẫn hoàn chỉnh sẽ được gửi tới Agent trong phản hồi initialize qua hàm render().</p>
-          <pre id="bootstrap-preview" class="json" style="white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;background:#17251e;color:#d9e6d9;padding:16px;border-radius:8px;max-height:calc(100vh - 200px);overflow:auto">${esc(previewText) || '(Chưa có nội dung hướng dẫn)'}</pre>
+          <pre id="bootstrap-preview" class="json" style="white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;background:#17251e;color:#d9e6d9;padding:16px;border-radius:8px;max-height:calc(100vh - 200px);overflow:auto;opacity:${isEnabled ? '1' : '0.6'}">${esc(previewText) || '(Chưa có nội dung hướng dẫn)'}</pre>
           ${lastUpdated ? `<p class="footnote" style="margin-top:12px">Cập nhật lần gần nhất: ${esc(lastUpdated)}</p>` : ''}
         </section>
         <section class="card cardpad" style="margin-top:20px">
@@ -2617,6 +2657,28 @@ async function act(action, args, el = null) {
       groups[gi].steps.push({ id: '', title: '', content: '' });
       render();
     }
+    return;
+  }
+  if (action === 'bootstrap-toggle') {
+    syncBootstrapFromDom();
+    const bs = getBootstrapState();
+    const newEnabled = !(bs.enabled !== false);
+    bs.enabled = newEnabled;
+    const groups = getBootstrapGroups();
+    const cleanGroups = groups.map(g => ({
+      ...(g.id ? { id: g.id } : {}),
+      title: (g.title || '').trim(),
+      steps: (g.steps || []).map(s => ({
+        ...(s.id ? { id: s.id } : {}),
+        title: (s.title || '').trim(),
+        content: (s.content || '').trim()
+      }))
+    }));
+    const res = await api('bootstrap', 'PATCH', { enabled: newEnabled, groups: cleanGroups });
+    bootstrapState = JSON.parse(JSON.stringify(res));
+    if (state) state.bootstrap = res;
+    toast(newEnabled ? 'Đã bật hướng dẫn Bootstrap' : 'Đã tắt hướng dẫn Bootstrap');
+    render();
     return;
   }
   if (action === 'bootstrap-save') {

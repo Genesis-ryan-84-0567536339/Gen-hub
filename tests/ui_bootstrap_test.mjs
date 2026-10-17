@@ -117,5 +117,46 @@ test('Bootstrap UI: outline editor edit, add, reorder, delete, live preview, sav
     'Thứ tự và tiêu đề nhóm sửa vẫn tồn tại sau khi reload'
   );
 
+  // 12. Test toggle switch: turn off bootstrap instruction
+  const toggleBtn = page.locator('button[data-action="bootstrap-toggle"]');
+  assert.equal(await toggleBtn.getAttribute('aria-checked'), 'true', 'Mặc định công tắc Bootstrap phải đang BẬT');
+
+  await toggleBtn.click();
+  await page.waitForSelector('#toast.show');
+  const toggleOffToast = await page.locator('#toast').innerText();
+  assert.match(toggleOffToast, /Đã tắt hướng dẫn Bootstrap/);
+  assert.equal(await toggleBtn.getAttribute('aria-checked'), 'false', 'Sau khi bấm, công tắc chuyển sang TẮT');
+
+  const disabledPreviewText = await page.locator('#bootstrap-preview').innerText();
+  assert.ok(
+    disabledPreviewText.includes('Hướng dẫn Bootstrap đang TẮT'),
+    'Preview thông báo hướng dẫn đang tắt'
+  );
+
+  // 13. Reload page and verify toggle state persists
+  await page.reload();
+  await page.goto(x.origin + '/#bootstrap');
+  await page.waitForSelector('.pagehead h1:has-text("Hướng dẫn khởi động (Bootstrap)")');
+
+  const reloadedToggleBtn = page.locator('button[data-action="bootstrap-toggle"]');
+  assert.equal(await reloadedToggleBtn.getAttribute('aria-checked'), 'false', 'Trạng thái TẮT vẫn duy trì sau reload');
+  assert.ok(
+    (await page.locator('#bootstrap-preview').innerText()).includes('Hướng dẫn Bootstrap đang TẮT'),
+    'Preview vẫn ở trạng thái tắt sau reload'
+  );
+
+  // 14. Turn toggle back on
+  await reloadedToggleBtn.click();
+  await page.waitForSelector('#toast.show');
+  const toggleOnToast = await page.locator('#toast').innerText();
+  assert.match(toggleOnToast, /Đã bật hướng dẫn Bootstrap/);
+  assert.equal(await reloadedToggleBtn.getAttribute('aria-checked'), 'true', 'Công tắc bật lại thành công');
+
+  const restoredPreviewText = await page.locator('#bootstrap-preview').innerText();
+  assert.ok(
+    restoredPreviewText.includes('2. Quy tắc khởi động số một'),
+    'Preview khôi phục đầy đủ nội dung khi bật lại'
+  );
+
   assert.equal(errors.length, 0, 'Không có lỗi JavaScript nào phát sinh');
 });
